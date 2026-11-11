@@ -19,8 +19,8 @@ concurrency:
 
 jobs:
   lint:
-    # Intentionally tracked at @main (not SHA-pinned) so org-wide CI improvements, security fixes, and build optimizations propagate without PR churn across all craftapp repos.
-    uses: storytold/craft-common-actions/.github/workflows/packaging-lint.yml@main
+    # Pinned to a commit, not @main: a change to the shared workflows reaches this repository (and, for a release, its signing secrets) only through a reviewed bump of this hash.
+    uses: storytold/craft-common-actions/.github/workflows/packaging-lint.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
 
   windows-install-policy:
     timeout-minutes: 10

@@ -1,0 +1,37 @@
+name: audit
+
+# Known-vulnerable dependencies (RustSec advisory database). Runs on every change to the
+# dependency set, and daily, since advisories are published after a lock file is written.
+on:
+  pull_request:
+    paths: ["Cargo.lock", "Cargo.toml", "**/Cargo.toml", ".cargo/audit.toml", ".github/workflows/audit.yml"]
+  push:
+    branches: [main]
+    paths: ["Cargo.lock", "Cargo.toml", "**/Cargo.toml", ".cargo/audit.toml", ".github/workflows/audit.yml"]
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked --version 0.23.0
+      # The zip advisories ignored in .cargo/audit.toml are only safe while nothing unpacks an
+      # archive onto the file system.
+      - name: No zip extraction onto the file system
+        run: |
+          if grep -rnE '\.extract\(|ZipStreamReader|extract_unwrapped' --include='*.rs' apps crates xtask; then
+            echo "::error::zip extraction is used: the advisories ignored in .cargo/audit.toml now apply"
+            exit 1
+          fi
+      - name: cargo audit
+        run: cargo audit --deny warnings

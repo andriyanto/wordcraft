@@ -23,15 +23,15 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: storytold/craft-common-actions/.github/workflows/refresh-contributors.yml@main
+    uses: storytold/craft-common-actions/.github/workflows/refresh-contributors.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
   release:
     needs: credits
     # Only this job publishes the GitHub release, so only it gets write access.
     permissions:
       contents: write
       packages: write
-    # Intentionally tracked at @main (not SHA-pinned) so org-wide CI improvements, security fixes, and build optimizations propagate without PR churn across all craftapp repos.
-    uses: storytold/craft-common-actions/.github/workflows/release.yml@main
+    # Pinned to a commit, not @main: a change to the shared workflows reaches this repository (and, for a release, its signing secrets) only through a reviewed bump of this hash.
+    uses: storytold/craft-common-actions/.github/workflows/release.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
     with:
       app-name: wordcraft
       app-title: WordCraft
