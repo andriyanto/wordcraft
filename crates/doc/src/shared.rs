@@ -83,6 +83,12 @@ impl<T: Shareable> Shared<T> {
         Arc::unwrap_or_clone(self.0)
     }
 
+    /// The address of the value held: the same for everything that shares it, and no other
+    /// value's while something holds this one. For memoising what is worked out from it.
+    pub fn as_ptr(this: &Self) -> *const T {
+        Arc::as_ptr(&this.0)
+    }
+
     /// Whether `a` and `b` are the same allocation (so certainly equal).
     pub fn same(a: &Self, b: &Self) -> bool {
         Arc::ptr_eq(&a.0, &b.0)
