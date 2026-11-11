@@ -6,7 +6,7 @@ fn reference(id: u32, kind: NoteKind) -> InlineObject {
 }
 
 fn styled(len: usize, style: &str) -> Run {
-    Run { len, props: CharProps { style: Some(style.into()), italic: Some(true), ..Default::default() } }
+    Run { len, props: CharProps { style: Some(style.into()), italic: Some(true), ..Default::default() }.into() }
 }
 
 #[test]

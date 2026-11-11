@@ -39,7 +39,7 @@ pub fn specs() -> Vec<CommandSpec> {
 /// The paragraph props at the caret (the selection start for a selection).
 fn para_props(s: &Session) -> ParaProps {
     let (a, _) = s.sel.ordered();
-    s.doc.para_at(&a).map(|p| p.props.clone()).unwrap_or_default()
+    s.doc.para_at(&a).map(|p| p.props.clone()).unwrap_or_default().into_inner()
 }
 
 /// The direct character props at the caret (the first selected character for a selection).

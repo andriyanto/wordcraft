@@ -122,7 +122,7 @@ pub(super) fn set_props(s: &mut Session, v: &Value) -> CmdResult {
     let story = s.sel.focus.story;
     for path in crate::cmd::selected_paths(s) {
         let Some(para) = s.doc.para(story, &path) else { continue };
-        let rtl = s.doc.styles.resolve_para(&para.props.clone().overlaid(&props)).bidi;
+        let rtl = s.doc.styles.resolve_para(&(*para.props).clone().overlaid(&props)).bidi;
         let anchor_lock = props
             .frame
             .as_ref()

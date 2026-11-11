@@ -115,7 +115,7 @@ fn a_chain_whose_story_shows_little_still_pays_for_its_text() {
             let mut p = Paragraph::with_text(&format!("{shown}{hidden}"), Default::default());
             p.runs = vec![
                 wordcraft_doc::para::Run { len: shown.len(), props: Default::default() },
-                wordcraft_doc::para::Run { len: hidden.len(), props: hide.clone() },
+                wordcraft_doc::para::Run { len: hidden.len(), props: hide.clone().into() },
             ];
             p.touch();
             para_block(p)

@@ -824,7 +824,7 @@ fn painter_pick(s: &mut Session) {
     // A symbol's own font isn't formatting to paint onto text.
     let chr = s.doc.para_at(&f).map(|p| p.props_of_char(f.off).clone().without_symbol()).unwrap_or_default();
     let para = s.doc.para_at(&f).map(|p| p.props.clone()).unwrap_or_default();
-    s.painter = Some((chr, para, false));
+    s.painter = Some((chr, para.into_inner(), false));
 }
 
 fn painter(s: &mut Session, v: &Value) -> CmdResult {

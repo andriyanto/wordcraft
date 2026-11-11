@@ -290,7 +290,7 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
         if blocks.is_empty() {
             blocks.push(para_block(Paragraph::new()));
         }
-        cells.push(Cell { props: CellProps { span: 1, ..Default::default() }, blocks, controls: Default::default() });
+        cells.push(Cell { props: CellProps { span: 1, ..Default::default() }.into(), blocks, controls: Default::default() });
     }
     fn build_row(mut cells: Vec<Cell>, info: &RowInfo) -> Row {
         // Per-cell overrides first (sprm cell indices count pre-merge cells), then merges.
@@ -364,7 +364,7 @@ pub(crate) fn assemble(paras: Vec<ParaOut>) -> Blocks {
             }
         } else {
             out.push(Arc::new(Block::Table(Table {
-                props: props.clone(),
+                props: props.clone().into(),
                 grid: grid.to_vec(),
                 rows: std::mem::take(rows),
                 controls: Default::default(),

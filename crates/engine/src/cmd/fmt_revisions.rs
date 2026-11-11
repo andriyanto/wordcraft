@@ -116,8 +116,8 @@ impl Recorder<'_> {
                 j += 1;
             }
         }
-        let mark = self.change(&b.mark, &a.mark, CharProps::formatting, |c| &c.fmt_change);
-        let props = self.change(&b.props, &a.props, ParaProps::formatting, |p| &p.fmt_change);
+        let mark = self.change(&*b.mark, &*a.mark, CharProps::formatting, |c| &c.fmt_change);
+        let props = self.change(&*b.props, &*a.props, ParaProps::formatting, |p| &p.fmt_change);
         if runs.is_empty() && mark.is_none() && props.is_none() {
             return;
         }
@@ -155,7 +155,7 @@ impl Recorder<'_> {
                 }
                 (Block::Table(tb), Block::Table(ta)) if tb.rows.len() == ta.rows.len() && tb.grid == ta.grid => {
                     let Block::Table(ta) = Arc::make_mut(a) else { continue };
-                    if let Some(Replacement(w)) = self.change(&tb.props, &ta.props, strip_table, |t| &t.fmt_change) {
+                    if let Some(Replacement(w)) = self.change(&*tb.props, &*ta.props, strip_table, |t| &t.fmt_change) {
                         ta.props.fmt_change = w;
                     }
                     for (rb, ra) in tb.rows.iter().zip(ta.rows.iter_mut()) {
@@ -167,7 +167,7 @@ impl Recorder<'_> {
                         }
                         for (cb, ca) in rb.cells.iter().zip(ra.cells.iter_mut()) {
                             // Merges are structure, not formatting: span and vertical merge stay out.
-                            if let Some(Replacement(w)) = self.change(&cb.props, &ca.props, strip_cell, |c| &c.fmt_change) {
+                            if let Some(Replacement(w)) = self.change(&*cb.props, &*ca.props, strip_cell, |c| &c.fmt_change) {
                                 ca.props.fmt_change = w;
                             }
                             self.blocks(&cb.blocks, &mut ca.blocks, depth + 1);
@@ -392,7 +392,7 @@ pub fn resolve_containers(blocks: &mut Blocks, accept: bool, depth: usize) {
 /// Accept or reject a table's own change (not its rows' or cells').
 pub fn resolve_table(t: &mut Table, accept: bool) {
     if let Some(ch) = t.props.fmt_change.take().filter(|_| !accept) {
-        t.props = TableProps { fmt_change: None, ..ch.old };
+        t.props = TableProps { fmt_change: None, ..ch.old }.into();
     }
 }
 
@@ -406,7 +406,7 @@ pub fn resolve_row(r: &mut Row, accept: bool) {
 /// Accept or reject a cell's change. Merges are the table's structure, not formatting: they stay.
 pub fn resolve_cell(c: &mut Cell, accept: bool) {
     if let Some(ch) = c.props.fmt_change.take().filter(|_| !accept) {
-        c.props = CellProps { fmt_change: None, span: c.props.span, vmerge: c.props.vmerge, ..ch.old };
+        c.props = CellProps { fmt_change: None, span: c.props.span, vmerge: c.props.vmerge, ..ch.old }.into();
     }
 }
 

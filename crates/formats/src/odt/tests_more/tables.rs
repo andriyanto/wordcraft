@@ -19,7 +19,7 @@ fn table_doc(styles: &str, cells: [&str; 4]) -> Document {
 
 fn cells(d: &Document) -> Vec<CellProps> {
     let t = d.body.iter().find_map(|b| if let Block::Table(t) = &**b { Some(t.clone()) } else { None }).expect("a table");
-    t.rows.iter().flat_map(|r| r.cells.iter().map(|c| c.props.clone())).collect()
+    t.rows.iter().flat_map(|r| r.cells.iter().map(|c| (*c.props).clone())).collect()
 }
 
 fn side(b: Option<Borders>, f: fn(&Borders) -> Option<Border>) -> Option<(BorderStyle, f32)> {

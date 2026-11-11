@@ -17,7 +17,7 @@ const CITE: &str = r#"ADDIN ZOTERO_ITEM CSL_CITATION {"citationID":"k1","citatio
 fn objects_para(objects: Vec<InlineObject>) -> Paragraph {
     let mut p = Paragraph::new();
     p.text = std::iter::repeat_n(OBJ, objects.len()).collect();
-    p.runs = vec![Run { len: p.text.len(), props: CharProps::default() }];
+    p.runs = vec![Run { len: p.text.len(), props: CharProps::default().into() }];
     p.objects = objects;
     p
 }

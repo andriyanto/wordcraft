@@ -575,7 +575,7 @@ fn outside(doc: &Document, mode: &HoleMode) -> Vec<Piece> {
                 flush(&mut out, &mut piece, props, in_hole(&open, &fillable));
             }
             if !in_hole(&open, &fillable) {
-                out.push(Piece::Mark(Box::new(p.props.clone()), p.mark.clone()));
+                out.push(Piece::Mark(Box::new(p.props.clone().into_inner()), p.mark.clone().into_inner()));
             }
             let ancestors = (1..path.0.len()).filter_map(|n| path.0.get(..n));
             if out.len() > pieces {
@@ -606,7 +606,7 @@ fn structure(blocks: &Blocks, prefix: &mut Vec<u32>, protected: &HashSet<Vec<u32
         let Block::Table(t) = &**b else { continue };
         prefix.push(u32::try_from(i).unwrap_or(u32::MAX));
         if guarded(prefix) {
-            out.push(Piece::Table(Box::new(t.props.clone()), t.grid.clone()));
+            out.push(Piece::Table(Box::new(t.props.clone().into_inner()), t.grid.clone()));
         }
         for (r, row) in t.rows.iter().enumerate() {
             prefix.push(u32::try_from(r).unwrap_or(u32::MAX));
@@ -616,7 +616,7 @@ fn structure(blocks: &Blocks, prefix: &mut Vec<u32>, protected: &HashSet<Vec<u32
             for (c, cell) in row.cells.iter().enumerate() {
                 prefix.push(u32::try_from(c).unwrap_or(u32::MAX));
                 if guarded(prefix) {
-                    out.push(Piece::Cell(Box::new(cell.props.clone())));
+                    out.push(Piece::Cell(Box::new(cell.props.clone().into_inner())));
                 }
                 structure(&cell.blocks, prefix, protected, holding, out, depth + 1);
                 prefix.pop();

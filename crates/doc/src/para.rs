@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::props::{CharProps, ParaProps};
 use crate::section::SectionProps;
+use crate::shared::Shared;
 use crate::{DocError, Result};
 
 mod float;
@@ -28,11 +29,11 @@ pub use run::{COLUMN_BREAK, LINE_BREAK, NB_HYPHEN, NBSP, OBJ, PAGE_BREAK, Run, S
 pub struct Paragraph {
     pub text: String,
     pub runs: Vec<Run>,
-    #[serde(default, skip_serializing_if = "ParaProps::is_empty")]
-    pub props: ParaProps,
+    #[serde(default, skip_serializing_if = "Shared::<ParaProps>::is_unset")]
+    pub props: Shared<ParaProps>,
     /// Formatting of the paragraph mark (used when typing into an empty paragraph).
-    #[serde(default, skip_serializing_if = "CharProps::is_empty")]
-    pub mark: CharProps,
+    #[serde(default, skip_serializing_if = "Shared::<CharProps>::is_unset")]
+    pub mark: Shared<CharProps>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub objects: Vec<InlineObject>,
     /// Set when this paragraph ends a section (OOXML keeps `w:sectPr` on the last paragraph).
@@ -65,8 +66,8 @@ impl Paragraph {
         Paragraph {
             text: String::new(),
             runs: Vec::new(),
-            props: ParaProps::default(),
-            mark: CharProps::default(),
+            props: ParaProps::default().into(),
+            mark: CharProps::default().into(),
             objects: Vec::new(),
             section: None,
             rev: next_rev(),
@@ -77,10 +78,10 @@ impl Paragraph {
         let mut p = Paragraph::new();
         let clean: String = text.chars().filter(|c| *c != OBJ).collect();
         if !clean.is_empty() {
-            p.runs.push(Run { len: clean.len(), props: props.clone() });
+            p.runs.push(Run { len: clean.len(), props: props.clone().into() });
         }
         p.text = clean;
-        p.mark = props;
+        p.mark = props.into();
         p
     }
     pub fn styled(mut self, style: &str) -> Self {
@@ -225,7 +226,7 @@ impl Paragraph {
         self.runs.iter().map(move |r| {
             let a = s;
             s += r.len;
-            (a..s, &r.props)
+            (a..s, &*r.props)
         })
     }
 
@@ -306,7 +307,7 @@ impl Paragraph {
             }
             start += r.len;
         }
-        self.runs.insert(idx.min(self.runs.len()), Run { len, props });
+        self.runs.insert(idx.min(self.runs.len()), Run { len, props: props.into() });
         self.normalize();
     }
 
@@ -356,7 +357,7 @@ impl Paragraph {
                 let revisions = (self.mark.ins, self.mark.del, self.mark.fmt_change.clone());
                 let mut mark = self.props_of_char(a).clone();
                 (mark.ins, mark.del, mark.fmt_change) = revisions;
-                self.mark = mark;
+                self.mark = mark.into();
             }
         }
         let k0 = self.objects_before(a);
@@ -465,13 +466,13 @@ impl Paragraph {
             text: tail_text,
             runs: tail_runs,
             props: self.props.clone(),
-            mark: if self.text.is_empty() && off == 0 { self.mark.clone() } else { carry },
+            mark: if self.text.is_empty() && off == 0 { self.mark.clone() } else { carry.into() },
             objects: tail_objs,
             section: self.section.take(),
             rev: next_rev(),
         };
         if tail.text.is_empty() {
-            tail.mark = self.props_at(off).unlinked();
+            tail.mark = self.props_at(off).unlinked().into();
         }
         self.normalize();
         tail.normalize();
@@ -761,7 +762,7 @@ mod tests {
         props.ins = Some(3);
         props.del = Some(4);
         let mut p = Paragraph::with_text("Hello", props);
-        p.mark = bold();
+        p.mark = bold().into();
         p.delete(0, 5).unwrap();
         assert!(p.is_empty());
         assert_eq!(p.mark.bold, Some(true));

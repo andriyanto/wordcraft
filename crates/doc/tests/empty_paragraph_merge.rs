@@ -8,7 +8,7 @@ fn fixture(first: &str, style: Option<&str>) -> Document {
     let p = d.para_mut(StoryRef::Body, &Path::top(0)).unwrap();
     p.props.style = Some("Heading1".into());
     p.props.outline_level = Some(0);
-    p.mark = CharProps { size: Some(40.0), bold: Some(true), ..Default::default() };
+    p.mark = CharProps { size: Some(40.0), bold: Some(true), ..Default::default() }.into();
     let p = d.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
     p.props = ParaProps {
         style: style.map(str::to_string),
@@ -17,8 +17,9 @@ fn fixture(first: &str, style: Option<&str>) -> Document {
         space_after: Some(7.0),
         keep_next: Some(false),
         ..Default::default()
-    };
-    p.mark = CharProps { size: Some(11.0), bold: Some(false), lang: Some("en-GB".into()), ..Default::default() };
+    }
+    .into();
+    p.mark = CharProps { size: Some(11.0), bold: Some(false), lang: Some("en-GB".into()), ..Default::default() }.into();
     p.format(0, 4, &|c| c.italic = Some(true)).unwrap();
     d
 }

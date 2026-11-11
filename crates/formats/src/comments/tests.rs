@@ -3,7 +3,7 @@ use wordcraft_doc::{Block, CharProps, Comment, Paragraph, PartKind, Run, Table, 
 
 fn paragraph(text: String, objects: Vec<InlineObject>) -> Paragraph {
     let len = text.len();
-    Paragraph { text, objects, runs: vec![Run { len, props: CharProps::default() }], ..Paragraph::new() }
+    Paragraph { text, objects, runs: vec![Run { len, props: CharProps::default().into() }], ..Paragraph::new() }
 }
 
 fn comment(doc: &mut Document, id: u32, author: &str, parent: Option<u32>, text: &str) {

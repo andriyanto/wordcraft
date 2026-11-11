@@ -212,7 +212,7 @@ fn app_with(text: &str) -> WordApp {
 }
 
 fn props(app: &WordApp) -> wordcraft_doc::props::ParaProps {
-    app.session.doc.para_at(&app.session.sel.focus).map(|p| p.props.clone()).unwrap_or_default()
+    app.session.doc.para_at(&app.session.sel.focus).map(|p| p.props.clone()).unwrap_or_default().into_inner()
 }
 
 /// #819: the text a shortcut sends with its key isn't typed into the box it opened, whether it
@@ -455,7 +455,7 @@ fn ok_edit(app: &mut WordApp, edit: impl FnOnce(&mut Dialog)) {
 
 /// The `i`th paragraph's own formatting.
 fn para_props(app: &WordApp, i: usize) -> wordcraft_doc::props::ParaProps {
-    app.session.doc.para(wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(i)).map(|p| p.props.clone()).unwrap_or_default()
+    app.session.doc.para(wordcraft_doc::StoryRef::Body, &wordcraft_doc::Path::top(i)).map(|p| p.props.clone()).unwrap_or_default().into_inner()
 }
 
 /// Three paragraphs, the first centred, indented, 30 pt after, kept with the next and with a

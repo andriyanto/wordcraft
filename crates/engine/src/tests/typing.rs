@@ -2209,7 +2209,7 @@ fn plain_text_paste_keeps_an_empty_paragraph_in_a_list() {
 
 /// Each body paragraph's text and paragraph formatting.
 fn para_formats(s: &Session) -> Vec<(String, wordcraft_doc::props::ParaProps)> {
-    s.doc.body.iter().filter_map(|b| b.as_para()).map(|p| (p.text.clone(), p.props.clone())).collect()
+    s.doc.body.iter().filter_map(|b| b.as_para()).map(|p| (p.text.clone(), (*p.props).clone())).collect()
 }
 
 /// Plain text from another program pastes as Keep Text Only does, as in Word: every pasted line
@@ -3464,7 +3464,7 @@ fn a_new_list_uses_the_requested_kind_after_a_mixed_format_list() {
         Arc::make_mut(&mut s.doc.numbering).abstracts[0].levels[0] = levels_for(opposite)[0].clone();
         let num = s.doc.numbering.nums[0].id;
         s.doc.para_mut(StoryRef::Body, &wordcraft_doc::Path::top(0)).unwrap().props.numbering = Some(NumRef { num, level: 1 });
-        s.doc.para_mut(StoryRef::Body, &wordcraft_doc::Path::top(1)).unwrap().props = ParaProps::default();
+        s.doc.para_mut(StoryRef::Body, &wordcraft_doc::Path::top(1)).unwrap().props = ParaProps::default().into();
         let before = s.doc.para_at(&Pos::body(0, 0)).unwrap().clone();
         s.sel = crate::Selection::caret(Pos::body(1, 0));
         run(&mut s, command, json!({}));
@@ -3576,7 +3576,7 @@ fn highlight_toggle_checks_past_the_resolved_run_limit() {
         for inherited in [false, true] {
             let mut doc = wordcraft_doc::Document::from_text(&format!("{}\nZ", "x".repeat(count)));
             doc.para_mut(StoryRef::Body, &Pos::body(0, 0).path).unwrap().runs = (0..count)
-                .map(|i| Run { len: 1, props: CharProps { highlight: Some(Highlight::Blue), bold: Some(i % 2 == 0), ..Default::default() } })
+                .map(|i| Run { len: 1, props: CharProps { highlight: Some(Highlight::Blue), bold: Some(i % 2 == 0), ..Default::default() }.into() })
                 .collect();
             if inherited {
                 Arc::make_mut(&mut doc.styles).default_chr.highlight = Some(Highlight::Yellow);

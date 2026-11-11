@@ -401,7 +401,7 @@ fn long_fragmented_hidden_headings_export_in_linear_time() {
             h.runs = (0..n)
                 .map(|i| {
                     let hidden = !(visible_every_other && i % 2 == 1);
-                    wordcraft_doc::Run { len: 1, props: CharProps { hidden: Some(hidden), bold: Some(i % 4 < 2), ..Default::default() } }
+                    wordcraft_doc::Run { len: 1, props: CharProps { hidden: Some(hidden), bold: Some(i % 4 < 2), ..Default::default() }.into() }
                 })
                 .collect();
             para_block(h)

@@ -225,8 +225,8 @@ impl Reader<'_> {
         if let Some(ppr) = e.child("w:pPr") {
             let (mut props, mark) = self.pc.ppr(ppr);
             crate::read::props::resolve_level_only(&self.doc.styles, &mut props, "Normal");
-            para.props = props;
-            para.mark = mark;
+            para.props = props.into();
+            para.mark = mark.into();
             // A tracked paragraph mark (ECMA-376 §17.13.5.16 / §17.13.5.15): `w:ins` / `w:del`
             // in the mark's `w:rPr`.
             if let Some(rpr) = ppr.child("w:rPr") {
@@ -324,7 +324,7 @@ impl Reader<'_> {
     fn read_table(&mut self, sc: &mut StoryCtx, t: &El, rels: &Rels, depth: usize) -> Option<Table> {
         let mut table = Table::default();
         if let Some(p) = t.child("w:tblPr") {
-            table.props = self.pc.tblpr(p);
+            table.props = self.pc.tblpr(p).into();
             if let Some(ch) = p.child("w:tblPrChange") {
                 let old = ch.child("w:tblPr").map(|o| self.pc.tblpr(o)).unwrap_or_default();
                 table.props.fmt_change = PropChange::boxed(self.revision(RevisionKind::Format, ch), old);
@@ -364,7 +364,7 @@ impl Reader<'_> {
                 let mut blocks = Blocks::new();
                 self.read_blocks(sc, tc, rels, &mut blocks, depth + 4);
                 self.flush_pending(sc, &mut blocks);
-                row.cells.push(Cell { props, blocks, controls: cell_controls });
+                row.cells.push(Cell { props: props.into(), blocks, controls: cell_controls });
             }
             if !row.cells.is_empty() {
                 table.rows.push(row);

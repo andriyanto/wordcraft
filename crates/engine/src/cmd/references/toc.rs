@@ -592,7 +592,7 @@ fn regenerate_toc(s: &mut Session, leader: Option<TabLeader>, tabs: &[(String, V
                 let field = InlineObject::Field { instr, result: page.to_string(), locked: false, dirty: false, code: false, form: String::new() };
                 para.insert_object(para.len(), field, &props)?;
             }
-            para.mark = CharProps::default();
+            para.mark = CharProps::default().into();
             if e.text.contains('\t') {
                 para.props.tabs = tabs.iter().find(|(style, _)| Some(style) == para.props.style.as_ref()).map(|(_, tabs)| tabs.clone());
             }

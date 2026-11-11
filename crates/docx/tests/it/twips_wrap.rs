@@ -19,7 +19,7 @@ fn docx(body: &str) -> Vec<u8> {
 
 fn props(body: &str) -> Vec<ParaProps> {
     let d: Document = wordcraft_docx::read(&docx(body)).unwrap();
-    d.body.iter().filter_map(|b| b.as_para()).map(|p| p.props.clone()).collect()
+    d.body.iter().filter_map(|b| b.as_para()).map(|p| (*p.props).clone()).collect()
 }
 
 #[test]

@@ -809,7 +809,7 @@ fn graphic_group(
 /// drawings' formatting), for
 /// formats that keep it (flows asked for paragraph formatting).
 fn empty_mark(out: &Para, p: &Paragraph, opts: FlowOpts) -> Option<Box<CharProps>> {
-    let m = CharProps { ins: None, del: None, fmt_change: None, ..p.mark.clone() };
+    let m = CharProps { ins: None, del: None, fmt_change: None, ..p.mark.clone().into_inner() };
     (opts.paras && out.textless() && !m.is_empty()).then(|| Box::new(m))
 }
 
@@ -1050,18 +1050,18 @@ fn with_cell_text(doc: &Document, blocks: &Blocks, chr: &CharProps, align: Optio
                     for r in &mut p.runs {
                         let mut props = doc.styles.table_char_patch(pstyle.as_deref(), r.props.style.as_deref(), chr);
                         props.overlay(&r.props);
-                        r.props = props;
+                        r.props = props.into();
                     }
                     let mut mark = doc.styles.table_char_patch(pstyle.as_deref(), p.mark.style.as_deref(), chr);
                     mark.overlay(&p.mark);
-                    p.mark = mark;
+                    p.mark = mark.into();
                 }
                 // A part's alignment is table style paragraph formatting too, under the paragraph's styles.
                 let table = ParaProps { align: align.or(para.align), ..para.clone() };
                 if !table.is_empty() {
                     let mut props = doc.styles.table_para_patch(&p.props, &table);
                     props.overlay(&p.props);
-                    p.props = props;
+                    p.props = props.into();
                 }
                 Arc::new(Block::Para(p))
             }

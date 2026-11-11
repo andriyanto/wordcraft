@@ -483,7 +483,7 @@ mod tests {
                 props.del = Some(0);
             }
             p.text.push_str(text);
-            p.runs.push(Run { len: text.len(), props });
+            p.runs.push(Run { len: text.len(), props: props.into() });
         }
         p
     }
@@ -511,7 +511,7 @@ mod tests {
     fn objects_contribute_their_plain_text_and_split_mapping_stops() {
         let mut p = Paragraph::new();
         p.text = format!("a{OBJ}b");
-        p.runs = vec![Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![Run { len: p.text.len(), props: CharProps::default().into() }];
         p.objects.push(InlineObject::Equation { linear: "x+y".into(), display: false, math: Default::default() });
         let view = VisibleParagraph::new(&p);
         assert_eq!(view.visible_len(), 5);
@@ -612,7 +612,7 @@ mod tests {
         let mut doc = Document::from_text("");
         let mut p = Paragraph::new();
         p.text = format!("a{OBJ}b");
-        p.runs = vec![Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![Run { len: p.text.len(), props: CharProps::default().into() }];
         p.objects.push(InlineObject::Equation { linear: "x+y".into(), display: false, math: Default::default() });
         doc.body = vec![std::sync::Arc::new(crate::Block::Para(p))];
         let caret = Pos::body(0, 5);
@@ -695,7 +695,7 @@ mod tests {
         use crate::control::{ContentControl, ControlKind};
         let mut p = Paragraph::new();
         p.text = format!("pre{OBJ}Ada{OBJ}X");
-        p.runs = vec![Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![Run { len: p.text.len(), props: CharProps::default().into() }];
         let mut ctl = ContentControl::new(ControlKind::RichText);
         ctl.placeholder_text = "Enter name".into();
         p.objects.push(InlineObject::ControlStart { control: Box::new(ctl) });

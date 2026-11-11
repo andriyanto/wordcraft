@@ -791,7 +791,7 @@ impl Document {
                         continue;
                     }
                     while runs.next_if(|(r, _)| r.end <= off).is_some() {}
-                    let props = runs.peek().filter(|(r, _)| r.contains(&off)).map_or(&p.mark, |(_, c)| *c);
+                    let props = runs.peek().filter(|(r, _)| r.contains(&off)).map_or(&*p.mark, |(_, c)| *c);
                     moved.push((o.clone(), props.clone()));
                 }
             }

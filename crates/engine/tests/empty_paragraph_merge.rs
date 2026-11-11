@@ -14,9 +14,9 @@ fn fixture() -> Session {
     let mut s = Session::new(Document::from_text("\nBody paragraph.\nReal heading\n"));
     run(&mut s, "para.style", json!({"style": "Heading1"}));
     s.doc.para_mut(StoryRef::Body, &Path::top(0)).unwrap().mark =
-        CharProps { font: Some("Source Sans 3".into()), size: Some(40.0), bold: Some(true), ..Default::default() };
+        CharProps { font: Some("Source Sans 3".into()), size: Some(40.0), bold: Some(true), ..Default::default() }.into();
     let p = s.doc.para_mut(StoryRef::Body, &Path::top(1)).unwrap();
-    p.mark = CharProps { size: Some(11.0), bold: Some(false), ..Default::default() };
+    p.mark = CharProps { size: Some(11.0), bold: Some(false), ..Default::default() }.into();
     p.format(5, 14, &|c| c.italic = Some(true)).unwrap();
     s.doc.para_mut(StoryRef::Body, &Path::top(2)).unwrap().props.style = Some("Heading2".into());
     s

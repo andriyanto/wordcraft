@@ -548,7 +548,7 @@ impl ParaBuild {
         let len = c.len_utf8();
         match self.runs.last_mut() {
             Some(r) if r.props == props => r.len += len,
-            _ => self.runs.push(Run { len, props }),
+            _ => self.runs.push(Run { len, props: props.into() }),
         }
         self.text.push(c);
     }
@@ -560,7 +560,7 @@ impl ParaBuild {
         let len = c.len_utf8();
         match self.runs.last_mut() {
             Some(r) if self.run_gen == Some(generation) || r.props == *props => r.len += len,
-            _ => self.runs.push(Run { len, props: props.clone() }),
+            _ => self.runs.push(Run { len, props: props.clone().into() }),
         }
         self.run_gen = Some(generation);
         self.text.push(c);
@@ -669,8 +669,8 @@ fn walk<'a>(ctx: &WalkCtx<'a>, cp_start: u32, cp_end: u32, pics: &mut media::Pic
                     para: Paragraph {
                         text: done.text,
                         runs: done.runs,
-                        props: done.props,
-                        mark: done.mark,
+                        props: done.props.into(),
+                        mark: done.mark.into(),
                         objects: done.objects,
                         ..Default::default()
                     },
@@ -772,7 +772,14 @@ fn walk<'a>(ctx: &WalkCtx<'a>, cp_start: u32, cp_end: u32, pics: &mut media::Pic
     if !pb.text.is_empty() {
         let done = pb;
         out.push(ParaOut {
-            para: Paragraph { text: done.text, runs: done.runs, props: done.props, mark: done.mark, objects: done.objects, ..Default::default() },
+            para: Paragraph {
+                text: done.text,
+                runs: done.runs,
+                props: done.props.into(),
+                mark: done.mark.into(),
+                objects: done.objects,
+                ..Default::default()
+            },
             end_cp: cp_end,
             row: None,
         });

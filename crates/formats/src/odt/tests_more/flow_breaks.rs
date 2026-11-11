@@ -23,7 +23,7 @@ fn para_style(name: &str, para: &str, text: &str) -> String {
 }
 
 fn paras(d: &wordcraft_doc::Document) -> Vec<&wordcraft_doc::props::ParaProps> {
-    d.body.iter().filter_map(|b| b.as_para()).map(|p| &p.props).collect()
+    d.body.iter().filter_map(|b| b.as_para()).map(|p| &*p.props).collect()
 }
 
 #[test]

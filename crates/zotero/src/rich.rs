@@ -49,7 +49,7 @@ fn from_doc(d: &Document, base: &CharProps) -> Vec<Paragraph> {
     for b in d.body.iter().take(MAX_PARAS) {
         let Some(src) = b.as_para() else { continue };
         let mut p = Paragraph::new();
-        p.mark = base.clone();
+        p.mark = base.clone().into();
         // Appended run by run, merging only with the run before; normalized once at the end.
         for (range, props) in src.run_ranges() {
             let Some(t) = src.text.get(range) else { continue };
@@ -62,7 +62,7 @@ fn from_doc(d: &Document, base: &CharProps) -> Vec<Paragraph> {
             match p.runs.last_mut() {
                 Some(last) if last.props == props || runs >= MAX_RUNS => last.len += t.len(),
                 _ => {
-                    p.runs.push(Run { len: t.len(), props });
+                    p.runs.push(Run { len: t.len(), props: props.into() });
                     runs += 1;
                 }
             }
@@ -79,7 +79,7 @@ fn plain(text: &str, base: &CharProps) -> Vec<Paragraph> {
         .take(MAX_PARAS)
         .map(|l| {
             let mut p = Paragraph::with_text(l.trim_end_matches('\r'), base.clone());
-            p.mark = base.clone();
+            p.mark = base.clone().into();
             p
         })
         .collect()

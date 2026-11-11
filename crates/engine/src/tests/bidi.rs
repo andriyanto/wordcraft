@@ -25,7 +25,7 @@ fn session(text: &str, rtl: bool) -> Session {
 }
 
 fn props(s: &Session, i: usize) -> wordcraft_doc::props::ParaProps {
-    s.doc.para(StoryRef::Body, &wordcraft_doc::Path::top(i)).unwrap().props.clone()
+    s.doc.para(StoryRef::Body, &wordcraft_doc::Path::top(i)).unwrap().props.clone().into_inner()
 }
 
 fn caret_x(s: &mut Session) -> f32 {

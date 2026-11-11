@@ -406,7 +406,7 @@ impl Bridge {
             let paths = s.doc.paths_between(&f.start, &end);
             for path in paths {
                 if let Ok(p) = s.doc.para_mut(f.start.story, &path) {
-                    p.props = ParaProps { style: Some(BIB_STYLE.into()), ..Default::default() };
+                    p.props = ParaProps { style: Some(BIB_STYLE.into()), ..Default::default() }.into();
                     p.touch();
                 }
             }

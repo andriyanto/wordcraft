@@ -10,7 +10,7 @@ use crate::{Blocks, Paragraph, para_block};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Cell {
     #[serde(default)]
-    pub props: CellProps,
+    pub props: crate::shared::Shared<CellProps>,
     pub blocks: Blocks,
     /// Content controls around the cell (see [`crate::control`]).
     #[serde(default, skip_serializing_if = "ControlWrap::is_empty")]
@@ -19,11 +19,15 @@ pub struct Cell {
 
 impl Cell {
     pub fn empty() -> Cell {
-        Cell { props: CellProps { span: 1, ..Default::default() }, blocks: vec![para_block(Paragraph::new())], controls: ControlWrap::default() }
+        Cell {
+            props: CellProps { span: 1, ..Default::default() }.into(),
+            blocks: vec![para_block(Paragraph::new())],
+            controls: ControlWrap::default(),
+        }
     }
     pub fn with_text(s: &str) -> Cell {
         Cell {
-            props: CellProps { span: 1, ..Default::default() },
+            props: CellProps { span: 1, ..Default::default() }.into(),
             blocks: vec![para_block(Paragraph::with_text(s, Default::default()))],
             controls: ControlWrap::default(),
         }
@@ -59,7 +63,7 @@ impl Row {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct Table {
     #[serde(default)]
-    pub props: TableProps,
+    pub props: crate::shared::Shared<TableProps>,
     /// Grid column widths, points.
     pub grid: Vec<f32>,
     pub rows: Vec<Row>,
@@ -159,7 +163,7 @@ impl Table {
         let cols = cols.clamp(1, MAX_COLS);
         let w = (width / cols as f32).max(6.0);
         Table {
-            props: TableProps { style: Some("TableGrid".into()), ..Default::default() },
+            props: TableProps { style: Some("TableGrid".into()), ..Default::default() }.into(),
             grid: vec![w; cols],
             rows: (0..rows)
                 .map(|_| Row {

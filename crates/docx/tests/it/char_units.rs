@@ -26,7 +26,7 @@ fn docx(body: &str) -> Vec<u8> {
 }
 
 fn props(d: &Document) -> Vec<ParaProps> {
-    d.body.iter().filter_map(|b| b.as_para()).map(|p| p.props.clone()).collect()
+    d.body.iter().filter_map(|b| b.as_para()).map(|p| (*p.props).clone()).collect()
 }
 
 #[test]
