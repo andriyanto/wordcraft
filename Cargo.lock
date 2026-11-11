@@ -211,15 +211,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
-dependencies = [
- "derive_arbitrary",
-]
-
-[[package]]
 name = "arboard"
 version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1155,7 +1146,7 @@ dependencies = [
  "verifysign",
  "winreg",
  "winsafe",
- "zip 9.1.0",
+ "zip",
 ]
 
 [[package]]
@@ -1321,17 +1312,6 @@ name = "deranged"
 version = "0.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e9de72ce2ad1f90dc62fa25f0f430ef85eb4b0d8fa0be4f30373bc40a21d28e"
-
-[[package]]
-name = "derive_arbitrary"
-version = "1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
-]
 
 [[package]]
 name = "dify"
@@ -6855,7 +6835,7 @@ dependencies = [
  "wordcraft-mcp",
  "wordcraft-render",
  "wordcraft-zotero",
- "zip 3.0.0",
+ "zip",
 ]
 
 [[package]]
@@ -6915,7 +6895,7 @@ dependencies = [
  "wordcraft-doc",
  "wordcraft-geom",
  "zeroize",
- "zip 3.0.0",
+ "zip",
 ]
 
 [[package]]
@@ -6948,7 +6928,7 @@ dependencies = [
  "wordcraft-pdf",
  "wordcraft-render",
  "zeroize",
- "zip 3.0.0",
+ "zip",
 ]
 
 [[package]]
@@ -6989,7 +6969,7 @@ dependencies = [
  "wordcraft-geom",
  "wordcraft-metafile",
  "zeroize",
- "zip 3.0.0",
+ "zip",
 ]
 
 [[package]]
@@ -7105,7 +7085,7 @@ dependencies = [
  "wordcraft-render",
  "wordcraft-zotero",
  "zbus",
- "zip 3.0.0",
+ "zip",
 ]
 
 [[package]]
@@ -7539,20 +7519,6 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12598812502ed0105f607f941c386f43d441e00148fce9dec3ca5ffb0bde9308"
-dependencies = [
- "arbitrary",
- "crc32fast",
- "flate2",
- "indexmap",
- "memchr",
- "zopfli",
-]
-
-[[package]]
-name = "zip"
 version = "9.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2886b00003a72c4ccee3f42cfc34908d33b2508a74d827dc2a4244706475c704"
@@ -7565,6 +7531,7 @@ dependencies = [
  "nix",
  "typed-path",
  "windows-sys 0.61.2",
+ "zopfli",
 ]
 
 [[package]]
