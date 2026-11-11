@@ -269,6 +269,8 @@ impl Session {
             last_highlight: _,
             // Keyed by document id and revision, so one cache serves every document.
             protect_facts: _,
+            // Keyed by the blocks themselves, so one cache serves every document.
+            counts: _,
             // The input method talks to the window, whichever document it shows; the IME
             // context is keyed by `document_id`.
             ime_state_revision: _,

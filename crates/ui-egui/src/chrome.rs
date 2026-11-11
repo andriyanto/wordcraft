@@ -1074,15 +1074,9 @@ impl WordApp {
         // The count option changes the counts without a document change.
         let key = self.session.rev().wrapping_mul(2) | u64::from(self.session.prefs.count_notes);
         if self.status_counts.0 != key {
-            let text = self.session.counted_text();
-            self.status_counts = (
-                key,
-                StatusCounts {
-                    words: self.session.word_count(),
-                    chars: wordcraft_doc::count_chars(&text),
-                    chars_no_spaces: wordcraft_doc::count_chars_no_spaces(&text),
-                },
-            );
+            // Counted block by block: only what the edit changed is counted again.
+            let c = self.session.status_counts();
+            self.status_counts = (key, StatusCounts { words: c.words, chars: c.chars, chars_no_spaces: c.chars_no_spaces });
         }
         self.status_counts.1
     }

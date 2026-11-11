@@ -159,6 +159,9 @@ pub struct Session {
     /// inherit the origin.
     ime_origin: bool,
     cache: LayoutCache,
+    /// Each block's word and character counts, for [`Session::status_counts`]. Keyed by the
+    /// blocks themselves, so one cache serves every open document.
+    counts: wordcraft_doc::CountCache,
     layout: LayoutSlots,
     /// The word being typed, left without a spelling squiggle ([`TypedWord`]).
     typing: Option<TypedWord>,
