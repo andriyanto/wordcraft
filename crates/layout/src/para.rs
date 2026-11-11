@@ -104,6 +104,24 @@ pub struct ParaLayout {
 }
 
 impl ParaLayout {
+    /// Give back the room the layout's lists grew past what they hold. They are built by
+    /// appending, which leaves each with up to twice what it needs, and a laid-out paragraph is
+    /// then kept as it is for as long as its text is: in a long document that spare room was
+    /// nearly a third of the layout's memory (a cluster is 64 bytes, and there is one a
+    /// character).
+    pub(crate) fn release_spare_room(&mut self) {
+        self.clusters.shrink_to_fit();
+        self.glyphs.shrink_to_fit();
+        self.styles.shrink_to_fit();
+        self.bidi_levels.shrink_to_fit();
+        self.hyph_after.shrink_to_fit();
+        self.lines.shrink_to_fit();
+        for line in &mut self.lines {
+            line.xs.shrink_to_fit();
+            line.vis.shrink_to_fit();
+        }
+    }
+
     /// The room a horizontal rule at cluster `k` is placed in, from its left edge to the end of
     /// what the line has left. A first-line indent moves that end along (Word, measured with
     /// 50 % and fixed-width rules beside floats on either side and with first-line and hanging

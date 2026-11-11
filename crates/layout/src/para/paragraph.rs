@@ -725,6 +725,7 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     if gone {
         collapse(&mut pl);
     }
+    pl.release_spare_room();
     pl
 }
 
