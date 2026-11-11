@@ -19,6 +19,7 @@ pub mod cluster;
 pub mod collate;
 pub mod connector;
 pub mod control;
+pub mod counts;
 pub mod edit;
 pub mod effects;
 pub mod encoding;
@@ -60,6 +61,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 pub use control::{ContentControl, ControlKind, ControlLock, ControlRange, ControlWrap};
+pub use counts::{CountCache, DocCounts};
 pub use fields::FieldRange;
 pub use numbering::{ListKind, Numbering};
 pub use para::{InlineObject, Paragraph, Run};

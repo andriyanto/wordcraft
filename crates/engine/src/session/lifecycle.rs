@@ -124,6 +124,7 @@ impl Session {
             untitled,
             made_rev,
             protect_facts: std::sync::Mutex::new(None),
+            counts: wordcraft_doc::CountCache::new(),
             ime_body_epoch,
             ime_state_revision: None,
             ime_state_seen: None,

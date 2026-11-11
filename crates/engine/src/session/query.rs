@@ -274,6 +274,15 @@ impl Session {
         if self.prefs.count_notes { self.doc.counted_stories() } else { vec![StoryRef::Body] }
     }
 
+    /// The status bar's counts: words as [`Session::word_count`] counts them, and the characters
+    /// with and without spaces of [`Session::counted_text`]. Only the blocks changed since the last
+    /// call are counted again ([`wordcraft_doc::CountCache`]), so this is what to call after every
+    /// edit; the two it equals count the whole document each time.
+    pub fn status_counts(&mut self) -> wordcraft_doc::DocCounts {
+        let stories = self.counted_stories();
+        self.counts.counts(&self.doc, &stories)
+    }
+
     /// The whole document's text the counts cover (#2797): the stories [`Session::counted_stories`]
     /// names, joined with paragraph breaks, as the Word Count dialog counts them.
     pub fn counted_text(&self) -> String {
