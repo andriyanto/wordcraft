@@ -1961,7 +1961,8 @@ fn ole_object_without_a_picture_round_trips() {
     let body = r##"<w:p><w:r><w:object w:dxaOrig="1440" w:dyaOrig="720"><o:OLEObject Type="Embed" ProgID="Package" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1000000001" r:id="rId9"/></w:object></w:r><w:r><w:t>after</w:t></w:r></w:p>"##;
     let ole = "\u{d0}\u{cf} opaque OLE storage";
     let types = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/></Types>"#;
-    let bytes = docx(body, &[("rId9", "oleObject", "embeddings/oleObject1.bin")], &[("[Content_Types].xml", types), ("word/embeddings/oleObject1.bin", ole)]);
+    let bytes =
+        docx(body, &[("rId9", "oleObject", "embeddings/oleObject1.bin")], &[("[Content_Types].xml", types), ("word/embeddings/oleObject1.bin", ole)]);
     let d = wordcraft_docx::read(&bytes).unwrap();
     let Some(InlineObject::Image { media, w, h, ole: Some(_), .. }) = paras(&d)[0].objects.first() else { panic!("{:?}", paras(&d)[0].objects) };
     assert_eq!((media.as_str(), *w, *h), ("", 72.0, 36.0));

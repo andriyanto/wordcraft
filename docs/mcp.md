@@ -100,8 +100,11 @@ config works across the suite) keep the agent to the folders you give it:
   the name it is given, so that name must be inside the write root as well as what it leads to:
   a link outside the root pointing in is refused (#3735).
 - Read and write access are separate. Give the same folder twice for both; a root left out grants
-  none of its access (with only `--automation-read-root`, nothing can be written to disk). Without
-  either flag nothing changes.
+  none of its access (with only `--automation-read-root`, nothing can be written to disk).
+- Without either flag the headless server is confined to the folder it was started in, for
+  reading and writing: text in a document an agent opens can't steer it to the rest of your
+  files. `--allow-all-files` starts it unconfined (any file your account can reach); it can't be
+  combined with the two root flags. A running app (`--connect`) is not confined by any of them.
 - A path is made absolute against the server's working directory, then its links are followed: a
   file (or folder) link that leads out of a root is outside it. For a file that doesn't exist yet,
   its nearest existing folder's links are followed and the rest must be plain names, so `..` below a
