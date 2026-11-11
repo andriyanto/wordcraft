@@ -144,6 +144,9 @@ impl Reader<'_> {
     }
 
     fn read_run(&mut self, sc: &mut StoryCtx, pb: &mut PB, r: &El, rels: &Rels, ctx: &RunCtx, depth: usize) {
+        if !self.take_content() {
+            return;
+        }
         let props = match r.child("w:rPr") {
             Some(p) => self.run_props(p, ctx),
             None => self.run_props_none(ctx),

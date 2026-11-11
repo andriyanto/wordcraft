@@ -1953,6 +1953,34 @@ fn ole_object_round_trips() {
     assert!(matches!(paras(&back)[0].objects.first(), Some(InlineObject::Image { w: 144.0, ole: Some(_), .. })));
 }
 
+/// An object written without a picture (some producers leave the VML shape out) used to be
+/// dropped whole on reading, its embedded data with it. It is kept as an empty box of its stated
+/// size and written back.
+#[test]
+fn ole_object_without_a_picture_round_trips() {
+    let body = r##"<w:p><w:r><w:object w:dxaOrig="1440" w:dyaOrig="720"><o:OLEObject Type="Embed" ProgID="Package" ShapeID="_x0000_i1025" DrawAspect="Content" ObjectID="_1000000001" r:id="rId9"/></w:object></w:r><w:r><w:t>after</w:t></w:r></w:p>"##;
+    let ole = "\u{d0}\u{cf} opaque OLE storage";
+    let types = r#"<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="bin" ContentType="application/vnd.openxmlformats-officedocument.oleObject"/></Types>"#;
+    let bytes =
+        docx(body, &[("rId9", "oleObject", "embeddings/oleObject1.bin")], &[("[Content_Types].xml", types), ("word/embeddings/oleObject1.bin", ole)]);
+    let d = wordcraft_docx::read(&bytes).unwrap();
+    let Some(InlineObject::Image { media, w, h, ole: Some(_), .. }) = paras(&d)[0].objects.first() else { panic!("{:?}", paras(&d)[0].objects) };
+    assert_eq!((media.as_str(), *w, *h), ("", 72.0, 36.0));
+    assert!(paras(&d)[0].text.contains("after"));
+
+    let out = wordcraft_docx::write(&d).unwrap();
+    let files = unzip(&out);
+    let body = text(&files, "word/document.xml");
+    let rels = text(&files, "word/_rels/document.xml.rels");
+    let [ole_id] = attr_values(&body, "o:OLEObject", "r:id").try_into().unwrap();
+    let (kind, target) = rel(&rels, &ole_id);
+    assert!(kind.ends_with("/oleObject"), "{kind}");
+    assert_eq!(files.get(&part_at("word", &target)).map(Vec::as_slice), Some(ole.as_bytes()));
+
+    let back = wordcraft_docx::read(&out).unwrap();
+    assert!(matches!(paras(&back)[0].objects.first(), Some(InlineObject::Image { ole: Some(_), .. })));
+}
+
 #[test]
 fn an_unqualified_relationship_attribute_round_trips() {
     // A producer that left the relationship prefix out: the VML picture names its image with an

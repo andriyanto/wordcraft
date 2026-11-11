@@ -158,6 +158,34 @@ fn author_flag_cannot_claim_a_named_exception_after_protection() {
     assert!(s.run("text.insert", &json!({"text": "Changed"})).is_err());
 }
 
+/// With no root named the headless server is confined to its start folder; only
+/// `--allow-all-files` leaves it unconfined, and it doesn't combine with named roots.
+#[test]
+fn a_headless_mcp_server_is_confined_to_its_start_folder_by_default() {
+    use wordcraft_engine::file_access::Access;
+    let base = std::env::temp_dir().join(format!("wc-cli-default-roots-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(base.join("work")).unwrap();
+    std::fs::create_dir_all(base.join("elsewhere")).unwrap();
+    let (work, elsewhere) = (base.join("work"), base.join("elsewhere"));
+    let inside = work.join("a.docx").to_string_lossy().into_owned();
+    let outside = elsewhere.join("a.docx").to_string_lossy().into_owned();
+
+    let roots = headless_roots(None, false, &work).unwrap().expect("confined by default");
+    for access in [Access::Read, Access::Write] {
+        assert!(roots.check(&inside, access).is_ok());
+        assert!(roots.check(&outside, access).is_err());
+    }
+    assert!(headless_roots(None, true, &work).unwrap().is_none(), "--allow-all-files lifts it");
+
+    let named = wordcraft_engine::file_access::AutomationRoots::new(Some(&elsewhere), None).unwrap();
+    let kept = headless_roots(named.clone(), false, &work).unwrap().unwrap();
+    assert!(kept.check(&outside, Access::Read).is_ok() && kept.check(&inside, Access::Read).is_err(), "named roots are used as given");
+    assert!(headless_roots(named, true, &work).is_err());
+    assert!(validate_options("mcp", &args(&["--allow-all-files"]), MCP_OPTIONS).is_ok());
+    let _ = std::fs::remove_dir_all(base);
+}
+
 #[test]
 fn automation_root_flags_are_taken_out_of_the_mcp_arguments() {
     let base = std::env::temp_dir().join(format!("wc-cli-roots-{}", std::process::id()));

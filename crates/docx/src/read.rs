@@ -62,6 +62,23 @@ const MAX_HF_DEPTH: usize = 4;
 /// Most graphic work (items plus path segments, see `story::graphic_work`) built for one file's
 /// charts and diagrams; later ones are left empty.
 const MAX_GRAPHIC_WORK: usize = 2_000_000;
+/// Most paragraphs and runs read from one file, nested document chunks included. Each one costs
+/// far more memory in the model than in the file (an empty `<w:p/>` deflates to a fraction of a
+/// byte), so a small package of millions of them would otherwise take gigabytes and end the
+/// process; a file past the budget is refused with [`DocxError::Limit`] instead.
+pub const MAX_CONTENT: usize = 1_000_000;
+/// What a file past [`MAX_CONTENT`] says.
+const CONTENT_LIMIT: &str = "the document has too many paragraphs and runs";
+
+fn content_limit() -> DocxError {
+    DocxError::Limit(format!("{CONTENT_LIMIT} (more than {MAX_CONTENT})"))
+}
+
+/// Whether a read failed on [`MAX_CONTENT`].
+pub(crate) fn is_content_limit(e: &DocxError) -> bool {
+    matches!(e, DocxError::Limit(why) if why.starts_with(CONTENT_LIMIT))
+}
+
 /// Custom XML parts looked at for bibliography sources.
 const MAX_BIBLIOGRAPHY_PARTS: usize = 64;
 
@@ -119,6 +136,31 @@ pub(crate) struct Reader<'p> {
     pub theme_fills: shape_style::ThemeFills,
     /// The fill of the group being read (what its members' `a:grpFill` stands for).
     pub group_fill: Option<wordcraft_doc::fill::Fill>,
+    /// The file holds more paragraphs and runs than [`MAX_CONTENT`]: nothing more is read and
+    /// the read fails.
+    too_large: bool,
+}
+
+impl Reader<'_> {
+    /// Count one paragraph or run against the file's budget ([`MAX_CONTENT`]); false once it is
+    /// spent, and from then on [`Self::too_large`].
+    pub(crate) fn take_content(&mut self) -> bool {
+        match self.chunks.content.checked_sub(1) {
+            Some(left) => {
+                self.chunks.content = left;
+                true
+            }
+            None => {
+                self.too_large = true;
+                false
+            }
+        }
+    }
+
+    /// Whether the content budget is spent: the stories stop reading.
+    pub(crate) fn too_large(&self) -> bool {
+        self.too_large
+    }
 }
 
 /// The package path that internal relationship `id` points at, if it has type `kind` (an `rt`
@@ -149,9 +191,9 @@ pub(crate) fn read_opened(pkg: &Package, chunks: Option<ChunkImporter>) -> Resul
     read_opened_in(pkg, ChunkState::new(chunks)).map(|(doc, ..)| doc)
 }
 
-/// [`read_opened`] with what chunks may still bring in; also gives the chunks, chunk bytes and
-/// graphic work left of that.
-fn read_opened_in(pkg: &Package, chunks: ChunkState) -> Result<(Document, usize, u64, usize), DocxError> {
+/// [`read_opened`] with what chunks may still bring in; also gives the chunks, chunk bytes,
+/// content and graphic work left of that.
+fn read_opened_in(pkg: &Package, chunks: ChunkState) -> Result<(Document, usize, u64, usize, usize), DocxError> {
     let root_rels = pkg.rels("");
     let main = root_rels.by_type(rt::OFFICE_DOC).filter(|r| !r.external).map(|r| r.target.clone()).unwrap_or_else(|| "word/document.xml".to_string());
     let Some(root) = pkg.xml_strict(&main)? else {
@@ -192,6 +234,7 @@ fn read_opened_in(pkg: &Package, chunks: ChunkState) -> Result<(Document, usize,
         txbx_links: Vec::new(),
         theme_fills: Default::default(),
         group_fill: None,
+        too_large: false,
         chunks,
     };
     r.doc.missing_pictures.main = main.clone();
@@ -344,10 +387,13 @@ fn read_opened_in(pkg: &Package, chunks: ChunkState) -> Result<(Document, usize,
     if r.shape_ids {
         keep_glued_ids(&mut r.doc, &r.glued);
     }
-    let (left, bytes, graphic) = (r.chunks.left, r.chunks.bytes, r.chunks.graphic);
+    if r.too_large {
+        return Err(content_limit());
+    }
+    let (left, bytes, content, graphic) = (r.chunks.left, r.chunks.bytes, r.chunks.content, r.chunks.graphic);
     let mut doc = r.doc;
     doc.ensure_nonempty();
-    Ok((doc, left, bytes, graphic))
+    Ok((doc, left, bytes, content, graphic))
 }
 
 /// Most move ranges open at once, and most move names tracked, per file.

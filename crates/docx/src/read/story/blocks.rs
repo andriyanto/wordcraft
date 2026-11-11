@@ -11,6 +11,10 @@ impl Reader<'_> {
             return;
         }
         for e in parent.els() {
+            // The file's content budget is spent: the read fails, so nothing more is built.
+            if self.too_large() {
+                return;
+            }
             match e.name.as_str() {
                 "w:p" => {
                     let p = self.read_para(sc, e, rels, depth);
@@ -208,6 +212,9 @@ impl Reader<'_> {
     }
 
     fn read_para(&mut self, sc: &mut StoryCtx, e: &El, rels: &Rels, depth: usize) -> Paragraph {
+        if !self.take_content() {
+            return Paragraph::new();
+        }
         let mut pb = PB::default();
         let mut para = Paragraph::new();
         let mut mark_moves: [Option<&El>; 2] = [None, None];

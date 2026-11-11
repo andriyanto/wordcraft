@@ -50,13 +50,17 @@ USAGE:
   wordcraft-cli commands [--json]             list every command
   wordcraft-cli parity [--markdown]           feature-catalog parity
   wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
+                    [--allow-all-files]
                                               MCP server on stdio (headless, or bridged to the app).
                                               --automation-read-root / --automation-write-root confine
                                               the files the agent's commands read (open, insert text
                                               or picture, mail-merge data, templates…) and write (save,
                                               export, merge output…) to DIR, links followed; a root left
-                                              out grants none of its access. They apply to the headless
-                                              server and are an error with --connect.
+                                              out grants none of its access. With neither, the headless
+                                              server reads and writes only inside the folder it was
+                                              started in; --allow-all-files lifts that (any file you
+                                              can reach). The roots apply to the headless server and
+                                              are an error with --connect.
   wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
                                               run a Zotero command on a document (Zotero must be
                                               running): addEditCitation, addEditBibliography,
@@ -350,7 +354,28 @@ const RUN_OPTIONS: &[OptionSpec] = &[
 ];
 const COMMANDS_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--json", takes_value: false }];
 const PARITY_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--markdown", takes_value: false }];
-const MCP_OPTIONS: &[OptionSpec] = &[OptionSpec { name: "--connect", takes_value: true }, OptionSpec { name: "--author", takes_value: true }];
+const MCP_OPTIONS: &[OptionSpec] = &[
+    OptionSpec { name: "--connect", takes_value: true },
+    OptionSpec { name: "--author", takes_value: true },
+    OptionSpec { name: "--allow-all-files", takes_value: false },
+];
+
+/// The folders a headless MCP server's commands may read and write. The roots the caller named
+/// are used as given. With none named, both are `cwd` (the folder the server was started in), so
+/// an agent steered by what a document says can't reach the rest of the user's files; only
+/// `--allow-all-files` (`allow_all`) leaves the server unconfined.
+fn headless_roots(
+    named: Option<std::sync::Arc<wordcraft_engine::file_access::AutomationRoots>>,
+    allow_all: bool,
+    cwd: &std::path::Path,
+) -> Result<Option<std::sync::Arc<wordcraft_engine::file_access::AutomationRoots>>, String> {
+    match named {
+        Some(_) if allow_all => Err("mcp: --allow-all-files cannot be combined with --automation-read-root or --automation-write-root".into()),
+        Some(roots) => Ok(Some(roots)),
+        None if allow_all => Ok(None),
+        None => wordcraft_engine::file_access::AutomationRoots::new(Some(cwd), Some(cwd)),
+    }
+}
 const ZOTERO_OPTIONS: &[OptionSpec] = &[
     OptionSpec { name: "--cmd", takes_value: true },
     OptionSpec { name: "--save", takes_value: true },
@@ -688,6 +713,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             validate_options("mcp", &rest, MCP_OPTIONS)?;
             let author = arg_value(&rest, "--author");
             let connect = arg_value(&rest, "--connect");
+            let allow_all = rest.iter().any(|a| a == "--allow-all-files");
             if roots.is_some() && connect.is_some() {
                 return Err(
                     "mcp: --automation-read-root and --automation-write-root confine the headless server; a running app is not confined by them"
@@ -724,6 +750,10 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                 }
                 None => {
                     let mut headless = wordcraft_mcp::Headless::default();
+                    let roots = headless_roots(roots, allow_all, &std::env::current_dir()?)?;
+                    if roots.is_none() {
+                        eprintln!("wordcraft-cli: files not confined (--allow-all-files): the agent's commands can read and write any file you can");
+                    }
                     if let Some(roots) = roots {
                         // Every thread of this process, not only the server's: nothing reaches past the roots.
                         wordcraft_engine::file_access::confine_process(roots.clone());

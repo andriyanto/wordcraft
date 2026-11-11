@@ -112,10 +112,21 @@ impl Reader<'_> {
             Package::open_limited(bytes, MAX_PART, self.chunks.bytes).map_err(|e| log::warn!("docx: unreadable nested document chunk: {e}")).ok()?;
         self.chunks.bytes = self.chunks.bytes.saturating_sub(pkg.size());
         let state = ChunkState { nesting: self.chunks.nesting + 1, depth: depth + 1, ..self.chunks };
-        let (doc, left, bytes, graphic) =
-            super::read_opened_in(&pkg, state).map_err(|e| log::warn!("docx: unreadable nested document chunk: {e}")).ok()?;
+        let (doc, left, bytes, content, graphic) = match super::read_opened_in(&pkg, state) {
+            Ok(read) => read,
+            Err(e) => {
+                // A chunk that spends the content budget spends the file's: the file is refused,
+                // not read without the chunk.
+                if super::is_content_limit(&e) {
+                    self.too_large = true;
+                }
+                log::warn!("docx: unreadable nested document chunk: {e}");
+                return None;
+            }
+        };
         self.chunks.left = left;
         self.chunks.bytes = bytes;
+        self.chunks.content = content;
         self.chunks.graphic = graphic;
         Some(doc)
     }
@@ -128,6 +139,9 @@ pub(crate) struct ChunkState<'a> {
     pub left: usize,
     /// Chunk bytes (nested packages unpacked) left in the file's budget.
     pub bytes: u64,
+    /// Paragraphs and runs left in the file's budget ([`super::MAX_CONTENT`]): nested documents'
+    /// count against it too.
+    pub content: usize,
     /// Graphic work left in the file's budget ([`super::MAX_GRAPHIC_WORK`]): nested documents'
     /// charts and diagrams count against it too.
     pub graphic: usize,
@@ -140,7 +154,7 @@ pub(crate) struct ChunkState<'a> {
 
 impl<'a> ChunkState<'a> {
     pub fn new(import: Option<ChunkImporter<'a>>) -> Self {
-        ChunkState { left: MAX_CHUNKS, bytes: MAX_TOTAL, graphic: super::MAX_GRAPHIC_WORK, nesting: 0, depth: 0, import }
+        ChunkState { left: MAX_CHUNKS, bytes: MAX_TOTAL, content: super::MAX_CONTENT, graphic: super::MAX_GRAPHIC_WORK, nesting: 0, depth: 0, import }
     }
 }
 
@@ -180,6 +194,35 @@ mod tests {
     fn drawn(d: &Document) -> bool {
         let Some(Block::Para(p)) = d.body.first().map(|b| &**b) else { panic!("no paragraph") };
         p.objects.iter().any(|o| matches!(o, InlineObject::Graphic { graphic, .. } if !graphic.items.is_empty()))
+    }
+
+    /// A file with more paragraphs and runs than its budget is refused, not read in part: a few
+    /// kilobytes of `<w:p/>` would otherwise unpack into gigabytes of paragraphs.
+    #[test]
+    fn a_file_past_its_content_budget_is_refused() {
+        // Two paragraphs (one in a table cell) and one run.
+        let body = "<w:p><w:r><w:t>a</w:t></w:r></w:p><w:tbl><w:tr><w:tc><w:p/></w:tc></w:tr></w:tbl>";
+        let bytes = package(body, ("rIdX", "image", "media/x.png"), ("word/media/x.png", b"x"));
+        let pkg = Package::open(&bytes).unwrap();
+        let read = |content| super::super::read_opened_in(&pkg, ChunkState { content, ..ChunkState::new(None) });
+        let (_, _, _, left, _) = read(3).unwrap();
+        assert_eq!(left, 0);
+        let Err(e) = read(2) else { panic!("read past the budget") };
+        assert!(super::super::is_content_limit(&e), "{e}");
+        assert!(e.to_string().starts_with("limit exceeded: the document has too many paragraphs and runs"), "{e}");
+    }
+
+    /// A nested document's paragraphs are the file's: one that spends the budget fails the file.
+    #[test]
+    fn a_nested_document_counts_against_the_files_content_budget() {
+        let inner = package("<w:p/><w:p/><w:p/>", ("rIdX", "image", "media/x.png"), ("word/media/x.png", b"x"));
+        let outer = package(r#"<w:p/><w:altChunk r:id="rIdC"/>"#, ("rIdC", "aFChunk", "afchunk.docx"), ("word/afchunk.docx", &inner));
+        let pkg = Package::open(&outer).unwrap();
+        let read = |content| super::super::read_opened_in(&pkg, ChunkState { content, ..ChunkState::new(None) });
+        let (_, _, _, left, _) = read(10).unwrap();
+        assert_eq!(left, 6, "one paragraph of the file's and three of the chunk's");
+        let Err(e) = read(3) else { panic!("read past the budget") };
+        assert!(super::super::is_content_limit(&e), "{e}");
     }
 
     #[test]

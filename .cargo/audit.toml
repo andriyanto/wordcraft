@@ -1,0 +1,24 @@
+# `cargo audit` policy (run in CI, .github/workflows/audit.yml).
+#
+# Every advisory ignored here is listed with why it does not apply. Remove an entry when the
+# crate is upgraded or the reason stops being true; `cargo audit` fails on anything not listed.
+[advisories]
+ignore = [
+    # zip 3.0.0: all four are in `ZipArchive::extract` / `ZipStreamReader::extract` (unpacking an
+    # archive onto the file system). WordCraft never calls them: packages are read entry by entry
+    # into memory with size limits (crates/docx/src/package.rs, crates/formats/src/odt). A call to
+    # `.extract(` anywhere in the workspace makes these apply; the audit workflow greps for it.
+    # Fixed in zip >= 9.0.0, whose `ZipFile::name` returns a `Result`: the upgrade is a change to
+    # every reader and to the tests that list package entries, so it is its own piece of work.
+    "RUSTSEC-2026-0367",
+    "RUSTSEC-2026-0368",
+    "RUSTSEC-2026-0369",
+    "RUSTSEC-2026-0429",
+    # Unmaintained, not vulnerable: zbus_names, zvariant and zvariant_derive come with the Linux
+    # accessibility bridge (accesskit_unix, through eframe), proc-macro-error with a build-time
+    # macro. They leave when those crates move on; nothing here can replace them.
+    "RUSTSEC-2024-0370",
+    "RUSTSEC-2026-0370",
+    "RUSTSEC-2026-0371",
+    "RUSTSEC-2026-0372",
+]

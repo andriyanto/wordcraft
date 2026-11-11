@@ -16,6 +16,6 @@ concurrency:
 
 jobs:
   sonarcloud:
-    # Tracked at @main so org-wide CI improvements propagate without PR churn.
-    uses: storytold/craft-common-actions/.github/workflows/sonarcloud.yml@main
+    # Pinned to a commit, not @main: a change to the shared workflows reaches this repository (and, for a release, its signing secrets) only through a reviewed bump of this hash.
+    uses: storytold/craft-common-actions/.github/workflows/sonarcloud.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
     secrets: inherit

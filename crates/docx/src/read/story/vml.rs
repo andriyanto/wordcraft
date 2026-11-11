@@ -389,12 +389,30 @@ impl Reader<'_> {
     /// An OLE object (`w:object`, ECMA-376 §17.3.3.19): shown as its picture (VML, or a DrawingML
     /// picture in `w:drawing`), and kept whole so saving writes the object back.
     pub(super) fn read_object(&mut self, sc: &mut StoryCtx, obj: &El, rels: &Rels) -> Option<InlineObject> {
-        let mut o = match self.read_vml(sc, obj, rels) {
-            Some(o) => o,
-            None => {
-                let d = obj.child("w:drawing")?;
-                self.read_drawing(sc, d, rels)?
-            }
+        let drawn = match self.read_vml(sc, obj, rels) {
+            Some(o) => Some(o),
+            None => obj.child("w:drawing").and_then(|d| self.read_drawing(sc, d, rels)),
+        };
+        let Some(mut o) = drawn else {
+            // No picture to show (some writers leave it out, and a picture part can be missing):
+            // the object is still kept whole, as an empty box of its stated size, so that saving
+            // writes it and its data back instead of dropping both.
+            let ole = self.keep_embedded(obj, rels, &[])?;
+            let side = |attr: &str| {
+                let pt = obj.attr(attr).and_then(int).map_or(0.0, |twips| twips as f32 / 20.0);
+                if pt.is_finite() && pt > 0.0 { pt.min(crate::units::MAX_LEN_PT) } else { 72.0 }
+            };
+            log::warn!("docx: an embedded object has no picture; it is kept and shown as an empty box");
+            return Some(InlineObject::Image {
+                media: String::new(),
+                w: side("w:dxaOrig"),
+                h: side("w:dyaOrig"),
+                alt: String::new(),
+                float: Float::default(),
+                crop: [0.0; 4],
+                fx: Default::default(),
+                ole: Some(ole),
+            });
         };
         if let InlineObject::Image { ole, .. } = &mut o {
             *ole = self.keep_embedded(obj, rels, &[]);
