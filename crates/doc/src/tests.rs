@@ -639,7 +639,7 @@ fn custom_props_set_get_remove() {
 fn para_of_objects(objs: Vec<InlineObject>) -> Paragraph {
     let mut p = Paragraph::new();
     p.text = para::OBJ.to_string().repeat(objs.len());
-    p.runs = vec![Run { len: p.text.len(), props: CharProps::default() }];
+    p.runs = vec![Run { len: p.text.len(), props: CharProps::default().into() }];
     p.objects = objs;
     p
 }

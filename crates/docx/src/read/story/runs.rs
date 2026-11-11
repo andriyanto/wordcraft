@@ -74,7 +74,7 @@ impl Reader<'_> {
                     let shown: String = pb.text.get(at..).unwrap_or("").chars().filter(|c| *c != wordcraft_doc::para::OBJ).collect();
                     control.placeholder_text = placeholder_of(&shown);
                 }
-                let end_props = pb.runs.last().map(|r| r.props.clone()).unwrap_or(props);
+                let end_props = pb.runs.last().map(|r| r.props.clone()).unwrap_or(props.into());
                 pb.push_obj(InlineObject::ControlEnd, &end_props);
             }
             "w:smartTag" | "w:customXml" | "w:dir" | "w:bdo" => self.read_inline_children(sc, pb, k, rels, ctx, depth + 1),

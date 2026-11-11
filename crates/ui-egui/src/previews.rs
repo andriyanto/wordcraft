@@ -481,7 +481,7 @@ pub fn font_sample(
     if let Some(v) = mark {
         let tail = CharProps { vert_align: Some(v), ..props.clone() };
         p.text.push('2');
-        p.runs.push(wordcraft_doc::Run { len: 1, props: tail });
+        p.runs.push(wordcraft_doc::Run { len: 1, props: tail.into() });
     }
     p.props.space_before = Some(0.0);
     p.props.space_after = Some(0.0);

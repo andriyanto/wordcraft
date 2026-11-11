@@ -131,7 +131,7 @@ fn append(p: &mut Paragraph, text: &str, props: &CharProps, obj: Option<InlineOb
     p.text.push_str(&piece);
     match p.runs.last_mut() {
         Some(last) if last.props == *props => last.len += piece.len(),
-        _ => p.runs.push(Run { len: piece.len(), props: props.clone() }),
+        _ => p.runs.push(Run { len: piece.len(), props: props.clone().into() }),
     }
 }
 
@@ -527,7 +527,7 @@ impl<'a> Builder<'a> {
 
     fn para(&mut self, p: &Para, list_num: Option<u32>) -> Paragraph {
         let mut out = Paragraph::new();
-        out.props = para_props(p, list_num);
+        out.props = para_props(p, list_num).into();
         if let Some(c) = &p.fmt_change {
             // A list item stays in its list instance (only its level may differ); an old list on a
             // paragraph that is no list now gets an instance of its own, so Reject can restore it.
@@ -672,7 +672,7 @@ impl<'a> Builder<'a> {
             }
         }
         if let Some(m) = p.mark.as_deref().filter(|_| p.textless()) {
-            out.mark = self.budget(CharProps { ins: None, del: None, fmt_change: None, ..m.clone() });
+            out.mark = self.budget(CharProps { ins: None, del: None, fmt_change: None, ..m.clone() }).into();
         }
         out.mark.ins = p.mark_ins.as_deref().map(|m| self.revision(RevisionKind::Insert, m));
         out.mark.del = p.mark_del.as_deref().map(|m| self.revision(RevisionKind::Delete, m));
@@ -892,7 +892,8 @@ impl<'a> Builder<'a> {
                         text_direction: c.direction,
                         picture,
                         ..Default::default()
-                    },
+                    }
+                    .into(),
                     blocks,
                     controls: Default::default(),
                 });

@@ -150,9 +150,9 @@ pub(crate) fn outline_para(doc: &Document, p: &Paragraph, plain: bool) -> Paragr
         q.props.shading = None;
         q.props.borders = None;
         for r in &mut q.runs {
-            r.props = plain_chars(&r.props);
+            r.props = plain_chars(&r.props).into();
         }
-        q.mark = plain_chars(&q.mark);
+        q.mark = plain_chars(&q.mark).into();
     }
     q
 }

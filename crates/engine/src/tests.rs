@@ -11382,10 +11382,10 @@ fn inspect_document_hidden_text_in_every_story_and_from_styles() {
             a.insert_text(at, &t, &c).unwrap();
         }
         let mut b = Paragraph::with_text(&format!("hide-{tag}-pstyle"), plain.clone());
-        b.props = ParaProps { style: Some("HideP".into()), ..Default::default() };
+        b.props = ParaProps { style: Some("HideP".into()), ..Default::default() }.into();
         // Shown again by direct formatting over the hidden paragraph style: it stays.
         let mut c = Paragraph::with_text(&format!("keep-{tag}-4"), CharProps { hidden: Some(false), ..Default::default() });
-        c.props = ParaProps { style: Some("HideP".into()), ..Default::default() };
+        c.props = ParaProps { style: Some("HideP".into()), ..Default::default() }.into();
         vec![para_block(a), para_block(b), para_block(c)]
     };
     let tag = |k: PartKind| match k {
@@ -12171,7 +12171,7 @@ fn drop_cap_options_set_position_lines_distance_and_font() {
     let props = |s: &Session| s.doc.body.first().and_then(|b| b.as_para()).map(|p| p.props.clone()).unwrap_or_default();
     let cap = |s: &Session| {
         let p = props(s);
-        (p.drop_cap, p.drop_cap_margin, p.drop_cap_distance, p.drop_cap_font)
+        (p.drop_cap, p.drop_cap_margin, p.drop_cap_distance, p.drop_cap_font.clone())
     };
     let mut s = s();
     assert!(s.run("insert.dropCap", &json!({})).is_err(), "off in an empty paragraph");

@@ -86,7 +86,7 @@ fn tab_stops_round_trip() {
     let mut p = Paragraph::new();
     p.text = "a\tb".into();
     p.runs = vec![wordcraft_doc::para::Run { len: 3, props: Default::default() }];
-    p.props = ParaProps { tabs: Some(want.clone()), indent_left: Some(18.0), ..Default::default() };
+    p.props = ParaProps { tabs: Some(want.clone()), indent_left: Some(18.0), ..Default::default() }.into();
     let mut d = Document::new();
     d.body = vec![para_block(p)];
     let back = import(&export(&d).unwrap()).unwrap();
@@ -155,7 +155,8 @@ fn tab_stops_and_other_paragraph_properties_together() {
         shading: Some(wordcraft_doc::props::Rgb(200, 220, 240)),
         contextual_spacing: Some(true),
         ..Default::default()
-    };
+    }
+    .into();
     let mut d = Document::new();
     d.body = vec![para_block(p)];
     let back = import(&export(&d).unwrap()).unwrap();

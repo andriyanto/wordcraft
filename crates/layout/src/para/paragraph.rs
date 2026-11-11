@@ -537,7 +537,7 @@ fn list_label(cx: &Cx, b: &mut Builder, mark_style: u32) -> Option<Label> {
     let break_only =
         b.clusters.iter().any(|c| c.kind == ClKind::PageBreak) && b.clusters.iter().all(|c| matches!(c.kind, ClKind::PageBreak | ClKind::Marker));
     let (text, lvl) = cx.env.label.as_ref().filter(|_| !break_only)?;
-    let rc = cx.res.char(&p.mark.clone().overlaid(&lvl.chr));
+    let rc = cx.res.char(&p.mark.clone().into_inner().overlaid(&lvl.chr));
     // A bullet no installed font can draw would come from whatever icon font has its
     // private-use code (Font Awesome's Twitter logo at U+F081, #1683): it shows the level's
     // default bullet instead.

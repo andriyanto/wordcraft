@@ -8,7 +8,7 @@ use wordcraft_doc::props::{LineSpacing, ParaProps};
 use wordcraft_doc::{Document, Paragraph, para_block};
 
 fn props(d: &Document) -> Vec<ParaProps> {
-    d.body.iter().filter_map(|b| b.as_para()).map(|p| p.props.clone()).collect()
+    d.body.iter().filter_map(|b| b.as_para()).map(|p| (*p.props).clone()).collect()
 }
 
 fn content(auto: &str, body: &str) -> String {
@@ -113,7 +113,7 @@ fn para(text: &str, props: ParaProps) -> std::sync::Arc<wordcraft_doc::Block> {
     let mut p = Paragraph::new();
     p.text = text.into();
     p.runs = vec![wordcraft_doc::para::Run { len: text.len(), props: Default::default() }];
-    p.props = props;
+    p.props = props.into();
     para_block(p)
 }
 
@@ -162,7 +162,7 @@ fn the_list_paragraph_style_is_written() {
     let mut p = Paragraph::new();
     p.text = "item".into();
     p.runs = vec![wordcraft_doc::para::Run { len: 4, props: Default::default() }];
-    p.props = ParaProps { style: Some("ListParagraph".into()), ..Default::default() };
+    p.props = ParaProps { style: Some("ListParagraph".into()), ..Default::default() }.into();
     d.body = vec![para_block(p)];
     if let Some(st) = std::sync::Arc::make_mut(&mut d.styles).get_mut("ListParagraph") {
         st.para.contextual_spacing = Some(true);

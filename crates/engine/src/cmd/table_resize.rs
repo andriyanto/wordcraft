@@ -576,18 +576,19 @@ fn resize_drag(s: &mut Session, v: &Value) -> CmdResult {
 /// A centred or right-aligned table keeps its alignment, as in Word: the first column's new width
 /// is all that changes, and the table stays centred or on its right edge.
 fn move_left_edge(t: &mut Table, by: f32) -> bool {
-    match t.props.float.as_mut() {
+    // A centred or right-aligned table that doesn't float isn't moved: nothing to change.
+    if t.props.float.is_none() && matches!(t.props.align, Some(Align::Center | Align::Right)) {
+        return false;
+    }
+    let props = &mut *t.props;
+    match props.float.as_mut() {
         Some(f) => {
             f.h_align = None;
             f.x = (f.x + by).clamp(-MAX_LEN, MAX_LEN);
-            true
         }
-        None if matches!(t.props.align, Some(Align::Center | Align::Right)) => false,
-        None => {
-            t.props.indent = Some((t.props.indent.unwrap_or(0.0) + by).clamp(-MAX_LEN, MAX_LEN));
-            true
-        }
+        None => props.indent = Some((props.indent.unwrap_or(0.0) + by).clamp(-MAX_LEN, MAX_LEN)),
     }
+    true
 }
 
 /// Sets `t`'s grid when some rows' cells change width on their own: `rows` gives their new

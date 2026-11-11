@@ -314,7 +314,7 @@ pub fn merge_formatting(s: &Session, frag: &mut Fragment) {
         each_para(b, 0, &mut |p| {
             p.props = para.clone();
             for run in &mut p.runs {
-                let src = std::mem::replace(&mut run.props, base.clone());
+                let src = std::mem::replace(&mut run.props, base.clone().into());
                 if src.bold == Some(true) {
                     run.props.bold = Some(true);
                 }
@@ -327,7 +327,7 @@ pub fn merge_formatting(s: &Session, frag: &mut Fragment) {
                 if src.strike == Some(true) {
                     run.props.strike = Some(true);
                 }
-                run.props.link = src.link;
+                run.props.link = src.link.clone();
                 // Tracked changes are not formatting: text deleted in the source stays deleted.
                 run.props.ins = src.ins;
                 run.props.del = src.del;

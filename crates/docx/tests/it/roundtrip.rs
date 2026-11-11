@@ -234,11 +234,11 @@ fn every_para_prop_round_trips() {
         ParaProps::default(),
     ];
     let mut ps = vec![Paragraph::with_text("main", CharProps::default())];
-    ps[0].props = pp.clone();
-    ps[0].mark = CharProps { bold: Some(true), size: Some(14.0), ..Default::default() };
+    ps[0].props = pp.clone().into();
+    ps[0].mark = CharProps { bold: Some(true), size: Some(14.0), ..Default::default() }.into();
     for v in &variants {
         let mut p = Paragraph::with_text("v", CharProps::default());
-        p.props = v.clone();
+        p.props = v.clone().into();
         ps.push(p);
     }
     let r = rt(&doc_with(ps));
@@ -1078,7 +1078,7 @@ fn tracked_paragraph_marks_round_trip() {
     let mut split = Paragraph::with_text("Owned ALPHA ", CharProps::default());
     split.mark.ins = Some(0);
     let mut joined = Paragraph::with_text("Owned BETA", CharProps::default());
-    joined.mark = CharProps { bold: Some(true), del: Some(1), ..Default::default() };
+    joined.mark = CharProps { bold: Some(true), del: Some(1), ..Default::default() }.into();
     let last = Paragraph::with_text("plain", CharProps::default());
     d.body = vec![para_block(split), para_block(joined), para_block(last)];
     let bytes = wordcraft_docx::write(&d).expect("write");

@@ -245,9 +245,10 @@ fn legacy_table_gap(mode: u32, allow: bool, location: SpacingLocation) -> f32 {
         line_spacing: Some(wordcraft_doc::props::LineSpacing::Exactly(24.0)),
         contextual_spacing: Some(true),
         ..Default::default()
-    };
+    }
+    .into();
     let mut b = wordcraft_doc::Paragraph::with_text("Beta probe", chr);
-    b.props = ParaProps { space_after: Some(0.0), ..a.props.clone() };
+    b.props = ParaProps { space_after: Some(0.0), ..a.props.clone().into_inner() }.into();
     let blocks = vec![wordcraft_doc::para_block(a), wordcraft_doc::para_block(b)];
     match location {
         SpacingLocation::Cell => {
@@ -321,7 +322,7 @@ fn cell_end_gap_in(mut d: Document, style: &str, contextual: bool, next_cell: Op
     let props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(24.0)), ..Default::default() };
     let para = |text: &str, props: ParaProps| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, chr.clone());
-        p.props = props;
+        p.props = props.into();
         wordcraft_doc::para_block(p)
     };
     let styled = |s: Option<&str>| ParaProps { style: s.map(Into::into), ..props.clone() };
@@ -392,14 +393,15 @@ fn contextual_gap(after: f32, before: f32, first: bool, second: bool, different_
         ..Default::default()
     };
     let mut a = wordcraft_doc::Paragraph::with_text("Alpha probe", chr.clone());
-    a.props = ParaProps { space_after: Some(after), contextual_spacing: Some(first), ..props.clone() };
+    a.props = ParaProps { space_after: Some(after), contextual_spacing: Some(first), ..props.clone() }.into();
     let mut b = wordcraft_doc::Paragraph::with_text("Beta probe", chr);
     b.props = ParaProps {
         style: Some(if different_style { "SpacingB" } else { "SpacingA" }.into()),
         space_before: Some(before),
         contextual_spacing: Some(second),
         ..props
-    };
+    }
+    .into();
     let paragraphs = vec![wordcraft_doc::para_block(a), wordcraft_doc::para_block(b)];
     if header {
         let id = d.add_part(wordcraft_doc::PartKind::Header, paragraphs);
@@ -476,7 +478,8 @@ fn contextual_spacing_removes_every_gap_in_a_four_paragraph_run() {
                     contextual_spacing: Some(true),
                     line_spacing: Some(LineSpacing::Exactly(24.0)),
                     ..Default::default()
-                };
+                }
+                .into();
                 wordcraft_doc::para_block(p)
             })
             .collect::<Vec<_>>();
@@ -523,7 +526,8 @@ fn contextual_automatic_lists_do_not_subtract_the_gap_twice() {
                     numbering: Some(NumRef { num, level: 0 }),
                     line_spacing: Some(LineSpacing::Exactly(24.0)),
                     ..Default::default()
-                };
+                }
+                .into();
                 wordcraft_doc::para_block(p)
             })
             .collect::<Vec<_>>();
@@ -1123,7 +1127,7 @@ fn long_word_with_alternating_advances_beside_a_float(n: usize) -> Document {
     p.runs = (0..n.div_ceil(block))
         .map(|i| wordcraft_doc::Run {
             len: block.min(n - i * block),
-            props: wordcraft_doc::CharProps { spacing: Some(if i % 2 == 0 { 50.0 } else { -50.0 }), ..Default::default() },
+            props: wordcraft_doc::CharProps { spacing: Some(if i % 2 == 0 { 50.0 } else { -50.0 }), ..Default::default() }.into(),
         })
         .collect();
     let f = Float { wrap: Wrap::Square, h_rel: Anchor::Column, v_rel: Anchor::Paragraph, dist: 9.0, ..Default::default() };
@@ -1216,7 +1220,7 @@ fn many_hidden_float_anchors_lay_out_in_linear_time() {
         p.runs = std::iter::once(wordcraft_doc::Run { len: 5, props: Default::default() })
             .chain((0..n).map(|i| wordcraft_doc::Run {
                 len: obj.len(),
-                props: wordcraft_doc::CharProps { hidden: Some(true), bold: Some(i % 2 == 0), ..Default::default() },
+                props: wordcraft_doc::CharProps { hidden: Some(true), bold: Some(i % 2 == 0), ..Default::default() }.into(),
             }))
             .collect();
         let mut d = Document::from_text("");
@@ -2939,7 +2943,7 @@ fn kept_headings_measure_the_next_paragraph_through_the_cache() {
     let kept = ParaProps { keep_next: Some(true), ..Default::default() };
     for i in 0..40 {
         let mut heading = wordcraft_doc::Paragraph::with_text(&format!("Heading {i}"), Default::default());
-        heading.props = kept.clone();
+        heading.props = kept.clone().into();
         d.body.push(wordcraft_doc::para_block(heading));
         let body = format!("Body text {i} under its heading, long enough to wrap onto a second line in the column. ").repeat(3);
         d.body.push(wordcraft_doc::para_block(wordcraft_doc::Paragraph::with_text(&body, Default::default())));
@@ -3076,10 +3080,11 @@ fn a_kept_together_paragraph_counts_its_border_room() {
     let plain = ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(12.0)), ..Default::default() };
     let doc = |filler: f32| {
         let mut d = Document::from_text(&format!("Filler\n{}", "word ".repeat(200)));
-        d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().props = ParaProps { line_spacing: Some(LineSpacing::Exactly(filler)), ..plain.clone() };
+        d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().props =
+            ParaProps { line_spacing: Some(LineSpacing::Exactly(filler)), ..plain.clone() }.into();
         let top = Some(Border { space: 20.0, ..Border::single(4.0) });
         d.para_mut(StoryRef::Body, &Path::top(1)).unwrap().props =
-            ParaProps { keep_lines: Some(true), borders: Some(Borders { top, ..Borders::default() }), ..plain.clone() };
+            ParaProps { keep_lines: Some(true), borders: Some(Borders { top, ..Borders::default() }), ..plain.clone() }.into();
         d
     };
     let lines = |l: &DocLayout| -> Vec<usize> {
@@ -4310,7 +4315,7 @@ fn a_cell_emptied_by_widow_control_takes_its_row_to_the_next_page() {
         t.props.cell_margins = Some([0.0, 5.4, 0.0, 5.4]);
         let cell_para = |s: &str| {
             let mut p = wordcraft_doc::Paragraph::with_text(s, Default::default());
-            p.props = ParaProps { widow_control: Some(widow), ..exact.clone() };
+            p.props = ParaProps { widow_control: Some(widow), ..exact.clone() }.into();
             wordcraft_doc::para_block(p)
         };
         t.rows[0].cells[0].blocks = vec![cell_para("A1")];
@@ -4355,7 +4360,7 @@ fn row_content_pieces(text: &str, props: ParaProps, room: f32) -> Vec<(usize, us
     let neighbor = ["First", "Second", "Third", "Fourth"].join(&wordcraft_doc::para::LINE_BREAK.to_string());
     for (cell, text) in [text, neighbor.as_str()].into_iter().enumerate() {
         let mut p = Paragraph::with_text(text, Default::default());
-        p.props = exact.clone();
+        p.props = exact.clone().into();
         if cell == 0 {
             p.props.space_after = props.space_after;
             p.props.widow_control = props.widow_control;
@@ -6239,7 +6244,7 @@ fn justified_spaces_shrink_a_quarter_at_most_and_by_the_word() {
         let mut d = Document::new();
         d.settings.compat_mode = 15;
         let mut p = wordcraft_doc::Paragraph::with_text(text, chr.clone());
-        p.props = ParaProps { align: Some(align), indent_right: Some(right), ..Default::default() };
+        p.props = ParaProps { align: Some(align), indent_right: Some(right), ..Default::default() }.into();
         d.body = vec![wordcraft_doc::para_block(p)];
         d
     };
@@ -6290,7 +6295,7 @@ fn justified_line_ending_in_line_break_is_stretched() {
         let mut d = Document::from_text("");
         d.settings.do_not_expand_shift_return = no_expand;
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = ParaProps { align: Some(Align::Justify), ..Default::default() };
+        p.props = ParaProps { align: Some(Align::Justify), ..Default::default() }.into();
         d.body = vec![wordcraft_doc::para_block(p)];
         let l = lay(&d);
         let mut out = Vec::new();
@@ -6326,7 +6331,7 @@ fn distributed_line_ending_in_line_break_reaches_the_margin() {
     let last = |align: Align| {
         let mut d = Document::from_text("");
         let mut p = wordcraft_doc::Paragraph::with_text(&text, Default::default());
-        p.props = ParaProps { align: Some(align), ..Default::default() };
+        p.props = ParaProps { align: Some(align), ..Default::default() }.into();
         d.body = vec![wordcraft_doc::para_block(p)];
         let l = lay(&d);
         let (para, x) =
@@ -7206,8 +7211,8 @@ fn floating_header_text_box_leaves_the_body_at_the_top_margin() {
         // A label, then the paragraph the box is anchored to (empty in the control).
         let tight = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
         let mut label = wordcraft_doc::Paragraph::with_text("Header label", Default::default());
-        label.props = tight.clone();
-        let mut anchor = wordcraft_doc::Paragraph { props: tight, ..Default::default() };
+        label.props = tight.clone().into();
+        let mut anchor = wordcraft_doc::Paragraph { props: tight.into(), ..Default::default() };
         if let Some(float) = float {
             let text = wordcraft_doc::Paragraph::with_text("WATERMARK", Default::default());
             let story = d.add_part(wordcraft_doc::PartKind::TextBox, vec![wordcraft_doc::para_block(text)]);
@@ -7258,7 +7263,7 @@ fn numbered(d: &mut Document, texts: &[&str], props: ParaProps) -> Vec<wordcraft
         .iter()
         .map(|t| {
             let mut p = wordcraft_doc::Paragraph::with_text(t, Default::default());
-            p.props = ParaProps { numbering: Some(wordcraft_doc::props::NumRef { num, level: 0 }), ..props.clone() };
+            p.props = ParaProps { numbering: Some(wordcraft_doc::props::NumRef { num, level: 0 }), ..props.clone() }.into();
             p
         })
         .collect()
@@ -7540,7 +7545,7 @@ fn a_page_break_at_the_bottom_of_a_full_page_leaves_no_blank_page() {
     let props = ParaProps { line_spacing: Some(LineSpacing::Exactly(24.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
     let para = |text: &str| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = props.clone();
+        p.props = props.clone().into();
         wordcraft_doc::para_block(p)
     };
     let mut d = Document::from_text("");
@@ -7604,9 +7609,9 @@ fn a_word_after_a_slash_wraps_whole() {
     let mut p = wordcraft_doc::Paragraph::new();
     p.text = text.clone();
     p.runs = vec![
-        wordcraft_doc::Run { len: head.len(), props: italic.clone() },
+        wordcraft_doc::Run { len: head.len(), props: italic.clone().into() },
         wordcraft_doc::Run { len: slash.len(), props: Default::default() },
-        wordcraft_doc::Run { len: tail.len(), props: italic },
+        wordcraft_doc::Run { len: tail.len(), props: italic.into() },
     ];
     let mut wrapped = 0;
     // Down to the width where the longest word still fits on a line: from there on, a line may
@@ -7649,9 +7654,9 @@ fn a_word_after_a_slash_wraps_whole_in_a_fixed_cell() {
     let mut p = wordcraft_doc::Paragraph::new();
     p.text = text.clone();
     p.runs = vec![
-        wordcraft_doc::Run { len: head.len(), props: italic.clone() },
+        wordcraft_doc::Run { len: head.len(), props: italic.clone().into() },
         wordcraft_doc::Run { len: slash.len(), props: Default::default() },
-        wordcraft_doc::Run { len: tail.len(), props: italic },
+        wordcraft_doc::Run { len: tail.len(), props: italic.into() },
     ];
     let mut wrapped = 0;
     // From the width where the longest word fits in the cell.
@@ -7728,7 +7733,7 @@ fn unequal_formats_lay_out_in_linear_time() {
         p.runs = (0..n)
             .map(|i| wordcraft_doc::Run {
                 len: 3,
-                props: wordcraft_doc::CharProps { spacing: Some(f32::NAN), bold: Some(i % 2 == 0), ..Default::default() },
+                props: wordcraft_doc::CharProps { spacing: Some(f32::NAN), bold: Some(i % 2 == 0), ..Default::default() }.into(),
             })
             .collect();
         let mut d = Document::from_text("");
@@ -7754,7 +7759,7 @@ fn formats_past_65536_in_a_paragraph_keep_their_own_style() {
     };
     let mut p = wordcraft_doc::Paragraph::with_text("", Default::default());
     p.text = "ab ".repeat(n);
-    p.runs = (0..n).map(|i| wordcraft_doc::Run { len: 3, props: props(i) }).collect();
+    p.runs = (0..n).map(|i| wordcraft_doc::Run { len: 3, props: props(i).into() }).collect();
     let mut d = Document::from_text("");
     d.body = vec![wordcraft_doc::para_block(p)];
     let l = lay(&d);
@@ -9347,9 +9352,9 @@ fn superscript_and_subscript_lines_are_as_tall_as_full_size_text() {
                 position: Some(*position),
                 ..Default::default()
             };
-            p.runs.push(wordcraft_doc::para::Run { len: text.len(), props: props.clone() });
+            p.runs.push(wordcraft_doc::para::Run { len: text.len(), props: props.clone().into() });
             p.text.push_str(text);
-            p.mark = props;
+            p.mark = props.into();
         }
         let mut d = Document::new();
         d.body = vec![wordcraft_doc::para_block(p)];
@@ -9375,9 +9380,9 @@ fn superscript_digits_advance_at_the_half_point_size() {
         let mut p = wordcraft_doc::Paragraph::new();
         let props =
             wordcraft_doc::CharProps { font: Some(WRAP_TEST_FONT.into()), size: Some(size), vert_align: Some(vert_align), ..Default::default() };
-        p.runs.push(wordcraft_doc::para::Run { len: 10, props: props.clone() });
+        p.runs.push(wordcraft_doc::para::Run { len: 10, props: props.clone().into() });
         p.text.push_str("1234567890");
-        p.mark = props;
+        p.mark = props.into();
         let mut d = Document::new();
         d.body = vec![wordcraft_doc::para_block(p)];
         let l = lay(&d);
@@ -10268,8 +10273,8 @@ fn spaces_and_tabs_do_not_make_a_line_taller() {
                 p.insert_text(n, middle, middle_props).unwrap();
                 let n = p.len();
                 p.insert_text(n, "B", &small).unwrap();
-                p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
-                p.mark = small.clone();
+                p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() }.into();
+                p.mark = small.clone().into();
                 wordcraft_doc::para_block(p)
             })
             .collect();
@@ -10303,7 +10308,7 @@ fn a_list_label_adds_ascent_but_not_descent() {
         let ten = wordcraft_doc::props::CharProps { size: Some(10.0), ..Default::default() };
         let mut p = wordcraft_doc::Paragraph::with_text("Item", ten.clone());
         p.props.numbering = Some(wordcraft_doc::props::NumRef { num, level: 0 });
-        p.mark = ten;
+        p.mark = ten.into();
         p.props.line_spacing = Some(wordcraft_doc::props::LineSpacing::Multiple(1.0));
         d.body = vec![wordcraft_doc::para_block(p)];
         let l = lay(&d);
@@ -10456,7 +10461,7 @@ fn list_indents_and_style_indents_combine_like_word() {
         let own =
             ParaProps { style: Some(style.into()), numbering: own.numbering.map(|n| NumRef { num: if n.num == 0 { 0 } else { num }, ..n }), ..own };
         let mut p = wordcraft_doc::Paragraph::with_text("Text", Default::default());
-        p.props = own;
+        p.props = own.into();
         d.body = vec![wordcraft_doc::para_block(p)];
         lay(&d).caret(&Pos::body(0, 0)).unwrap().x
     };
@@ -10495,7 +10500,7 @@ fn keep_with_next_moves_a_paragraph_only_when_it_would_fit() {
         };
         let para = |text: &str, p: &ParaProps| {
             let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
-            x.props = ParaProps { keep_next: p.keep_next, keep_lines: p.keep_lines, ..plain.clone() };
+            x.props = ParaProps { keep_next: p.keep_next, keep_lines: p.keep_lines, ..plain.clone() }.into();
             wordcraft_doc::para_block(x)
         };
         d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
@@ -10543,12 +10548,12 @@ fn keep_with_next_carries_the_heading_when_widow_control_moves_the_next_paragrap
         };
         let para = |text: &str, p: &ParaProps| {
             let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
-            x.props = p.clone();
+            x.props = p.clone().into();
             wordcraft_doc::para_block(x)
         };
         d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
         let mut heading = wordcraft_doc::Paragraph::with_text("HEADING", Default::default());
-        heading.props = ParaProps { keep_next: Some(true), ..plain.clone() };
+        heading.props = ParaProps { keep_next: Some(true), ..plain.clone() }.into();
         d.body.push(wordcraft_doc::para_block(heading));
         d.body.push(para("Bb\nBc\nBd\nBe\nBf", &plain));
         let l = lay(&d);
@@ -10588,7 +10593,7 @@ fn keep_with_next_carries_the_heading_when_a_three_line_paragraph_moves_whole() 
         };
         let para = |text: &str, p: &ParaProps| {
             let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
-            x.props = p.clone();
+            x.props = p.clone().into();
             wordcraft_doc::para_block(x)
         };
         d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
@@ -10627,7 +10632,7 @@ fn keep_with_next_chain_carries_over_when_the_last_paragraph_cannot_start() {
         };
         let para = |text: &str, p: &ParaProps| {
             let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
-            x.props = p.clone();
+            x.props = p.clone().into();
             wordcraft_doc::para_block(x)
         };
         d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
@@ -10670,12 +10675,12 @@ fn keep_with_next_carries_the_heading_when_keep_lines_moves_the_next_paragraph()
         };
         let para = |text: &str, p: &ParaProps| {
             let mut x = wordcraft_doc::Paragraph::with_text(text, Default::default());
-            x.props = p.clone();
+            x.props = p.clone().into();
             wordcraft_doc::para_block(x)
         };
         d.body = (0..fillers).map(|i| para(&format!("F{i}"), &plain)).collect();
         let mut heading = wordcraft_doc::Paragraph::with_text("HEADING", Default::default());
-        heading.props = ParaProps { keep_next: Some(true), ..plain.clone() };
+        heading.props = ParaProps { keep_next: Some(true), ..plain.clone() }.into();
         d.body.push(wordcraft_doc::para_block(heading));
         let body = ParaProps { keep_lines: Some(kept_lines), ..plain.clone() };
         d.body.push(para("Bb\nBc\nBd", &body));
@@ -10956,12 +10961,12 @@ fn paragraph_relative_floats_start_above_the_space_before() {
         };
         let plain = ParaProps { space_before: Some(0.0), space_after: Some(prev_after), ..Default::default() };
         let mut first = wordcraft_doc::Paragraph::with_text("First", Default::default());
-        first.props = plain;
+        first.props = plain.into();
         let mut p = wordcraft_doc::Paragraph::with_text("Text ", Default::default());
         p.text.push(wordcraft_doc::para::OBJ);
         p.objects = vec![shape];
         p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: Default::default() }];
-        p.props = ParaProps { space_before: Some(before), space_after: Some(0.0), ..Default::default() };
+        p.props = ParaProps { space_before: Some(before), space_after: Some(0.0), ..Default::default() }.into();
         let mut d = Document::from_text("");
         d.body = vec![wordcraft_doc::para_block(first), wordcraft_doc::para_block(p)];
         let l = lay(&d);
@@ -11015,7 +11020,7 @@ fn space_before_at_the_top_of_a_page_like_word() {
     crate::test_fonts();
     let para = |text: &str, before: f32, pbb: bool| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = ParaProps { space_before: Some(before), space_after: Some(0.0), page_break_before: Some(pbb), ..Default::default() };
+        p.props = ParaProps { space_before: Some(before), space_after: Some(0.0), page_break_before: Some(pbb), ..Default::default() }.into();
         wordcraft_doc::para_block(p)
     };
     let probe_top = |blocks: Vec<std::sync::Arc<wordcraft_doc::Block>>, mode: u32| {
@@ -11039,7 +11044,7 @@ fn space_before_at_the_top_of_a_page_like_word() {
     // paragraph, one with a page break before (no blank page) or a table starts at the top.
     let after = |text: &str| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = ParaProps { space_before: Some(0.0), space_after: Some(12.4), ..Default::default() };
+        p.props = ParaProps { space_before: Some(0.0), space_after: Some(12.4), ..Default::default() }.into();
         wordcraft_doc::para_block(p)
     };
     let table_top = |blocks: Vec<std::sync::Arc<wordcraft_doc::Block>>| {
@@ -11075,7 +11080,7 @@ fn space_before_at_the_top_of_a_page_like_word() {
     assert!((kept - plain_top - 24.0).abs() < 0.05 && (dropped - plain_top).abs() < 0.05, "{kept} {dropped} {plain_top}");
     // After a page break before (mode 14) the previous paragraph's space after comes off: 24 - 10.
     let mut first = wordcraft_doc::Paragraph::with_text("first", Default::default());
-    first.props = ParaProps { space_before: Some(0.0), space_after: Some(10.0), ..Default::default() };
+    first.props = ParaProps { space_before: Some(0.0), space_after: Some(10.0), ..Default::default() }.into();
     let (_, top) = probe_top(vec![wordcraft_doc::para_block(first.clone()), para("PROBE", 24.0, true)], 14);
     assert!((top - plain_top - 14.0).abs() < 0.05, "{top} vs {}", plain_top + 14.0);
     // More after than before: nothing left.
@@ -11190,7 +11195,7 @@ fn automatic_paragraph_spacing_like_word() {
             .zip(props)
             .map(|(t, p)| {
                 let mut para = wordcraft_doc::Paragraph::with_text(t, Default::default());
-                para.props = p;
+                para.props = p.into();
                 wordcraft_doc::para_block(para)
             })
             .collect();
@@ -11236,7 +11241,8 @@ fn automatic_paragraph_spacing_drops_at_cell_edges() {
                     space_before_auto: auto.then_some(true),
                     space_after_auto: auto.then_some(true),
                     ..Default::default()
-                };
+                }
+                .into();
                 wordcraft_doc::para_block(p)
             })
             .collect();
@@ -11292,7 +11298,7 @@ fn automatic_spacing_drops_between_list_items() {
             .enumerate()
             .map(|(i, p)| {
                 let mut para = wordcraft_doc::Paragraph::with_text(&format!("P{i}"), Default::default());
-                para.props = p;
+                para.props = p.into();
                 wordcraft_doc::para_block(para)
             })
             .collect();
@@ -12167,7 +12173,7 @@ fn section_vertical_alignment_top_center_justify_bottom() {
     use wordcraft_doc::section::PageVAlign;
     let para = |text: &str| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() }.into();
         wordcraft_doc::para_block(p)
     };
     let laid = |texts: &[&str], va: PageVAlign| {
@@ -12217,7 +12223,7 @@ fn a_sections_last_page_keeps_its_own_vertical_alignment() {
     use wordcraft_doc::section::{PageVAlign, SectionProps};
     let para = |text: &str| {
         let mut p = wordcraft_doc::Paragraph::with_text(text, Default::default());
-        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), ..Default::default() }.into();
         wordcraft_doc::para_block(p)
     };
     let laid = |first: PageVAlign, second: PageVAlign| {
@@ -12248,7 +12254,7 @@ fn justified_page_keeps_the_last_paragraphs_space_after() {
         .enumerate()
         .map(|(i, t)| {
             let mut p = wordcraft_doc::Paragraph::with_text(t, Default::default());
-            p.props = ParaProps { space_before: Some(0.0), space_after: Some(if i == 2 { 72.0 } else { 0.0 }), ..Default::default() };
+            p.props = ParaProps { space_before: Some(0.0), space_after: Some(if i == 2 { 72.0 } else { 0.0 }), ..Default::default() }.into();
             wordcraft_doc::para_block(p)
         })
         .collect();
@@ -12497,7 +12503,7 @@ fn row_keep_doc() -> Document {
     };
     let para = |text: &str, props: ParaProps| {
         let mut p = Paragraph::with_text(text, Default::default());
-        p.props = props;
+        p.props = props.into();
         wordcraft_doc::para_block(p)
     };
     let mut d = Document::new();
@@ -12540,7 +12546,7 @@ fn split_valign_lines(valign: wordcraft_doc::props::VAlign, left: usize, after: 
     };
     let para = |text: &str, props: ParaProps| {
         let mut p = Paragraph::with_text(text, Default::default());
-        p.props = props;
+        p.props = props.into();
         wordcraft_doc::para_block(p)
     };
     let mut d = Document::new();
@@ -12616,7 +12622,7 @@ fn split_row_beside_a_note(valign: wordcraft_doc::props::VAlign, note: &ParaProp
     let plain = split_note_plain();
     let para = |text: &str, props: ParaProps| {
         let mut p = Paragraph::with_text(text, Default::default());
-        p.props = props;
+        p.props = props.into();
         wordcraft_doc::para_block(p)
     };
     let mut d = Document::new();
@@ -12991,7 +12997,7 @@ fn float_font_keeps_line_height() {
     let pitch = |wrap, size| {
         let small = CharProps { size: Some(9.0), ..Default::default() };
         let mut p = wordcraft_doc::Paragraph::with_text("Anchor", small.clone());
-        p.mark = small;
+        p.mark = small.into();
         p.props.space_after = Some(0.0);
         p.insert_object(0, picture(1.0, 1.0, Float { wrap, ..Default::default() }), &CharProps { size: Some(size), ..Default::default() }).unwrap();
         let mut d = Document::from_text("After");
@@ -13373,7 +13379,8 @@ fn footer_float_wraps_body() {
                         space_after: Some(0.0),
                         line_spacing: Some(LineSpacing::Exactly(24.0)),
                         ..Default::default()
-                    };
+                    }
+                    .into();
                     wordcraft_doc::para_block(p)
                 })
                 .collect();
@@ -13406,7 +13413,8 @@ fn footer_table_wrap_bounds() {
     let mut doc = Document::from_text(&format!("Anchor\n{}", "Original body words ".repeat(60)));
     for block in &mut doc.body {
         let Block::Para(p) = Arc::make_mut(block) else { panic!("paragraph") };
-        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(24.0)), ..Default::default() };
+        p.props = ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(24.0)), ..Default::default() }
+            .into();
     }
     let mut table = Table::new(2, 2, TABLE_WIDTH);
     table.props.cell_margins = Some([0.0; 4]);
@@ -13486,7 +13494,8 @@ fn band_row_table(top: Option<Border>) -> Table {
         row.cells[0].props.borders = Some(Borders { top: if i == 0 { Some(line) } else { top }, bottom: Some(line), ..Default::default() });
         let mut para = Paragraph::with_text("Original cell", Default::default());
         para.props =
-            ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(10.0)), ..Default::default() };
+            ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(10.0)), ..Default::default() }
+                .into();
         row.cells[0].blocks = vec![wordcraft_doc::para_block(para)];
     }
     table
@@ -13531,7 +13540,8 @@ fn shared_band_carries_heading() {
                 line_spacing: Some(LineSpacing::Exactly(height)),
                 keep_next: Some(matches!(keep, KeepAfter::Next)),
                 ..Default::default()
-            };
+            }
+            .into();
             wordcraft_doc::para_block(p)
         };
         let mut next = Table::new(1, 1, 200.0);
@@ -13661,7 +13671,7 @@ fn caret_height_ignores_line_spacing() {
         let mut d = Document::new();
         let chr = wordcraft_doc::CharProps { font: Some("Source Sans 3".into()), size: Some(12.0), ..Default::default() };
         let mut p = wordcraft_doc::Paragraph::with_text("Alpha probe", chr);
-        p.props = ParaProps { line_spacing: spacing, ..Default::default() };
+        p.props = ParaProps { line_spacing: spacing, ..Default::default() }.into();
         d.body = vec![wordcraft_doc::para_block(p)];
         lay(&d).caret(&Pos::body(0, 3)).unwrap().height
     };
@@ -14173,7 +14183,7 @@ fn keep_next_counts_list_indent() {
     let para = |text: &str, props: ParaProps| {
         let mut p =
             Paragraph::with_text(text, wordcraft_doc::CharProps { font: Some("Source Sans 3".into()), size: Some(12.0), ..Default::default() });
-        p.props = props;
+        p.props = props.into();
         wordcraft_doc::para_block(p)
     };
     doc.body = vec![
@@ -14426,9 +14436,9 @@ fn keep_with_next_fits_to_the_hundredth_of_a_point() {
         |h: f32| ParaProps { space_before: Some(0.0), space_after: Some(0.0), line_spacing: Some(LineSpacing::Exactly(h)), ..Default::default() };
     let mut d = Document::from_text("Filler\nKept\nNext");
     let body = d.last_section.page_h - d.last_section.margin_top - d.last_section.margin_bottom;
-    d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().props = exact(body - 24.0 + 0.005);
-    d.para_mut(StoryRef::Body, &Path::top(1)).unwrap().props = ParaProps { keep_next: Some(true), ..exact(12.0) };
-    d.para_mut(StoryRef::Body, &Path::top(2)).unwrap().props = exact(12.0);
+    d.para_mut(StoryRef::Body, &Path::top(0)).unwrap().props = exact(body - 24.0 + 0.005).into();
+    d.para_mut(StoryRef::Body, &Path::top(1)).unwrap().props = ParaProps { keep_next: Some(true), ..exact(12.0) }.into();
+    d.para_mut(StoryRef::Body, &Path::top(2)).unwrap().props = exact(12.0).into();
     let l = lay(&d);
     assert_eq!(l.caret(&Pos::body(1, 0)).unwrap().page, 0, "the kept paragraph stays on the first page");
     assert_eq!(l.caret(&Pos::body(2, 0)).unwrap().page, 0, "and so does the next one's first line");

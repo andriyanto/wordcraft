@@ -436,11 +436,11 @@ fn word_diff(doc: &Document, a: &Paragraph, b: &Paragraph, ins: u32, del: u32, o
                 j += 1;
             }
             Op::Del => {
-                put(&mut p, ta.get(i), &CharProps { del: Some(del), ..base.clone() });
+                put(&mut p, ta.get(i), &CharProps { del: Some(del), ..base.clone().into_inner() });
                 i += 1;
             }
             Op::Ins => {
-                put(&mut p, tb.get(j), &CharProps { ins: Some(ins), ..base.clone() });
+                put(&mut p, tb.get(j), &CharProps { ins: Some(ins), ..base.clone().into_inner() });
                 j += 1;
             }
         }

@@ -944,7 +944,7 @@ fn typing_boundary_many_permission_markers_is_not_quadratic() {
             p.objects.push(InlineObject::PermEnd { id: i as u32 });
         }
         let after = p.text.len();
-        p.runs.push(Run { len: p.text.len(), props: CharProps::default() });
+        p.runs.push(Run { len: p.text.len(), props: CharProps::default().into() });
         let mut doc = Document::new();
         doc.body = vec![Block::Para(p).into()];
         doc.settings.protection = Some("readOnly".into());
@@ -1017,7 +1017,7 @@ fn typing_boundary_keeps_author_precedence_and_malformed_pairing() {
                 let mut p = wordcraft_doc::Paragraph::new();
                 p.text = text.clone();
                 p.objects = objects[..count].to_vec();
-                p.runs.push(Run { len: p.text.len(), props: CharProps::default() });
+                p.runs.push(Run { len: p.text.len(), props: CharProps::default().into() });
                 let mut doc = Document::new();
                 doc.body = vec![Block::Para(p).into()];
                 doc.settings.protection = mode.map(str::to_string);
@@ -1039,7 +1039,7 @@ fn typing_boundary_keeps_author_precedence_and_malformed_pairing() {
 fn typing_boundary_keeps_duplicate_ids_across_stories_and_start_precedence() {
     use wordcraft_doc::para::Run;
     let paragraph = |text: String, objects| wordcraft_doc::Paragraph {
-        runs: vec![Run { len: text.len(), props: CharProps::default() }],
+        runs: vec![Run { len: text.len(), props: CharProps::default().into() }],
         text,
         objects,
         ..Default::default()

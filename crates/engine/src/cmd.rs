@@ -502,7 +502,7 @@ fn split_para_as(s: &mut Session, at: &Pos, enter: bool) -> Result<Pos, CmdError
             p.props.style = Some(n);
             p.props.numbering = None;
             // A heading's character formatting doesn't carry into body text.
-            p.mark = CharProps::default();
+            p.mark = CharProps::default().into();
         }
     }
     if s.doc.settings.track_changes {

@@ -109,7 +109,7 @@ fn character_formatting_round_trips() {
     for (i, props) in want.iter().enumerate() {
         let s = format!("s{i}|");
         p.text.push_str(&s);
-        p.runs.push(wordcraft_doc::para::Run { len: s.len() - 1, props: props.clone() });
+        p.runs.push(wordcraft_doc::para::Run { len: s.len() - 1, props: props.clone().into() });
         p.runs.push(wordcraft_doc::para::Run { len: 1, props: Default::default() });
     }
     let mut d = Document::new();

@@ -156,7 +156,7 @@ fn enter(s: &mut Session, undo_step: bool) -> Result<(), CmdError> {
             // The new paragraph is formatted as after a plain Enter (the closing mark's
             // formatting, or none when the next style starts afresh); its mark keeps its revisions.
             let (ins, del, fmt_change) = (p.mark.ins, p.mark.del, p.mark.fmt_change.take());
-            p.mark = wordcraft_doc::props::CharProps { ins, del, fmt_change, ..c };
+            p.mark = wordcraft_doc::props::CharProps { ins, del, fmt_change, ..c.into_inner() }.into();
             p.touch();
             s.sel = Selection::caret(new);
             s.goal_x = None;

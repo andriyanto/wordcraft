@@ -4152,9 +4152,9 @@ fn ime_descriptor_hides_tracked_deletions_and_preserves_reversed_selection() {
     let mut p = Paragraph::new();
     p.text = "abDELcd".into();
     p.runs = vec![
-        Run { len: 2, props: CharProps::default() },
-        Run { len: 3, props: CharProps { del: Some(0), ..Default::default() } },
-        Run { len: 2, props: CharProps::default() },
+        Run { len: 2, props: CharProps::default().into() },
+        Run { len: 3, props: CharProps { del: Some(0), ..Default::default() }.into() },
+        Run { len: 2, props: CharProps::default().into() },
     ];
     let mut doc = wordcraft_doc::Document::from_text("x");
     doc.body = vec![para_block(p)];

@@ -32,6 +32,6 @@ pub fn next_rev() -> u64 {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Run {
     pub len: usize,
-    #[serde(default, skip_serializing_if = "CharProps::is_empty")]
-    pub props: CharProps,
+    #[serde(default, skip_serializing_if = "crate::shared::Shared::<CharProps>::is_unset")]
+    pub props: crate::shared::Shared<CharProps>,
 }

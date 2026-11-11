@@ -628,7 +628,7 @@ mod tests_warp_lookups {
         ];
         let mut p = Paragraph::new();
         p.text = format!("é{}λ", OBJ.to_string().repeat(objects.len() + 1));
-        p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default().into() }];
         p.objects = objects;
         let mut d = Document::from_text("");
         d.body = vec![Block::Para(p).into()];
@@ -669,7 +669,7 @@ mod tests_warp_lookups {
         let para = |preset| {
             let mut p = Paragraph::new();
             p.text = OBJ.to_string();
-            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default() }];
+            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default().into() }];
             p.objects = vec![shape(TextWarp::new(preset))];
             p
         };
@@ -703,7 +703,7 @@ mod tests_warp_lookups {
             }
             let mut p = Paragraph::new();
             p.text = OBJ.to_string().repeat(objects.len());
-            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default() }];
+            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default().into() }];
             p.objects = objects;
             let mut d = Document::from_text("");
             d.body = vec![Block::Para(p).into()];
@@ -723,7 +723,7 @@ mod tests_warp_lookups {
         let make = |suffix: usize| {
             let mut p = Paragraph::new();
             p.text = format!("{OBJ}{}", "x".repeat(suffix));
-            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default() }];
+            p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: CharProps::default().into() }];
             p.objects = vec![shape(TextWarp::new("textArchUp"))];
             let mut d = Document::from_text("");
             d.body = vec![Block::Para(p).into()];

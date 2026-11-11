@@ -9,7 +9,7 @@ use wordcraft_doc::{Document, Paragraph, Part, PartKind, para_block};
 fn text_para(s: &str, props: CharProps) -> std::sync::Arc<wordcraft_doc::Block> {
     let mut p = Paragraph::new();
     p.text = s.into();
-    p.runs = vec![wordcraft_doc::para::Run { len: s.len(), props }];
+    p.runs = vec![wordcraft_doc::para::Run { len: s.len(), props: props.into() }];
     para_block(p)
 }
 

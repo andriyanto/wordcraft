@@ -45,7 +45,7 @@ fn page_ink_keeps_item_order_duplicates_story_paths_and_unmatched_storage() {
     let mut d = Document::new();
     let mut p = Paragraph::new();
     p.text = format!("é{OBJ}{OBJ}{OBJ}漢{OBJ}");
-    p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default() }];
+    p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default().into() }];
     p.objects = vec![InlineObject::BookmarkStart { name: "original".into() }, stroke(11), stroke(22)];
     d.body = vec![para_block(p.clone())];
     let h = d.add_part(wordcraft_doc::PartKind::Header, vec![para_block(p.clone())]);
@@ -85,7 +85,7 @@ fn page_ink_lookup_work_does_not_multiply_with_paragraph_objects() {
         let mut d = Document::new();
         let mut p = Paragraph::new();
         p.text = OBJ.to_string().repeat(n);
-        p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default().into() }];
         p.objects = (0..n).map(|i| stroke(i as u32)).collect();
         d.body = vec![para_block(p)];
         let items = (0..n).map(|i| placed(StoryRef::Body, Path::top(0), i * OBJ.len_utf8(), 50.0)).collect();

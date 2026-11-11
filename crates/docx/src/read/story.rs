@@ -139,7 +139,7 @@ impl PB {
     fn push_run(&mut self, len: usize, props: &CharProps) {
         match self.runs.last_mut() {
             Some(r) if r.props == *props => r.len += len,
-            _ => self.runs.push(Run { len, props: props.clone() }),
+            _ => self.runs.push(Run { len, props: props.clone().into() }),
         }
     }
 }

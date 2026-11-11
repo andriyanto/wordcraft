@@ -14,7 +14,7 @@ fn open(props: &str, text: &str) -> Document {
 }
 
 fn props(d: &Document) -> ParaProps {
-    d.body[0].as_para().unwrap().props.clone()
+    d.body[0].as_para().unwrap().props.clone().into_inner()
 }
 
 #[test]
@@ -72,7 +72,7 @@ fn borders_and_background_round_trip() {
     let mut p = Paragraph::new();
     p.text = "Boxed".into();
     p.runs = vec![wordcraft_doc::para::Run { len: 5, props: Default::default() }];
-    p.props = want.clone();
+    p.props = want.clone().into();
     let mut d = Document::new();
     d.body = vec![para_block(p)];
     let got = props(&import(&export(&d).unwrap()).unwrap());

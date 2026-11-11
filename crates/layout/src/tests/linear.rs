@@ -51,7 +51,7 @@ fn proof_text_walks_the_runs_once() {
     // One run per character, every other one deleted.
     let para = |n: usize| {
         let mut p = Paragraph::with_text(&"a".repeat(n), CharProps::default());
-        p.runs = (0..n).map(|i| Run { len: 1, props: CharProps { del: (i % 2 == 1).then_some(0), ..Default::default() } }).collect();
+        p.runs = (0..n).map(|i| Run { len: 1, props: CharProps { del: (i % 2 == 1).then_some(0), ..Default::default() }.into() }).collect();
         p
     };
     assert_eq!(para::proof_text(&para(5)), "a\u{1}a\u{1}a");
@@ -256,7 +256,7 @@ fn tracked_words(n: usize) -> Document {
     let mut d = Document::from_text("x");
     let p = Paragraph {
         text: "word ".repeat(n),
-        runs: (0..n).map(|i| Run { len: 5, props: CharProps { ins: u32::try_from(i).ok(), size: Some(1.0), ..Default::default() } }).collect(),
+        runs: (0..n).map(|i| Run { len: 5, props: CharProps { ins: u32::try_from(i).ok(), size: Some(1.0), ..Default::default() }.into() }).collect(),
         ..Paragraph::with_text("", CharProps::default())
     };
     d.body = vec![wordcraft_doc::para_block(p)];
@@ -322,7 +322,7 @@ fn tracked_paras(n: usize) -> Document {
     let mut d = Document::from_text("x");
     d.body = (0..n)
         .map(|i| {
-            let run = Run { len: 1, props: CharProps { ins: u32::try_from(i).ok(), size: Some(1.0), ..Default::default() } };
+            let run = Run { len: 1, props: CharProps { ins: u32::try_from(i).ok(), size: Some(1.0), ..Default::default() }.into() };
             let mut p = Paragraph { runs: vec![run], ..Paragraph::with_text("w", CharProps::default()) };
             p.mark.size = Some(1.0);
             p.props.space_before = Some(0.0);
@@ -403,7 +403,7 @@ fn balloons_are_in_their_authors_colours() {
 fn mixed_page() -> (Document, DocLayout) {
     let mut d = tracked_paras(6);
     let mut hp = Paragraph::with_text("head", CharProps::default());
-    hp.runs = vec![Run { len: 4, props: CharProps { ins: Some(2), ..Default::default() } }];
+    hp.runs = vec![Run { len: 4, props: CharProps { ins: Some(2), ..Default::default() }.into() }];
     let id = d.add_part(wordcraft_doc::PartKind::Header, vec![wordcraft_doc::para_block(hp)]);
     d.last_section.headers.default = Some(id);
     let exact = |rows, cols| {

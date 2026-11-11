@@ -849,7 +849,7 @@ fn citation_refresh_source_lookup_work_scales_with_document_size() {
     fn doc(n: usize) -> Session {
         let mut p = Paragraph::new();
         p.text = wordcraft_doc::para::OBJ.to_string().repeat(n);
-        p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default() }];
+        p.runs = vec![wordcraft_doc::Run { len: p.text.len(), props: CharProps::default().into() }];
         p.objects = (0..n)
             .rev()
             .map(|i| InlineObject::Field {

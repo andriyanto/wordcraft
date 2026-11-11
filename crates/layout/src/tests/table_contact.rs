@@ -16,14 +16,15 @@ fn document(mode: u32) -> Document {
     d.body = (1..=6)
         .map(|n| {
             let mut p = Paragraph::with_text(&format!("P{n}"), ch.clone());
-            p.mark = ch.clone();
+            p.mark = ch.clone().into();
             p.props = ParaProps {
                 space_before: Some(0.0),
                 space_after: Some(0.0),
                 line_spacing: Some(LineSpacing::Multiple(1.0)),
                 widow_control: Some(false),
                 ..Default::default()
-            };
+            }
+            .into();
             wordcraft_doc::para_block(p)
         })
         .collect();
@@ -132,9 +133,10 @@ fn exact_spacing_does_not_make_mark_height_a_table_contact_boundary() {
             let mut d = Document::new();
             d.settings.compat_mode = mode;
             let mut p = Paragraph::with_text("P1", CharProps { font: Some("Source Sans 3".into()), size: Some(11.0), ..Default::default() });
-            p.mark = CharProps { font: Some("Source Sans 3".into()), size: Some(62.5), ..Default::default() };
+            p.mark = CharProps { font: Some("Source Sans 3".into()), size: Some(62.5), ..Default::default() }.into();
             p.props =
-                ParaProps { line_spacing: Some(LineSpacing::Exactly(12.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+                ParaProps { line_spacing: Some(LineSpacing::Exactly(12.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() }
+                    .into();
             d.body = vec![wordcraft_doc::para_block(p)];
             // The mark's natural 82.875 pt estimate ends far below the actual 12 pt line.
             let top = 72.0 + LINE;
@@ -162,8 +164,9 @@ fn exact_document(mode: u32, mark_size: f32) -> Document {
     let mut d = Document::new();
     d.settings.compat_mode = mode;
     let mut p = Paragraph::with_text("WWWWWWWWWWWW", CharProps { font: Some("Source Sans 3".into()), size: Some(11.0), ..Default::default() });
-    p.mark = CharProps { font: Some("Source Sans 3".into()), size: Some(mark_size), ..Default::default() };
-    p.props = ParaProps { line_spacing: Some(LineSpacing::Exactly(12.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() };
+    p.mark = CharProps { font: Some("Source Sans 3".into()), size: Some(mark_size), ..Default::default() }.into();
+    p.props =
+        ParaProps { line_spacing: Some(LineSpacing::Exactly(12.0)), space_before: Some(0.0), space_after: Some(0.0), ..Default::default() }.into();
     d.body = vec![wordcraft_doc::para_block(p)];
     d
 }
@@ -207,7 +210,7 @@ fn exact_table_contact_uses_the_spacing_when_a_word_skips_a_strip() {
         let mut d = exact_document(mode, 4.0);
         // Anchor the shape in an earlier paragraph so the tested word has no inline anchor.
         let Block::Para(p) = &*d.body[0] else { panic!("expected paragraph") };
-        let mut anchor = Paragraph::with_text("P0", p.mark.clone());
+        let mut anchor = Paragraph::with_text("P0", p.mark.clone().into_inner());
         anchor.mark = p.mark.clone();
         anchor.props = p.props.clone();
         d.body.insert(0, wordcraft_doc::para_block(anchor));

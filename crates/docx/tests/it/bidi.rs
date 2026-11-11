@@ -55,7 +55,7 @@ fn persian_run() -> CharProps {
 #[test]
 fn persian_paragraph_round_trips() {
     let mut rtl = Paragraph::with_text(FA, persian_run());
-    rtl.props = ParaProps { bidi: Some(true), align: Some(Align::Justify), ..Default::default() };
+    rtl.props = ParaProps { bidi: Some(true), align: Some(Align::Justify), ..Default::default() }.into();
     let ltr = Paragraph::with_text("English with فارسی inside", CharProps { cs: Some(true), ..Default::default() });
     let mut d = Document::new();
     d.body = vec![para_block(rtl.clone()), para_block(ltr.clone())];

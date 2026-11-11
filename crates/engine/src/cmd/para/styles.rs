@@ -90,7 +90,7 @@ pub(super) fn create_style(s: &mut Session, v: &Value) -> CmdResult {
     if p::bool(v, "fromSelection").unwrap_or(true)
         && let Some(para) = s.doc.para_at(&s.sel.focus)
     {
-        st.para = para.props.clone();
+        st.para = para.props.clone().into_inner();
         st.para.style = None;
         st.para.numbering = None;
         // A symbol's own font is the symbol's, not the style's.
@@ -186,10 +186,10 @@ pub(super) fn update_to_match(s: &mut Session, v: &Value) -> CmdResult {
         for path in paths {
             let p = s.doc.para_mut(a.story, &path)?;
             p.props.style = Some(id.clone());
-            p.props = strip_matching(&p.props, &want_p, PARA_KEEP);
+            p.props = strip_matching(&*p.props, &want_p, PARA_KEEP).into();
             let len = p.len();
             p.format(0, len, &|c| *c = strip_matching(c, &want_c, CHAR_KEEP))?;
-            p.mark = strip_matching(&p.mark, &want_c, CHAR_KEEP);
+            p.mark = strip_matching(&*p.mark, &want_c, CHAR_KEEP).into();
         }
     }
     s.pending = None;
