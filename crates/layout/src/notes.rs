@@ -147,7 +147,7 @@ fn separator_rules(blocks: &Blocks, items: &[Placed]) -> Vec<Placed> {
         let Some(first) = para.lines.get(*l0) else { continue };
         for line in para.lines.get(*l0..*l1).unwrap_or(&[]) {
             for k in line.c0..line.c1 {
-                let Some(para::ClKind::Object(oi)) = para.clusters.get(k).map(|c| c.kind) else { continue };
+                let Some(para::ClKind::Object(oi)) = para.clusters.get(k).map(|c| c.kind()) else { continue };
                 if p.objects.get(oi).and_then(InlineObject::as_note_separator).is_none() {
                     continue;
                 }
@@ -370,7 +370,7 @@ pub(crate) fn para_notes(doc: &Document, p: &Paragraph, pl: &ParaLayout) -> Vec<
     let mut notes = pl.notes.clone();
     if p.objects.iter().any(|o| !o.text_boxes().is_empty()) {
         for (ci, c) in pl.clusters.iter().enumerate() {
-            if let para::ClKind::Object(oi) = c.kind
+            if let para::ClKind::Object(oi) = c.kind()
                 && let Some(o) = p.objects.get(oi).filter(|o| !o.frame().is_some_and(|(_, _, f)| f.hidden))
             {
                 for id in o.text_boxes() {

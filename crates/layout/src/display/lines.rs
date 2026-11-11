@@ -100,9 +100,9 @@ fn collect_glyph_run(
     let (n_glyphs, n_bytes) = run
         .iter()
         .take_while(|cluster| cluster.style == si)
-        .filter(|cluster| matches!(cluster.kind, ClKind::Text | ClKind::Space))
+        .filter(|cluster| matches!(cluster.kind(), ClKind::Text | ClKind::Space))
         .fold((0usize, 0usize), |(glyphs, bytes), cluster| {
-            (glyphs + cluster.g1.saturating_sub(cluster.g0) as usize, bytes + cluster.end.saturating_sub(cluster.start))
+            (glyphs + cluster.g1.saturating_sub(cluster.g0) as usize, bytes + cluster.end().saturating_sub(cluster.start()))
         });
     let mut glyphs = Vec::with_capacity(n_glyphs);
     let mut text = String::with_capacity(n_bytes);
@@ -114,7 +114,7 @@ fn collect_glyph_run(
             break;
         }
         let cx = x + line.cl_left(k).unwrap_or(0.0);
-        if matches!(c.kind, ClKind::Text | ClKind::Space) {
+        if matches!(c.kind(), ClKind::Text | ClKind::Space) {
             let a = text.len();
             // An object's cluster (a field, a note number) stands for the text it shows.
             let mut shown = None;
@@ -130,7 +130,7 @@ fn collect_glyph_run(
                 }));
                 shown = Some(r);
             } else if let Some(p) = para {
-                let t = p.text.get(c.start..c.end).unwrap_or("");
+                let t = p.text.get(c.start()..c.end()).unwrap_or("");
                 // Symbol-font characters (Wingdings…) read as the Unicode symbols drawn.
                 if symbol_font {
                     text.push_str(&wordcraft_doc::symbol_fonts::map_text(&st.rc.font, t));
@@ -307,7 +307,7 @@ fn draw_glyph_runs(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
         // text inside a run can split it into several visual spans.
         let mut end_k = run_end;
         while end_k > run_start
-            && pl.clusters.get(end_k - 1).is_some_and(|c| matches!(c.kind, ClKind::Space | ClKind::Marker | ClKind::LineBreak))
+            && pl.clusters.get(end_k - 1).is_some_and(|c| matches!(c.kind(), ClKind::Space | ClKind::Marker | ClKind::LineBreak))
             && end_k == line.c1
         {
             end_k -= 1;
@@ -328,7 +328,7 @@ fn draw_glyph_runs(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
                 if underline == Underline::Words {
                     for kk in run_start..end_k {
                         let Some(c) = pl.clusters.get(kk) else { continue };
-                        if c.kind != ClKind::Text {
+                        if c.kind() != ClKind::Text {
                             continue;
                         }
                         let a = x + line.cl_left(kk).unwrap_or(0.0);
@@ -352,7 +352,7 @@ fn draw_glyph_runs(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
         // Emphasis marks (Font › Emphasis mark): one over (or under) each character.
         if rc.emphasis != wordcraft_doc::props::EmphasisMark::None {
             for kk in run_start..end_k {
-                if pl.clusters.get(kk).is_none_or(|c| c.kind != ClKind::Text) {
+                if pl.clusters.get(kk).is_none_or(|c| c.kind() != ClKind::Text) {
                     continue;
                 }
                 let a = x + line.cl_left(kk).unwrap_or(0.0);
@@ -440,7 +440,7 @@ fn character_backgrounds(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
     for k in ctx.line.c0..ctx.line.c1 {
         let (Some(cluster), Some(left), Some(right)) = (ctx.pl.clusters.get(k), ctx.line.cl_left(k), ctx.line.cl_right(k)) else { continue };
         let Some(style) = ctx.pl.styles.get(cluster.style as usize) else { continue };
-        if cluster.kind == ClKind::Marker {
+        if cluster.kind() == ClKind::Marker {
             continue;
         }
         if let Some(color) = style.rc.highlight.or(style.rc.shading) {
@@ -531,7 +531,7 @@ fn formatting_marks(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
             let nx = x + line.cl_right(k).unwrap_or(cx - x);
             let size = pl.styles.get(c.style as usize).map(|s| s.size).unwrap_or(msize);
             let arrow = if line.rtl { '←' } else { '→' };
-            match c.kind {
+            match c.kind() {
                 ClKind::Space if marks.spaces => {
                     out.push(Draw::Mark { x: (cx + nx) / 2.0 - size * 0.12, baseline: base - size * 0.08, size, ch: '·', color: None })
                 }
@@ -540,7 +540,7 @@ fn formatting_marks(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
                 }
                 ClKind::LineBreak if marks.paragraphs => out.push(Draw::Mark { x: cx + 1.0, baseline: base, size, ch: '↵', color: None }),
                 ClKind::PageBreak | ClKind::ColumnBreak if marks.paragraphs => {
-                    let label = if c.kind == ClKind::PageBreak { '⤓' } else { '⇥' };
+                    let label = if c.kind() == ClKind::PageBreak { '⤓' } else { '⇥' };
                     out.push(Draw::Line {
                         x0: cx + 2.0,
                         y0: base - size * 0.3,
@@ -627,12 +627,12 @@ fn inline_objects(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
         (ctx.doc, ctx.story, ctx.path, ctx.pl, ctx.para, ctx.line, ctx.x, ctx.base, ctx.opts, ctx.alpha);
     for k in line.c0..line.c1 {
         let Some(c) = pl.clusters.get(k) else { continue };
-        let ClKind::Object(oi) = c.kind else { continue };
+        let ClKind::Object(oi) = c.kind() else { continue };
         if c.obj_h + c.obj_d <= 0.0 {
             continue;
         }
         // A dragged inline object is left out too: its preview stands in for it.
-        if opts.hide_object.as_ref().is_some_and(|p| p.story == story && p.path == *path && p.off == c.start) {
+        if opts.hide_object.as_ref().is_some_and(|p| p.story == story && p.path == *path && p.off == c.start()) {
             continue;
         }
         let cx = x + line.cl_left(k).unwrap_or(0.0);

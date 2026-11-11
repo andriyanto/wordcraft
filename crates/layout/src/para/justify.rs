@@ -27,7 +27,7 @@ pub(super) fn space_room(spaces: f32, word: f32) -> f32 {
 pub(super) fn shrink_line_spaces(pl: &ParaLayout, xs: &mut [f32], c0: usize, c1: usize, content_end: f32, slack: f32) {
     let spaces: Vec<(usize, f32)> = (c0..c1)
         .filter_map(|k| {
-            let c = pl.clusters.get(k).filter(|c| c.kind == ClKind::Space)?;
+            let c = pl.clusters.get(k).filter(|c| c.kind() == ClKind::Space)?;
             (xs.get(k - c0).copied().unwrap_or(f32::MAX) < content_end - 0.01).then_some((k, c.adv))
         })
         .collect();
@@ -127,7 +127,7 @@ pub(super) fn hyphenation_points(
         .clusters
         .iter()
         .enumerate()
-        .filter(|(_, c)| matches!(c.kind, ClKind::Text | ClKind::Marker) && bytes.binary_search(&c.end).is_ok())
+        .filter(|(_, c)| matches!(c.kind(), ClKind::Text | ClKind::Marker) && bytes.binary_search(&c.end()).is_ok())
         .map(|(i, _)| i as u32)
         .collect();
     out.dedup();

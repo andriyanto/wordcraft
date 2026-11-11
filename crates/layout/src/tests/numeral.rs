@@ -24,7 +24,7 @@ fn line_gids(l: &DocLayout, text: &str) -> Vec<Vec<u32>> {
                 let mut out = Vec::new();
                 for k in line.c0..line.c1 {
                     let cl = &para.clusters[k];
-                    assert!(cl.start <= cl.end && cl.end <= text.len(), "cluster indexes the original text");
+                    assert!(cl.start() <= cl.end() && cl.end() <= text.len(), "cluster indexes the original text");
                     let gids: Vec<u32> = para.glyphs[cl.g0 as usize..cl.g1 as usize].iter().map(|g| g.gid).collect();
                     out.push(gids);
                 }

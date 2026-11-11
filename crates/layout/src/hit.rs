@@ -717,7 +717,7 @@ impl DocLayout {
             let mut end = l.stop;
             // Don't put the caret after a trailing break on that line, nor past wrap spaces.
             if matches!(l.end, crate::LineEnd::LineBreak | crate::LineEnd::PageBreak | crate::LineEnd::ColumnBreak) && end > l.start {
-                end = para.clusters.get(l.c1.saturating_sub(1)).map(|c| c.start).unwrap_or(end);
+                end = para.clusters.get(l.c1.saturating_sub(1)).map(|c| c.start()).unwrap_or(end);
             } else if l.end == crate::LineEnd::Wrap {
                 // Before the wrapped line's trailing space: its last reachable offset, in logical
                 // order (the far edge is the left one in right-to-left text).
@@ -924,8 +924,8 @@ impl DocLayout {
             let l = para.lines.get(li)?;
             for k in l.c0..l.c1 {
                 let Some(c) = para.clusters.get(k) else { continue };
-                let crate::para::ClKind::Object(oi) = c.kind else { continue };
-                if c.start != pos.off {
+                let crate::para::ClKind::Object(oi) = c.kind() else { continue };
+                if c.start() != pos.off {
                     continue;
                 }
                 let math = para.maths.iter().find(|(o, _)| *o == oi)?.1.clone();
@@ -949,7 +949,7 @@ impl DocLayout {
             let base = l.top + (line.baseline - line.top);
             for k in line.c0..line.c1 {
                 let Some(c) = l.para.clusters.get(k) else { continue };
-                let crate::para::ClKind::Object(oi) = c.kind else { continue };
+                let crate::para::ClKind::Object(oi) = c.kind() else { continue };
                 let Some((_, ml)) = l.para.maths.iter().find(|(o, _)| *o == oi) else { continue };
                 let x0 = l.x + line.cl_left(k).unwrap_or(0.0);
                 let pad = 2.0;
@@ -957,7 +957,7 @@ impl DocLayout {
                     continue;
                 }
                 let slot = ml.hit(x - x0, base - y)?;
-                let pos = Pos { story: l.story, path: l.path.clone(), off: c.start };
+                let pos = Pos { story: l.story, path: l.path.clone(), off: c.start() };
                 return Some((pos, wordcraft_doc::math_edit::MathPos { path: slot.path.clone(), off: slot.off }));
             }
         }

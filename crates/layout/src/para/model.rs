@@ -125,12 +125,18 @@ pub enum ClKind {
 
 /// One drawing segment of a grapheme cluster (or object, tab, break).
 /// Font/style changes may split its drawing; paragraph edit/wrap boundaries keep it atomic.
+///
+/// There is one for every character laid out and they are kept for as long as the paragraph's
+/// text is, so its size is most of a layout's memory: the byte range and the kind are held in
+/// 32 bits each (read through [`Cluster::start`], [`Cluster::end`] and [`Cluster::kind`]), which
+/// makes a cluster 44 bytes where plain `usize` fields made it 64. Build one from
+/// [`ClusterParts`].
 #[derive(Clone, Debug)]
 pub struct Cluster {
-    pub start: usize,
-    pub end: usize,
+    start: u32,
+    end: u32,
     pub adv: f32,
-    pub kind: ClKind,
+    kind: Kind,
     /// Index into `ParaLayout::styles`.
     pub style: u32,
     /// Glyph range in `ParaLayout::glyphs`.
@@ -144,6 +150,111 @@ pub struct Cluster {
     pub obj_d: f32,
     /// The cluster is a decimal separator (decimal tabs align on it).
     pub dot: bool,
+}
+
+/// [`ClKind`] with an object's index in 32 bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    Text,
+    Space,
+    Tab,
+    LineBreak,
+    PageBreak,
+    ColumnBreak,
+    Object(u32),
+    Marker,
+}
+
+/// A byte offset or object index as a cluster holds it. A paragraph's text and its objects are
+/// far below four billion (the readers cap both); a value past that is held as the largest.
+fn narrow(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
+}
+
+impl From<ClKind> for Kind {
+    fn from(k: ClKind) -> Self {
+        match k {
+            ClKind::Text => Kind::Text,
+            ClKind::Space => Kind::Space,
+            ClKind::Tab => Kind::Tab,
+            ClKind::LineBreak => Kind::LineBreak,
+            ClKind::PageBreak => Kind::PageBreak,
+            ClKind::ColumnBreak => Kind::ColumnBreak,
+            ClKind::Object(i) => Kind::Object(narrow(i)),
+            ClKind::Marker => Kind::Marker,
+        }
+    }
+}
+
+/// What a [`Cluster`] is built from: its fields as they are read.
+#[derive(Clone, Debug)]
+pub struct ClusterParts {
+    pub start: usize,
+    pub end: usize,
+    pub adv: f32,
+    pub kind: ClKind,
+    pub style: u32,
+    pub g0: u32,
+    pub g1: u32,
+    pub break_after: bool,
+    pub obj_h: f32,
+    pub obj_d: f32,
+    pub dot: bool,
+}
+
+impl From<ClusterParts> for Cluster {
+    fn from(p: ClusterParts) -> Self {
+        Cluster {
+            start: narrow(p.start),
+            end: narrow(p.end),
+            adv: p.adv,
+            kind: p.kind.into(),
+            style: p.style,
+            g0: p.g0,
+            g1: p.g1,
+            break_after: p.break_after,
+            obj_h: p.obj_h,
+            obj_d: p.obj_d,
+            dot: p.dot,
+        }
+    }
+}
+
+impl Cluster {
+    /// Where the cluster's text starts in the paragraph, in bytes.
+    pub fn start(&self) -> usize {
+        self.start as usize
+    }
+
+    /// Where the cluster's text ends in the paragraph, in bytes.
+    pub fn end(&self) -> usize {
+        self.end as usize
+    }
+
+    pub fn kind(&self) -> ClKind {
+        match self.kind {
+            Kind::Text => ClKind::Text,
+            Kind::Space => ClKind::Space,
+            Kind::Tab => ClKind::Tab,
+            Kind::LineBreak => ClKind::LineBreak,
+            Kind::PageBreak => ClKind::PageBreak,
+            Kind::ColumnBreak => ClKind::ColumnBreak,
+            Kind::Object(i) => ClKind::Object(i as usize),
+            Kind::Marker => ClKind::Marker,
+        }
+    }
+
+    pub fn set_start(&mut self, start: usize) {
+        self.start = narrow(start);
+    }
+
+    pub fn set_end(&mut self, end: usize) {
+        self.end = narrow(end);
+    }
+
+    pub fn set_kind(&mut self, kind: ClKind) {
+        self.kind = kind.into();
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

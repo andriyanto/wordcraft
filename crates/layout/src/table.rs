@@ -159,7 +159,7 @@ fn measure_para(p: &wordcraft_doc::Paragraph, env: &crate::para::ParaEnv) -> (f3
     let indents = rp.indent_left.max(0.0) + rp.indent_right.max(0.0) + rp.indent_first.max(0.0);
     let (mut word, mut min) = (0.0f32, 0.0f32);
     for c in &pl.clusters {
-        match c.kind {
+        match c.kind() {
             ClKind::Text | ClKind::Object(_) => word += c.adv.max(0.0),
             ClKind::Marker => {}
             _ => {
@@ -179,7 +179,7 @@ fn measure_para(p: &wordcraft_doc::Paragraph, env: &crate::para::ParaEnv) -> (f3
         for k in l.c0..l.c1 {
             let (Some(c), Some(a), Some(b)) = (pl.clusters.get(k), l.cl_left(k), l.cl_right(k)) else { continue };
             lo = lo.min(a.min(b));
-            if !matches!(c.kind, ClKind::Space | ClKind::Marker | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak) {
+            if !matches!(c.kind(), ClKind::Space | ClKind::Marker | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak) {
                 hi = hi.max(a.max(b));
             }
         }
@@ -1480,7 +1480,7 @@ fn para_content(pl: &ParaLayout) -> (f32, f32) {
     let (mut lo, mut hi) = (0.0f32, 0.0f32);
     for c in &pl.clusters {
         let adv = if c.adv.is_finite() { c.adv.clamp(0.0, UNBOUNDED) } else { 0.0 };
-        match c.kind {
+        match c.kind() {
             ClKind::Space => {
                 lo = lo.max(word);
                 word = 0.0;

@@ -379,15 +379,15 @@ impl Builder<'_> {
             let mut lb = LineBuild { pid, li, seg: 0, prev: None, top: line.top - first_top, run: Run::default(), map: Vec::new() };
             for k in line.c0..line.c1 {
                 let Some(cl) = para.clusters.get(k) else { break };
-                lb.map.push((cl.start, lb.seg, lb.run.lens.len()));
+                lb.map.push((cl.start(), lb.seg, lb.run.lens.len()));
                 let shown = para.shown.binary_search_by_key(&k, |s| s.0).ok().and_then(|i| para.shown.get(i)).map(|s| s.1.as_str());
-                let text = match (cl.kind, shown) {
+                let text = match (cl.kind(), shown) {
                     (_, Some(s)) => s,
-                    (ClKind::Text | ClKind::Space, None) => dp.text.get(cl.start..cl.end).unwrap_or(""),
+                    (ClKind::Text | ClKind::Space, None) => dp.text.get(cl.start()..cl.end()).unwrap_or(""),
                     (ClKind::Tab, None) => "\t",
                     (ClKind::LineBreak, None) => "\n",
                     (ClKind::Object(_), None) => {
-                        let picture = match dp.object_at(cl.start) {
+                        let picture = match dp.object_at(cl.start()) {
                             Some(InlineObject::Image { alt, .. } | InlineObject::Graphic { alt, .. }) => Some(alt.clone()),
                             _ => None,
                         };
@@ -395,7 +395,7 @@ impl Builder<'_> {
                             if !lb.run.lens.is_empty() {
                                 self.flush(&mut lb, line, at);
                             }
-                            let rect = pictures.get(&(path.0.as_slice(), cl.start)).copied().or_else(|| {
+                            let rect = pictures.get(&(path.0.as_slice(), cl.start())).copied().or_else(|| {
                                 let (x0, x1) = (line.cl_left(k)?, line.cl_right(k)?);
                                 Some(at.rect(wordcraft_geom::Rect::new(x0.min(x1), lb.top, (x1 - x0).abs(), line.height)))
                             });
@@ -406,7 +406,7 @@ impl Builder<'_> {
                             if let Some(r) = rect {
                                 n.set_bounds(bounds(r));
                             }
-                            self.add(pid.with(("image", cl.start)), Some(pid), n);
+                            self.add(pid.with(("image", cl.start())), Some(pid), n);
                         }
                         ""
                     }
@@ -415,16 +415,16 @@ impl Builder<'_> {
                 if text.is_empty() {
                     continue;
                 }
-                let link = links.iter().find(|(r, _)| r.contains(&cl.start)).map(|(_, u)| u.clone());
+                let link = links.iter().find(|(r, _)| r.contains(&cl.start())).map(|(_, u)| u.clone());
                 if (link != lb.run.link || lb.run.lens.len() >= MAX_RUN) && !lb.run.lens.is_empty() {
                     self.flush(&mut lb, line, at);
                     if let Some(m) = lb.map.last_mut() {
-                        *m = (cl.start, lb.seg, 0);
+                        *m = (cl.start(), lb.seg, 0);
                     }
                 }
                 lb.run.link = link;
                 // A line break ends its line as the paragraph mark does, and takes the same room.
-                let (x, w) = if cl.kind == ClKind::LineBreak {
+                let (x, w) = if cl.kind() == ClKind::LineBreak {
                     line.mark_box()
                 } else {
                     let (x0, x1) = (line.cl_left(k).unwrap_or(0.0), line.cl_right(k).unwrap_or(0.0));

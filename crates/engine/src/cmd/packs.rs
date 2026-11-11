@@ -598,7 +598,7 @@ mod tests {
             .iter()
             .flat_map(|p| &p.items)
             .filter_map(|i| if let wordcraft_layout::Placed::Lines { para, .. } = i { Some(para) } else { None })
-            .flat_map(|para| para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end)).collect::<Vec<_>>())
+            .flat_map(|para| para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end())).collect::<Vec<_>>())
             .collect();
         wordcraft_proof::packs::set_packs_dir(None);
         let _ = std::fs::remove_dir_all(&dir);

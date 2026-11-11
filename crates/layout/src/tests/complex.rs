@@ -32,7 +32,7 @@ fn myanmar_syllables_are_single_clusters() {
     crate::test_fonts();
     let l = lay(&Document::from_text(MYANMAR));
     let pl = para_layout(&l, 0);
-    let starts: Vec<usize> = pl.clusters.iter().map(|c| c.start).collect();
+    let starts: Vec<usize> = pl.clusters.iter().map(|c| c.start()).collect();
     // Grapheme clusters would also start at the aa signs (bytes 15 and 21), splitting မာ and စာ.
     assert_eq!(starts, vec![0, 6, 12, 18]);
     // The caret can't land inside a syllable: every caret offset is a cluster start or the end.
@@ -41,7 +41,7 @@ fn myanmar_syllables_are_single_clusters() {
     // Stacked consonants (virama) and Khmer subscripts (coeng) too.
     let l = lay(&Document::from_text("\u{1019}\u{1039}\u{1018}\u{102C} \u{1781}\u{17D2}\u{1798}\u{17C2}\u{179A}"));
     let pl = para_layout(&l, 0);
-    let starts: Vec<usize> = pl.clusters.iter().map(|c| c.start).collect();
+    let starts: Vec<usize> = pl.clusters.iter().map(|c| c.start()).collect();
     assert_eq!(starts, vec![0, 12, 13, 25]);
 }
 
@@ -55,11 +55,11 @@ fn myanmar_without_spaces_wraps_between_syllables() {
     let breaks = wordcraft_doc::cluster::myanmar_breaks(&text);
     // A line may end before each syllable: before မာ and စာ, never before န် (a final).
     for c in &pl.clusters {
-        assert_eq!(c.break_after, breaks.contains(&c.end), "break after {}", c.end);
+        assert_eq!(c.break_after, breaks.contains(&c.end()), "break after {}", c.end());
     }
-    assert!(pl.clusters.iter().any(|c| c.break_after && c.end == 12) && !pl.clusters.iter().any(|c| c.break_after && c.end == 6));
+    assert!(pl.clusters.iter().any(|c| c.break_after && c.end() == 12) && !pl.clusters.iter().any(|c| c.break_after && c.end() == 6));
     for line in pl.lines.iter().skip(1) {
-        let start = pl.clusters[line.c0].start;
+        let start = pl.clusters[line.c0].start();
         assert!(breaks.contains(&start), "line starts at syllable {start}");
     }
     // Lines are full: a syllable break, not an emergency break after one cluster.
@@ -141,7 +141,7 @@ fn cluster_faces(text: &str, font: Option<&str>) -> Vec<(usize, wordcraft_fonts:
     p.runs[0].props.size = Some(16.0);
     let l = lay(&d);
     let pl = para_layout(&l, 0);
-    pl.clusters.iter().map(|c| (c.start, pl.styles[c.style as usize].face)).collect()
+    pl.clusters.iter().map(|c| (c.start(), pl.styles[c.style as usize].face)).collect()
 }
 
 #[test]

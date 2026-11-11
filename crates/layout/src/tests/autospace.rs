@@ -93,10 +93,10 @@ fn a_field_result_is_classed_by_the_text_it_shows() {
         InlineObject::Field { instr: "MERGEFIELD n".into(), result: "12".into(), locked: false, dirty: false, code: false, form: String::new() };
     para0(&mut d).insert_object(3, field, &CharProps::default()).unwrap();
     let pl = first_para(&lay(&d));
-    let at = pl.clusters.iter().position(|c| c.start == 3).unwrap();
+    let at = pl.clusters.iter().position(|c| c.start() == 3).unwrap();
     assert!(pl.shown.iter().any(|s| s.0 == at && s.1 == "12"), "the field shows its result: {:?}", pl.shown);
     let q = quarter(&d);
-    assert_eq!(pl.clusters[at].kind, ClKind::Text);
+    assert_eq!(pl.clusters[at].kind(), ClKind::Text);
     // 漢|1 and 2|漢: the field's first and last characters, not the object it stands for.
     assert_eq!(gaps(&d), [q, q, 0.0]);
 }
@@ -126,7 +126,7 @@ fn the_space_takes_no_room_at_the_end_of_a_justified_line() {
     let mut d = Document::from_text(text);
     let pl = first_para(&lay(&d));
     let line = &pl.lines[0];
-    let k = pl.clusters.iter().position(|c| c.start == text.find('1').unwrap()).unwrap();
+    let k = pl.clusters.iter().position(|c| c.start() == text.find('1').unwrap()).unwrap();
     let gap = gaps(&d)[k];
     assert!(gap > 0.0);
     let plain = pl.clusters[k].adv - gap;
