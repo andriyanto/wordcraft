@@ -1,0 +1,57 @@
+# Fuzz targets for the file readers (cargo-fuzz / libFuzzer). Not a member of the workspace:
+# libFuzzer needs a nightly toolchain and its own profile.
+#
+#   cargo install cargo-fuzz
+#   cargo +nightly fuzz run docx_read fuzz/corpus/docx_read -- -max_len=1048576 -rss_limit_mb=4096
+#
+# Every reader must take any bytes without panicking, hanging or running out of memory
+# (SECURITY.md: crashes from hostile input are in scope). See fuzz/README.md.
+[package]
+name = "wordcraft-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+wordcraft-docx = { path = "../crates/docx" }
+wordcraft-docbin = { path = "../crates/docbin" }
+wordcraft-formats = { path = "../crates/formats" }
+wordcraft-metafile = { path = "../crates/metafile" }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "docx_read"
+path = "fuzz_targets/docx_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "doc_read"
+path = "fuzz_targets/doc_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "formats_read"
+path = "fuzz_targets/formats_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metafile_parse"
+path = "fuzz_targets/metafile_parse.rs"
+test = false
+doc = false
+bench = false
