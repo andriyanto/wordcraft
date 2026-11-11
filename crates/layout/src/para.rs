@@ -39,7 +39,9 @@ pub use grid::{Exclusion, Grid, is_east_asian};
 #[cfg(test)]
 use lines::break_lines;
 pub(crate) use lines::takes_room;
-pub use model::{CellText, ClKind, Cluster, Enclosed, Glyph, Label, LabelRun, Line, LineEnd, PARA_MARK_WIDTH, ParaEnv, RubyLayout, StyleRun, VisCl};
+pub use model::{
+    CellText, ClKind, Cluster, ClusterParts, Enclosed, Glyph, Label, LabelRun, Line, LineEnd, PARA_MARK_WIDTH, ParaEnv, RubyLayout, StyleRun, VisCl,
+};
 pub use paragraph::layout_para;
 #[cfg(test)]
 pub(crate) use paragraph::word_widths;
@@ -104,6 +106,24 @@ pub struct ParaLayout {
 }
 
 impl ParaLayout {
+    /// Give back the room the layout's lists grew past what they hold. They are built by
+    /// appending, which leaves each with up to twice what it needs, and a laid-out paragraph is
+    /// then kept as it is for as long as its text is: in a long document that spare room was
+    /// nearly a third of the layout's memory (a cluster is 64 bytes, and there is one a
+    /// character).
+    pub(crate) fn release_spare_room(&mut self) {
+        self.clusters.shrink_to_fit();
+        self.glyphs.shrink_to_fit();
+        self.styles.shrink_to_fit();
+        self.bidi_levels.shrink_to_fit();
+        self.hyph_after.shrink_to_fit();
+        self.lines.shrink_to_fit();
+        for line in &mut self.lines {
+            line.xs.shrink_to_fit();
+            line.vis.shrink_to_fit();
+        }
+    }
+
     /// The room a horizontal rule at cluster `k` is placed in, from its left edge to the end of
     /// what the line has left. A first-line indent moves that end along (Word, measured with
     /// 50 % and fixed-width rules beside floats on either side and with first-line and hanging
@@ -128,11 +148,11 @@ impl ParaLayout {
     fn atomic_advance(&self, k: usize) -> f32 {
         let Some(c) = self.clusters.get(k) else { return 0.0 };
         let mut advance = c.adv;
-        if self.joined_cluster_starts.is_empty() || !self.is_edit_boundary(c.start) {
+        if self.joined_cluster_starts.is_empty() || !self.is_edit_boundary(c.start()) {
             return advance;
         }
         for next in self.clusters.get(k + 1..).into_iter().flatten() {
-            if self.is_edit_boundary(next.start) {
+            if self.is_edit_boundary(next.start()) {
                 break;
             }
             advance += next.adv;
@@ -150,7 +170,7 @@ impl ParaLayout {
         let opens_with_break = self.lines.len() > 1
             && self.lines.first().is_some_and(|l| {
                 l.end == LineEnd::PageBreak
-                    && self.clusters.get(l.c0..l.c1).is_some_and(|cs| cs.iter().all(|c| matches!(c.kind, ClKind::PageBreak | ClKind::Marker)))
+                    && self.clusters.get(l.c0..l.c1).is_some_and(|cs| cs.iter().all(|c| matches!(c.kind(), ClKind::PageBreak | ClKind::Marker)))
             });
         usize::from(opens_with_break)
     }
@@ -161,8 +181,8 @@ impl ParaLayout {
             off
         } else {
             // Explicit offsets at a font boundary inside a grapheme use its leading edge too.
-            let k = self.clusters.partition_point(|c| c.start < off);
-            self.clusters.get(..k).into_iter().flatten().rev().find(|c| self.is_edit_boundary(c.start)).map_or(0, |c| c.start)
+            let k = self.clusters.partition_point(|c| c.start() < off);
+            self.clusters.get(..k).into_iter().flatten().rev().find(|c| self.is_edit_boundary(c.start())).map_or(0, |c| c.start())
         };
         let mut from = l.c0;
         self.x_from(l, off, &mut from)
@@ -178,7 +198,7 @@ impl ParaLayout {
         for k in *from..l.c1 {
             crate::work::steps(1);
             let c = self.clusters.get(k)?;
-            if off <= c.start || off < c.end {
+            if off <= c.start() || off < c.end() {
                 *from = k;
                 return l.xs.get(k - l.c0).copied();
             }
@@ -209,7 +229,7 @@ impl ParaLayout {
         if !l.vis.is_empty() {
             return None;
         }
-        let ink = (l.c0..l.c1).rev().find(|&k| self.clusters.get(k).is_some_and(|c| c.kind != ClKind::Space));
+        let ink = (l.c0..l.c1).rev().find(|&k| self.clusters.get(k).is_some_and(|c| c.kind() != ClKind::Space));
         let end = match ink {
             Some(k) => l.xs.get(k + 1 - l.c0).copied(),
             None => l.xs.first().copied(),
@@ -238,13 +258,13 @@ impl ParaLayout {
     fn x_of_bidi(&self, l: &Line, off: usize, from: &mut usize) -> Option<f32> {
         let k = (*from..l.c1).find(|&k| {
             crate::work::steps(1);
-            self.clusters.get(k).is_some_and(|c| off < c.end || off <= c.start)
+            self.clusters.get(k).is_some_and(|c| off < c.end() || off <= c.start())
         });
         *from = k.unwrap_or(l.c1);
         let Some(k) = k else { return Some(l.end_x()) };
         let c = self.clusters.get(k)?;
         let here = l.vis.get(k - l.c0)?;
-        if off > c.start || k == l.c0 {
+        if off > c.start() || k == l.c0 {
             return Some(here.leading());
         }
         let prev = l.vis.get(k - 1 - l.c0)?;
@@ -261,7 +281,7 @@ impl ParaLayout {
                 _ => Vec::new(),
             };
         }
-        let ks: Vec<usize> = (l.c0..l.c1).filter(|&k| self.clusters.get(k).is_some_and(|c| c.start < to && c.end > from)).collect();
+        let ks: Vec<usize> = (l.c0..l.c1).filter(|&k| self.clusters.get(k).is_some_and(|c| c.start() < to && c.end() > from)).collect();
         match (ks.first(), ks.last()) {
             (Some(&a), Some(&b)) => l.spans(a, b + 1),
             _ => Vec::new(),
@@ -273,9 +293,9 @@ impl ParaLayout {
     pub fn line_offsets(&self, li: usize) -> Vec<usize> {
         let Some(l) = self.lines.get(li) else { return Vec::new() };
         let mut v: Vec<usize> =
-            (l.c0..l.c1).filter_map(|k| self.clusters.get(k).filter(|c| self.is_edit_boundary(c.start)).map(|c| c.start)).collect();
-        let last_break =
-            l.c1 > l.c0 && self.clusters.get(l.c1 - 1).is_some_and(|c| matches!(c.kind, ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak));
+            (l.c0..l.c1).filter_map(|k| self.clusters.get(k).filter(|c| self.is_edit_boundary(c.start())).map(|c| c.start())).collect();
+        let last_break = l.c1 > l.c0
+            && self.clusters.get(l.c1 - 1).is_some_and(|c| matches!(c.kind(), ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak));
         let wrapped = l.c1 > l.c0 && l.end == LineEnd::Wrap && self.lines.get(li + 1).is_some();
         if !last_break && !wrapped || l.c1 == l.c0 {
             v.push(l.stop);
@@ -300,14 +320,14 @@ impl ParaLayout {
         let mut bestd = f32::MAX;
         for k in l.c0..=l.c1 {
             let Some(cx) = l.xs.get(k - l.c0) else { break };
-            let off = if k < l.c1 { self.clusters.get(k).map(|c| c.start).unwrap_or(l.stop) } else { l.stop };
+            let off = if k < l.c1 { self.clusters.get(k).map(|c| c.start()).unwrap_or(l.stop) } else { l.stop };
             if !self.is_edit_boundary(off) {
                 continue;
             }
             // Don't place the caret after a line-ending break or wrap-trailing space on a wrapped line.
             if k == l.c1 && k > l.c0 {
                 let lastc = self.clusters.get(k - 1);
-                if lastc.is_some_and(|c| matches!(c.kind, ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak)) {
+                if lastc.is_some_and(|c| matches!(c.kind(), ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak)) {
                     continue;
                 }
                 if l.end == LineEnd::Wrap && self.lines.get(li + 1).is_some() {

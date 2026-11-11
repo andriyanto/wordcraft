@@ -84,7 +84,7 @@ fn character_grid_places_east_asian_text_on_the_pitch() {
     let latin = text.find('a').unwrap();
     for (k, c) in g.clusters.iter().enumerate() {
         let x = line.xs[k] - line.xs[0];
-        if c.start < latin {
+        if c.start() < latin {
             // Ideographs and kana sit on the pitch, one cell each.
             assert!((x - pitch * k as f32).abs() < 0.01, "cluster {k} at {x}, pitch {pitch}");
             assert!((c.adv - pitch).abs() < 0.01);

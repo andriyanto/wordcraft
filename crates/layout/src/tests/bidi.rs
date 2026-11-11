@@ -48,7 +48,7 @@ fn caret_x(l: &DocLayout, i: usize, off: usize) -> f32 {
 fn cluster_x(l: &DocLayout, i: u32, off: usize) -> f32 {
     let (pl, x) = first_line(l, i);
     let line = &pl.lines[0];
-    let k = (line.c0..line.c1).find(|&k| pl.clusters[k].start == off).unwrap_or_else(|| panic!("no cluster at {off}"));
+    let k = (line.c0..line.c1).find(|&k| pl.clusters[k].start() == off).unwrap_or_else(|| panic!("no cluster at {off}"));
     x + line.cl_left(k).unwrap()
 }
 
@@ -381,7 +381,7 @@ fn persian_text_in_a_latin_font_stays_in_one_fallback_face() {
     let d = doc_of(&[(s, true)]);
     let l = lay(&d);
     let (pl, _) = first_line(&l, 0);
-    let word: Vec<u32> = pl.clusters.iter().filter(|c| c.end <= at(s, 8)).map(|c| pl.styles[c.style as usize].face.id()).collect();
+    let word: Vec<u32> = pl.clusters.iter().filter(|c| c.end() <= at(s, 8)).map(|c| pl.styles[c.style as usize].face.id()).collect();
     assert!(word.windows(2).all(|w| w[0] == w[1]), "one face for the word: {word:?}");
     // No .notdef glyphs.
     assert!(pl.glyphs.iter().all(|g| g.gid != 0));
@@ -427,7 +427,7 @@ fn character_border_boxes_a_whole_rtl_word() {
     let l = lay(&d);
     let (pl, x) = first_line(&l, 0);
     let line = &pl.lines[0];
-    let word: Vec<usize> = (line.c0..line.c1).filter(|&k| pl.clusters[k].end <= at(s, 4)).collect();
+    let word: Vec<usize> = (line.c0..line.c1).filter(|&k| pl.clusters[k].end() <= at(s, 4)).collect();
     let lo = word.iter().filter_map(|&k| line.cl_left(k)).fold(f32::MAX, f32::min) + x;
     let hi = word.iter().filter_map(|&k| line.cl_right(k)).fold(f32::MIN, f32::max) + x;
     // The box's top edge spans the whole word, which reads right to left.
@@ -464,7 +464,7 @@ fn inline_picture_in_rtl_text_sits_in_its_place() {
     let l = lay(&d);
     let (pl, x) = first_line(&l, 0);
     let line = &pl.lines[0];
-    let k = (line.c0..line.c1).find(|&k| matches!(pl.clusters[k].kind, para::ClKind::Object(_))).unwrap();
+    let k = (line.c0..line.c1).find(|&k| matches!(pl.clusters[k].kind(), para::ClKind::Object(_))).unwrap();
     let (a, b) = (x + line.cl_left(k).unwrap(), x + line.cl_right(k).unwrap());
     let drawn: Vec<Rect> = display::page_display(&d, &l.pages[0], &Default::default())
         .into_iter()

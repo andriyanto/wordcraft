@@ -456,7 +456,7 @@ pub(crate) fn anchor_lines(p: &Paragraph, pl: &ParaLayout) -> Vec<Option<usize>>
                 .take_while(|next| next.beside)
                 .any(|next| pl.clusters.get(next.c0..next.c1).unwrap_or_default().iter().any(para::takes_room));
         for c in clusters {
-            let para::ClKind::Object(oi) = c.kind else { continue };
+            let para::ClKind::Object(oi) = c.kind() else { continue };
             if let Some(slot) = out.get_mut(oi).filter(|s| s.is_none()) {
                 *slot = Some(if lead { li.saturating_sub(1) } else { li });
             }
@@ -732,7 +732,7 @@ pub(crate) fn place_objects(ctx: &mut Ctx, req: &ObjectPlacement) -> (Vec<Placed
         let Some(line) = pl.lines.get(li) else { continue };
         for k in line.c0..line.c1 {
             let Some(c) = pl.clusters.get(k) else { continue };
-            let para::ClKind::Object(oi) = c.kind else { continue };
+            let para::ClKind::Object(oi) = c.kind() else { continue };
             if left_out(oi) {
                 continue;
             }
@@ -773,7 +773,7 @@ pub(crate) fn place_objects(ctx: &mut Ctx, req: &ObjectPlacement) -> (Vec<Placed
             let layer = if float.wrap == Wrap::BehindText { &mut behind } else { &mut front };
             // Floating ones are drawn here; inline ones with their line.
             if floating {
-                layer.extend(float_items(obj, rect, (Spin::default(), Point::default()), story, path, c.start));
+                layer.extend(float_items(obj, rect, (Spin::default(), Point::default()), story, path, c.start()));
             }
             let text_box = match obj {
                 InlineObject::Shape { story: Some(id), .. } if ctx.doc.parts.get(id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox) => {
@@ -788,7 +788,7 @@ pub(crate) fn place_objects(ctx: &mut Ctx, req: &ObjectPlacement) -> (Vec<Placed
                 spin: float.spin(),
                 story,
                 path: Path(path.to_vec()),
-                off: c.start,
+                off: c.start(),
                 text_box: shown,
                 wrap: float.wrap,
                 origin: Point::new(at.col.0, late_here.map_or(at.para_y, |l| l.top)),
@@ -816,7 +816,7 @@ pub(crate) fn place_objects(ctx: &mut Ctx, req: &ObjectPlacement) -> (Vec<Placed
             // Placed on the page from a header or footer cell: drawn with the header, once.
             if pinned.is_some() {
                 if let Some(pin) = ctx.pin.as_mut()
-                    && pin.seen.insert((path.to_vec(), c.start))
+                    && pin.seen.insert((path.to_vec(), c.start()))
                 {
                     pin.behind.extend(behind);
                     pin.front.extend(front);

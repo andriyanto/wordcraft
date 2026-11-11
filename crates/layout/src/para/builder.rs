@@ -4,7 +4,7 @@ use super::chars::{
     reported_font_name, thai_run_face, upper_char,
 };
 use super::grid::east_asian;
-use super::model::{ClKind, Cluster, Enclosed, Glyph, ParaEnv, RubyLayout, StyleRun, SymbolRun};
+use super::model::{ClKind, Cluster, ClusterParts, Enclosed, Glyph, ParaEnv, RubyLayout, StyleRun, SymbolRun};
 use super::{Arc, Document, FaceRef, NumeralMode, ResolvedChar, RubyAlign, SOFT_HYPHEN};
 use wordcraft_fonts::ShapeContext;
 
@@ -436,7 +436,7 @@ impl<'a> Builder<'a> {
                 let adv = if kind == ClKind::Marker { 0.0 } else { adv + rc.spacing };
                 // Clusters index the document text, never the displayed text.
                 let (cs, ce) = if substituted { remap_range(&map_starts, &orig_of, sub.len(), gs, ge) } else { (gs, ge) };
-                self.clusters.push(Cluster {
+                self.clusters.push(Cluster::from(ClusterParts {
                     start: base + a + cs,
                     end: base + a + ce,
                     adv,
@@ -448,7 +448,7 @@ impl<'a> Builder<'a> {
                     obj_h: 0.0,
                     obj_d: 0.0,
                     dot: s == "." || s == ",",
-                });
+                }));
             }
             if matches!(dir, Dir::Para) {
                 self.split_ligature_advances(seg_c0, rc.spacing, key.rtl);
@@ -466,12 +466,12 @@ impl<'a> Builder<'a> {
     fn split_ligature_advances(&mut self, from: usize, spacing: f32, rtl: bool) {
         let mut i = from;
         while let Some(head) = self.clusters.get(i) {
-            if head.kind != ClKind::Text || head.g1 <= head.g0 {
+            if head.kind() != ClKind::Text || head.g1 <= head.g0 {
                 i += 1;
                 continue;
             }
             let n =
-                self.clusters.get(i + 1..).unwrap_or(&[]).iter().take_while(|c| c.kind == ClKind::Text && c.g1 <= c.g0 && c.adv == spacing).count();
+                self.clusters.get(i + 1..).unwrap_or(&[]).iter().take_while(|c| c.kind() == ClKind::Text && c.g1 <= c.g0 && c.adv == spacing).count();
             if n == 0 {
                 i += 1;
                 continue;
@@ -508,7 +508,7 @@ impl<'a> Builder<'a> {
         let Some(first) = added.first() else {
             let si = self.style(rc, None, false);
             let g = self.glyphs.len() as u32;
-            self.clusters.push(Cluster {
+            self.clusters.push(Cluster::from(ClusterParts {
                 start,
                 end,
                 adv: 0.0,
@@ -520,13 +520,13 @@ impl<'a> Builder<'a> {
                 obj_h: 0.0,
                 obj_d: 0.0,
                 dot: false,
-            });
+            }));
             return;
         };
         let order = if lv.is_empty() {
             (0..added.len()).collect()
         } else {
-            let cl_lv: Vec<u8> = added.iter().map(|c| lv.get(c.start.saturating_sub(start)).copied().unwrap_or(u8::from(rtl_base))).collect();
+            let cl_lv: Vec<u8> = added.iter().map(|c| lv.get(c.start().saturating_sub(start)).copied().unwrap_or(u8::from(rtl_base))).collect();
             visual_order(&cl_lv)
         };
         // Merge into one cluster: rebase glyph dx onto the first cluster drawn, and keep each
@@ -540,7 +540,7 @@ impl<'a> Builder<'a> {
         }
         let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
         for c in &added {
-            let (a, b) = (c.start.saturating_sub(start), c.end.saturating_sub(start));
+            let (a, b) = (c.start().saturating_sub(start), c.end().saturating_sub(start));
             if c.g1 <= c.g0 {
                 let from = ranges.last().map(|r| r.start);
                 for r in ranges.iter_mut().rev().take_while(|r| Some(r.start) == from) {
@@ -553,7 +553,19 @@ impl<'a> Builder<'a> {
         let style = first.style;
         let g1 = added.last().map(|c| c.g1).unwrap_or(g0);
         self.shown.push((self.clusters.len(), text.to_string(), ranges));
-        self.clusters.push(Cluster { start, end, adv: x, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, obj_d: 0.0, dot: false });
+        self.clusters.push(Cluster::from(ClusterParts {
+            start,
+            end,
+            adv: x,
+            kind: ClKind::Text,
+            style,
+            g0,
+            g1,
+            break_after: false,
+            obj_h: 0.0,
+            obj_d: 0.0,
+            dot: false,
+        }));
     }
 
     /// Shape `texts` on top of one another as one cluster for `start..end`: each aligned within
@@ -573,7 +585,7 @@ impl<'a> Builder<'a> {
         }
         let added: Vec<Cluster> = self.clusters.drain(c0..).collect();
         let shown: Vec<(usize, String, Vec<std::ops::Range<usize>>)> = self.shown.drain(s0..).collect();
-        let adv = added.iter().filter(|c| c.kind == ClKind::Text).map(|c| c.adv).fold(width.max(0.0), f32::max);
+        let adv = added.iter().filter(|c| c.kind() == ClKind::Text).map(|c| c.adv).fold(width.max(0.0), f32::max);
         let (mut text, mut ranges) = (String::new(), Vec::new());
         let (mut g0, mut g1) = (u32::MAX, 0u32);
         for (ci, t, r) in &shown {
@@ -595,7 +607,7 @@ impl<'a> Builder<'a> {
         }
         let g = self.glyphs.len() as u32;
         let (g0, g1) = if g0 <= g1 { (g0, g1) } else { (g, g) };
-        let style = match added.iter().find(|c| c.kind == ClKind::Text) {
+        let style = match added.iter().find(|c| c.kind() == ClKind::Text) {
             Some(c) => c.style,
             None => self.style(rc, None, false),
         };
@@ -603,7 +615,19 @@ impl<'a> Builder<'a> {
         if !text.is_empty() {
             self.shown.push((k, text, ranges));
         }
-        self.clusters.push(Cluster { start, end, adv, kind: ClKind::Text, style, g0, g1, break_after: false, obj_h: 0.0, obj_d: 0.0, dot: false });
+        self.clusters.push(Cluster::from(ClusterParts {
+            start,
+            end,
+            adv,
+            kind: ClKind::Text,
+            style,
+            g0,
+            g1,
+            break_after: false,
+            obj_h: 0.0,
+            obj_d: 0.0,
+            dot: false,
+        }));
         Some(k)
     }
 }
@@ -731,7 +755,7 @@ impl Builder<'_> {
         for c in &cl {
             for g in self.glyphs.get(c.g0 as usize..c.g1 as usize).into_iter().flatten() {
                 glyphs.push((c.style, Glyph { dx: g.dx + x, ..*g }));
-                ranges.push(c.start..c.end);
+                ranges.push(c.start()..c.end());
             }
             x += c.adv + gap;
         }

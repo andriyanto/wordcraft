@@ -804,7 +804,7 @@ fn deleted_text_adds_no_line_break_opportunity_without_markup() {
     let line_starts = |hide_deleted: bool| {
         let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions { hide_deleted, ..Default::default() });
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start)).collect::<Vec<_>>()
+        para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start())).collect::<Vec<_>>()
     };
     // With markup the word breaks at the (deleted) soft hyphen.
     assert_eq!(line_starts(false), vec![0, 7]);
@@ -844,7 +844,7 @@ fn hidden_text_adds_no_line_break_opportunity_when_not_shown() {
         let line_starts = |show_hidden: bool| {
             let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions { show_hidden, ..Default::default() });
             let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-            para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start)).collect::<Vec<_>>()
+            para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start())).collect::<Vec<_>>()
         };
         // Shown, the word breaks at the hidden soft hyphen or space.
         assert_eq!(line_starts(true), vec![0, end], "{hidden:?}");
@@ -935,7 +935,7 @@ fn a_megabyte_long_word_lays_out_quickly() {
 
 /// A cluster with the given advance and kind, for the tests that measure a word by hand.
 fn word_cluster(kind: para::ClKind, adv: f32, break_after: bool) -> para::Cluster {
-    para::Cluster { start: 0, end: 1, adv, kind, style: 0, g0: 0, g1: 1, break_after, obj_h: 0.0, obj_d: 0.0, dot: false }
+    para::ClusterParts { start: 0, end: 1, adv, kind, style: 0, g0: 0, g1: 1, break_after, obj_h: 0.0, obj_d: 0.0, dot: false }.into()
 }
 
 /// A word that a negative advance makes narrower still fits beside a float: the width of a word
@@ -1074,7 +1074,7 @@ fn a_word_is_measured_by_the_sum_of_its_advances() {
                 break;
             }
             done = end;
-            if c.kind != para::ClKind::Space {
+            if c.kind() != para::ClKind::Space {
                 word += c.adv;
             }
         }
@@ -1280,8 +1280,8 @@ fn fragmented_hidden_text_lays_out_like_the_visible_text() {
             .filter_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None })
             .collect();
         let para = &paras[0];
-        let starts: Vec<usize> = para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start)).collect();
-        let hyph: Vec<usize> = para.hyph_after.iter().map(|k| para.clusters[*k as usize].end).collect();
+        let starts: Vec<usize> = para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start())).collect();
+        let hyph: Vec<usize> = para.hyph_after.iter().map(|k| para.clusters[*k as usize].end()).collect();
         (starts, hyph)
     };
     let (starts, hyph) = shape(&plain);
@@ -1300,7 +1300,7 @@ fn automatic_hyphenation_sees_only_the_text_laid_out() {
     let hyph_ends = |d: &Document, opts: &LayoutOptions| {
         let l = layout(d, &mut LayoutCache::new(), opts);
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        para.hyph_after.iter().map(|k| para.clusters[*k as usize].end).collect::<Vec<_>>()
+        para.hyph_after.iter().map(|k| para.clusters[*k as usize].end()).collect::<Vec<_>>()
     };
     let doc = |text: &str| {
         let mut d = Document::from_text(text);
@@ -1917,7 +1917,7 @@ fn a_bookmark_is_no_line_break_opportunity() {
         };
         para.lines
             .iter()
-            .map(|l| para.clusters.get(l.c0..l.c1).map_or(0, |cs| cs.iter().filter(|c| c.kind != para::ClKind::Marker).count()))
+            .map(|l| para.clusters.get(l.c0..l.c1).map_or(0, |cs| cs.iter().filter(|c| c.kind() != para::ClKind::Marker).count()))
             .collect::<Vec<_>>()
     };
     let plain = lines(&[]);
@@ -5550,7 +5550,7 @@ fn ink_end(pl: &ParaLayout, ln: &para::Line) -> f32 {
     (ln.c0..ln.c1)
         .filter_map(|k| {
             let c = pl.clusters.get(k)?;
-            (c.kind != para::ClKind::Space).then_some(ln.xs.get(k - ln.c0)? + c.adv)
+            (c.kind() != para::ClKind::Space).then_some(ln.xs.get(k - ln.c0)? + c.adv)
         })
         .fold(0.0, f32::max)
 }
@@ -5908,7 +5908,7 @@ fn inline_picture_keeps_room_for_its_effects() {
     }
     let l = lay(&d);
     let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-    let c = para.clusters.iter().find(|c| matches!(c.kind, para::ClKind::Object(_))).unwrap();
+    let c = para.clusters.iter().find(|c| matches!(c.kind(), para::ClKind::Object(_))).unwrap();
     assert_eq!((c.adv, c.obj_h), (124.0, 89.0), "picture plus effect extents");
     // Drawn inside that room.
     let obj = picture(100.0, 50.0, shadow);
@@ -5927,7 +5927,7 @@ fn an_inline_picture_moves_with_its_runs_position() {
         p.insert_object(0, picture(40.0, 30.0, Default::default()), &props).unwrap();
         let l = lay(&d);
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        let c = para.clusters.iter().find(|c| matches!(c.kind, para::ClKind::Object(_))).unwrap().clone();
+        let c = para.clusters.iter().find(|c| matches!(c.kind(), para::ClKind::Object(_))).unwrap().clone();
         let line = para.lines[0].clone();
         let desc = para.styles[c.style as usize].descent;
         (c, line, desc)
@@ -5969,7 +5969,7 @@ fn bare_turned_inline_picture_keeps_its_frame() {
         }
         let l = lay(&d);
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        let c = para.clusters.iter().find(|c| matches!(c.kind, para::ClKind::Object(_))).unwrap();
+        let c = para.clusters.iter().find(|c| matches!(c.kind(), para::ClKind::Object(_))).unwrap();
         // Drawn unscaled, centred in that room.
         let obj = picture(120.0, 60.0, wordcraft_doc::para::Float { rot, bare_turn, ..Default::default() });
         let r = display::inline_rect(Some(&obj), 0.0, 200.0, c.adv, (c.obj_h, c.obj_d), c.adv, compat >= 15);
@@ -7769,7 +7769,7 @@ fn formats_past_65536_in_a_paragraph_keep_their_own_style() {
     assert!(para.styles.len() > n, "{} styles for {n} formats", para.styles.len());
     let mut last = 0;
     for c in &para.clusters {
-        let i = c.start / 3;
+        let i = c.start() / 3;
         let rc = &para.styles[c.style as usize].rc;
         let want = props(i);
         assert_eq!((&rc.link, rc.del, rc.size), (&want.link, want.del, want.size.unwrap()), "run {i}");
@@ -9946,7 +9946,7 @@ fn hyphenation_and_proofing_follow_each_runs_language() {
     let l = layout(&d, &mut c, &LayoutOptions { proofing: true, ..LayoutOptions::default() });
     let para = l.pages[0].items.iter().find_map(|i| if let Placed::Lines { para, .. } = i { Some(para.clone()) } else { None }).expect("a paragraph");
     // Byte offsets after which a hyphen may go.
-    let ends: Vec<usize> = para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end)).collect();
+    let ends: Vec<usize> = para.hyph_after.iter().filter_map(|&k| para.clusters.get(k as usize).map(|c| c.end())).collect();
     for prefix in ["Kon", "Konsty", "Konstytu", "Konstytucyj", "Konstytucyjne"] {
         assert!(ends.contains(&prefix.len()), "Polish kon-sty-tu-cyj-ne-go: no break after {prefix:?} in {ends:?}");
     }
@@ -10184,7 +10184,7 @@ fn east_asian_text_takes_the_asian_font_and_latin_text_the_latin_font() {
         l.pages.iter().flat_map(|p| p.items.iter()).find_map(|it| if let Placed::Lines { para, .. } = it { Some(para) } else { None }).unwrap();
     let (latin_face, asian_face) = (resolve(latin).face.id(), resolve(&asian).face.id());
     for c in &para.clusters {
-        let Some(ch) = text.get(c.start..c.end).and_then(|s| s.chars().next()).filter(|ch| !ch.is_whitespace()) else { continue };
+        let Some(ch) = text.get(c.start()..c.end()).and_then(|s| s.chars().next()).filter(|ch| !ch.is_whitespace()) else { continue };
         let face = para.styles[c.style as usize].face.id();
         let want = if ch.is_ascii() { latin_face } else { asian_face };
         assert_eq!(face, want, "{ch:?} in {}", if ch.is_ascii() { latin } else { &asian });
@@ -12090,11 +12090,11 @@ fn strasse_with(f: &dyn Fn(&mut wordcraft_doc::props::CharProps)) -> ParaLayout 
 fn text_clusters(pl: &ParaLayout) -> Vec<(usize, usize, Vec<u32>, f32, f32)> {
     let line = &pl.lines[0];
     (line.c0..line.c1)
-        .filter(|&k| pl.clusters[k].kind == para::ClKind::Text)
+        .filter(|&k| pl.clusters[k].kind() == para::ClKind::Text)
         .map(|k| {
             let c = &pl.clusters[k];
             let gids = pl.glyphs[c.g0 as usize..c.g1 as usize].iter().map(|g| g.gid).collect();
-            (c.start, c.end, gids, line.cl_left(k).unwrap(), c.adv)
+            (c.start(), c.end(), gids, line.cl_left(k).unwrap(), c.adv)
         })
         .collect()
 }
@@ -12136,7 +12136,7 @@ fn caps_draw_sharp_s_as_two_capitals_in_one_cluster() {
         if name == "Small Caps" {
             // The ß is a lowercase letter: drawn at the small-caps size, like the "t", not
             // at the size of the capital S that starts the word.
-            let style = |off: usize| pl.clusters.iter().find(|c| c.start == off).map(|c| c.style);
+            let style = |off: usize| pl.clusters.iter().find(|c| c.start() == off).map(|c| c.style);
             assert_eq!(style(4), style(1), "Small Caps: ß is scaled like t");
             assert_ne!(style(4), style(0), "Small Caps: ß is not the size of the first S");
         }
@@ -13151,14 +13151,14 @@ fn cell_breaks_take_no_height() {
             })
             .unwrap();
         assert_eq!(para.lines.len(), 1);
-        assert!(!para.clusters.iter().any(|c| c.kind == para::ClKind::PageBreak));
+        assert!(!para.clusters.iter().any(|c| c.kind() == para::ClKind::PageBreak));
         for c in &para.clusters {
-            assert!(text.is_char_boundary(c.start) && text.is_char_boundary(c.end));
-            if text.get(c.start..c.end) == Some("\u{000c}") {
-                assert_eq!(c.kind, para::ClKind::Marker);
+            assert!(text.is_char_boundary(c.start()) && text.is_char_boundary(c.end()));
+            if text.get(c.start()..c.end()) == Some("\u{000c}") {
+                assert_eq!(c.kind(), para::ClKind::Marker);
             }
         }
-        let starts: Vec<_> = para.clusters.iter().filter(|c| c.kind == para::ClKind::Text).map(|c| c.start).collect();
+        let starts: Vec<_> = para.clusters.iter().filter(|c| c.kind() == para::ClKind::Text).map(|c| c.start()).collect();
         let expected: Vec<_> = text.char_indices().filter_map(|(i, c)| (c != '\u{000c}').then_some(i)).collect();
         assert_eq!(starts, expected, "visible clusters retain source offsets");
     }
@@ -13193,9 +13193,9 @@ fn cell_breaks_with_bookmarks() {
                 _ => None,
             })
             .unwrap();
-        assert!(!para.clusters.iter().any(|c| c.kind == para::ClKind::PageBreak));
+        assert!(!para.clusters.iter().any(|c| c.kind() == para::ClKind::PageBreak));
         assert_eq!(para.lines.len(), 1);
-        assert_eq!(para.clusters.iter().find(|c| c.kind == para::ClKind::Text).unwrap().start, 6);
+        assert_eq!(para.clusters.iter().find(|c| c.kind() == para::ClKind::Text).unwrap().start(), 6);
         let Block::Table(t) = &*d.body[0] else { panic!("table") };
         let Block::Para(p) = &*t.rows[0].cells[0].blocks[0] else { panic!("paragraph") };
         assert_eq!(p, &original, "layout preserves bookmark objects and source bytes");
@@ -13215,7 +13215,7 @@ fn cell_break_only_is_marker() {
             _ => None,
         })
         .unwrap();
-    assert!(para.clusters.iter().all(|c| c.kind == para::ClKind::Marker));
+    assert!(para.clusters.iter().all(|c| c.kind() == para::ClKind::Marker));
 }
 
 #[test]
@@ -14593,7 +14593,7 @@ fn lowered_pictures_and_check_boxes_take_words_line_heights() {
         p.insert_object(at, picture(40.0, h, Default::default()), &props).unwrap();
         let l = lay(&d);
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        let c = para.clusters.iter().find(|c| matches!(c.kind, para::ClKind::Object(_))).unwrap();
+        let c = para.clusters.iter().find(|c| matches!(c.kind(), para::ClKind::Object(_))).unwrap();
         let (line, st) = (&para.lines[0], &para.styles[c.style as usize]);
         (line.height, line.baseline - c.obj_h.max(0.0) - line.top, st.ascent + st.descent)
     };
@@ -14654,7 +14654,7 @@ fn lowered_pictures_and_check_boxes_take_words_line_heights() {
         p.insert_object(at, field, &props).unwrap();
         let l = lay(&d);
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
-        let c = para.clusters.iter().find(|c| matches!(c.kind, para::ClKind::Object(_))).unwrap();
+        let c = para.clusters.iter().find(|c| matches!(c.kind(), para::ClKind::Object(_))).unwrap();
         let st = &para.styles[c.style as usize];
         (para.lines[0].height, st.ascent + st.descent)
     };

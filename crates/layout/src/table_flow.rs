@@ -398,7 +398,7 @@ fn placed_intersects(item: &Placed, rect: &Rect) -> bool {
                 para.clusters.get(line.c0..line.c1).is_some_and(|clusters| {
                     clusters.iter().enumerate().any(|(index, cluster)| {
                         if !matches!(
-                            cluster.kind,
+                            cluster.kind(),
                             crate::para::ClKind::Text | crate::para::ClKind::Space | crate::para::ClKind::Tab | crate::para::ClKind::Object(_)
                         ) {
                             return false;

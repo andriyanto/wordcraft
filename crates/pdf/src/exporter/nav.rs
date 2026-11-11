@@ -94,7 +94,7 @@ impl Exporter<'_> {
                             && para
                                 .clusters
                                 .get(line.c0..line.c1)
-                                .is_some_and(|cs| cs.iter().all(|c| matches!(c.kind, ClKind::PageBreak | ClKind::Marker)))
+                                .is_some_and(|cs| cs.iter().all(|c| matches!(c.kind(), ClKind::PageBreak | ClKind::Marker)))
                     })
                     .count();
                 if !(*l0..*l1).contains(&first) {

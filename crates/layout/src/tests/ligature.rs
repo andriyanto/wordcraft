@@ -185,7 +185,7 @@ fn an_emoji_zwj_sequence_stays_one_cluster() {
 fn assert_atomic_drawing_group(d: &Document, legal: &[usize], start: usize, inside: usize, end: usize) {
     let l = lay(d);
     let pl = para_layout(&l);
-    assert!(pl.clusters.iter().any(|c| c.start == inside), "fixture must actually split the drawing inside the grapheme");
+    assert!(pl.clusters.iter().any(|c| c.start() == inside), "fixture must actually split the drawing inside the grapheme");
     let li = pl.line_of(start);
     assert_eq!(pl.x_of(li, inside), pl.x_of(li, start), "an explicit internal offset uses the grapheme's leading edge");
     let mut reachable: Vec<_> = (0..pl.lines.len()).flat_map(|i| pl.line_offsets(i)).collect();
@@ -231,7 +231,7 @@ fn a_mixed_style_emoji_grapheme_has_atomic_caret_hit_and_wrap_boundaries() {
         if bidi {
             assert!(pl.lines.iter().any(|line| !line.vis.is_empty()), "exercise the bidi hit/caret path");
         }
-        let styles: Vec<_> = pl.clusters.iter().filter(|c| c.start >= 1 && c.end <= 12).map(|c| pl.styles[c.style as usize].size).collect();
+        let styles: Vec<_> = pl.clusters.iter().filter(|c| c.start() >= 1 && c.end() <= 12).map(|c| pl.styles[c.style as usize].size).collect();
         assert!(styles.contains(&24.0) && styles.contains(&48.0), "both drawing sizes must survive: {styles:?}");
         assert_atomic_drawing_group(&d, &[0, 1, 12, 13], 1, 8, 12);
         for width in [18.0, 32.0, 48.0, 96.0] {
@@ -263,8 +263,8 @@ fn a_mixed_bundled_font_combining_grapheme_preserves_drawing_and_atomic_boundari
         if bidi {
             assert!(pl.lines.iter().any(|line| !line.vis.is_empty()), "exercise the bidi hit/caret path");
         }
-        let base = pl.clusters.iter().find(|c| c.start == 1).unwrap();
-        let mark = pl.clusters.iter().find(|c| c.start == 2).unwrap();
+        let base = pl.clusters.iter().find(|c| c.start() == 1).unwrap();
+        let mark = pl.clusters.iter().find(|c| c.start() == 2).unwrap();
         assert_eq!(pl.styles[base.style as usize].face.family, "Source Sans 3");
         assert_eq!(pl.styles[mark.style as usize].face.family, "Source Serif 4");
         assert!(base.g1 > base.g0 && mark.g1 > mark.g0, "both independently shaped pieces keep their glyphs");
@@ -300,7 +300,7 @@ fn a_long_word_never_wraps_inside_a_ligature() {
         seen_ligature |= pl.glyphs.len() < pl.clusters.len();
         for line in &pl.lines {
             if let Some(next) = pl.clusters.get(line.c1) {
-                let inside = next.g1 <= next.g0 && next.kind == crate::para::ClKind::Text && line.c1 > line.c0;
+                let inside = next.g1 <= next.g0 && next.kind() == crate::para::ClKind::Text && line.c1 > line.c0;
                 assert!(!inside, "k={k}: line ends at {} inside a ligature", line.c1);
             }
         }
@@ -321,7 +321,7 @@ fn a_hyphenation_point_never_splits_a_ligature() {
         let pl = para_layout(&l);
         for line in &pl.lines {
             if let Some(next) = pl.clusters.get(line.c1) {
-                let inside = next.g1 <= next.g0 && next.kind == crate::para::ClKind::Text && line.c1 > line.c0;
+                let inside = next.g1 <= next.g0 && next.kind() == crate::para::ClKind::Text && line.c1 > line.c0;
                 assert!(!inside, "k={k}: line ends at {} inside a ligature", line.c1);
             }
         }
@@ -378,7 +378,10 @@ fn marked_grapheme_document(marks: bool, bidi: bool) -> Document {
 /// Text clusters on each line, not counting zero-width markers: a marker may not move text
 /// between lines.
 fn text_cluster_counts(pl: &ParaLayout) -> Vec<usize> {
-    pl.lines.iter().map(|l| pl.clusters.get(l.c0..l.c1).map_or(0, |cs| cs.iter().filter(|c| c.kind != crate::para::ClKind::Marker).count())).collect()
+    pl.lines
+        .iter()
+        .map(|l| pl.clusters.get(l.c0..l.c1).map_or(0, |cs| cs.iter().filter(|c| c.kind() != crate::para::ClKind::Marker).count()))
+        .collect()
 }
 
 /// A bookmark, comment, content-control and field marker at the edges of a mixed-style emoji
@@ -417,7 +420,7 @@ fn markers_at_a_mixed_style_graphemes_edges_keep_it_atomic() {
                 let clean_offset = p.text[..marker].chars().filter(|&c| c != wordcraft_doc::para::OBJ).map(char::len_utf8).sum::<usize>();
                 assert!(clean_starts.contains(&clean_offset) || clean_offset == clean.len(), "marker must sit on a clean grapheme edge");
             }
-            assert_eq!(pl.clusters.iter().filter(|c| c.kind == crate::para::ClKind::Marker).count(), 4);
+            assert_eq!(pl.clusters.iter().filter(|c| c.kind() == crate::para::ClKind::Marker).count(), 4);
             let start = para_off(START).unwrap();
             let inside = para_off(INSIDE).unwrap();
             let interior: Vec<usize> = clean.char_indices().map(|(i, _)| i).filter(|o| !clean_starts.contains(o)).filter_map(&para_off).collect();
@@ -425,10 +428,10 @@ fn markers_at_a_mixed_style_graphemes_edges_keep_it_atomic() {
             let allowed = |off: usize| boundaries.contains(&off) || markers.contains(&off);
 
             assert_eq!(text_cluster_counts(pl), plain_counts, "{bidi}/{width}: markers must not move text between lines");
-            assert!(pl.clusters.iter().any(|c| c.start == inside), "{bidi}/{width}: the size change must still split the drawing");
+            assert!(pl.clusters.iter().any(|c| c.start() == inside), "{bidi}/{width}: the size change must still split the drawing");
             for (li, line) in pl.lines.iter().enumerate() {
                 assert!(
-                    pl.clusters.get(line.c0..line.c1).is_some_and(|cs| cs.iter().any(|c| c.kind != crate::para::ClKind::Marker)),
+                    pl.clusters.get(line.c0..line.c1).is_some_and(|cs| cs.iter().any(|c| c.kind() != crate::para::ClKind::Marker)),
                     "{bidi}/{width}: line {li} holds only markers: {line:?}"
                 );
                 for off in [line.start, line.stop] {

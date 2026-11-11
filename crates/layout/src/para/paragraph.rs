@@ -4,7 +4,7 @@ use super::chars::caps_char;
 use super::grid::{auto_space, snap_chars};
 use super::justify::hyphenation_points;
 use super::lines::break_lines;
-use super::model::{ClKind, Cluster, Enclosed, Glyph, Label, LabelRun, ParaEnv, RubyLayout, undrawable_bullet};
+use super::model::{ClKind, Cluster, ClusterParts, Enclosed, Glyph, Label, LabelRun, ParaEnv, RubyLayout, undrawable_bullet};
 use super::proof::{ProofRun, is_list_item, proof_issues};
 use wordcraft_fonts::ShapeContext;
 
@@ -50,7 +50,7 @@ struct Slot {
 
 impl Slot {
     fn cluster(self, kind: ClKind, adv: f32, (obj_h, obj_d): (f32, f32)) -> Cluster {
-        Cluster {
+        Cluster::from(ClusterParts {
             start: self.start,
             end: self.end,
             adv,
@@ -62,7 +62,7 @@ impl Slot {
             obj_h,
             obj_d,
             dot: false,
-        }
+        })
     }
 }
 
@@ -526,7 +526,7 @@ impl<'a> BreakText<'a> {
 fn mark_break_opportunities(clusters: &mut [Cluster], bt: &BreakText, rp: &ResolvedPara) {
     let opps: std::collections::HashSet<usize> = break_positions(&bt.text, rp).into_iter().filter_map(|i| bt.to_para(i)).collect();
     for c in clusters {
-        c.break_after = opps.contains(&c.end) || matches!(c.kind, ClKind::Object(_) | ClKind::Tab);
+        c.break_after = opps.contains(&c.end()) || matches!(c.kind(), ClKind::Object(_) | ClKind::Tab);
     }
 }
 
@@ -535,7 +535,7 @@ fn mark_break_opportunities(clusters: &mut [Cluster], bt: &BreakText, rp: &Resol
 fn list_label(cx: &Cx, b: &mut Builder, mark_style: u32) -> Option<Label> {
     let (p, rp) = (cx.p, cx.rp);
     let break_only =
-        b.clusters.iter().any(|c| c.kind == ClKind::PageBreak) && b.clusters.iter().all(|c| matches!(c.kind, ClKind::PageBreak | ClKind::Marker));
+        b.clusters.iter().any(|c| c.kind() == ClKind::PageBreak) && b.clusters.iter().all(|c| matches!(c.kind(), ClKind::PageBreak | ClKind::Marker));
     let (text, lvl) = cx.env.label.as_ref().filter(|_| !break_only)?;
     let rc = cx.res.char(&p.mark.clone().into_inner().overlaid(&lvl.chr));
     // A bullet no installed font can draw would come from whatever icon font has its
@@ -563,7 +563,7 @@ fn list_label(cx: &Cx, b: &mut Builder, mark_style: u32) -> Option<Label> {
             glyphs.push(Glyph { dx: g.dx + x, ..*g });
         }
         // A label in an All Caps paragraph reads as the capitals drawn (#1473).
-        let chars: String = shown(text.get(c.start..c.end).unwrap_or("")).chars().map(|ch| caps_char(&rc, ch)).collect();
+        let chars: String = shown(text.get(c.start()..c.end()).unwrap_or("")).chars().map(|ch| caps_char(&rc, ch)).collect();
         match runs.last_mut() {
             Some(r) if r.style == c.style => {
                 r.glyphs.end = glyphs.len();
@@ -593,7 +593,7 @@ fn shape_label(b: &mut Builder, text: &str, rc: &Arc<ResolvedChar>, bidi: bool) 
     b.shape_with(text, 0, rc, None, if lv.is_empty() { Dir::Guess } else { Dir::Own(&lv) });
     let mut clusters: Vec<Cluster> = b.clusters.drain(before_c..).collect();
     if !lv.is_empty() {
-        let cl_lv: Vec<u8> = clusters.iter().map(|c| lv.get(c.start).copied().unwrap_or(1)).collect();
+        let cl_lv: Vec<u8> = clusters.iter().map(|c| lv.get(c.start()).copied().unwrap_or(1)).collect();
         let order = visual_order(&cl_lv);
         clusters = order.iter().filter_map(|&i| clusters.get(i).cloned()).collect();
     }
@@ -617,7 +617,7 @@ fn joined_cluster_starts(p: &Paragraph, clusters: &[Cluster]) -> Vec<usize> {
     }
     let boundaries = wordcraft_doc::cluster::cluster_starts(&p.text);
     let mut joined: Vec<usize> =
-        clusters.iter().filter_map(|c| (c.start < p.text.len() && boundaries.binary_search(&c.start).is_err()).then_some(c.start)).collect();
+        clusters.iter().filter_map(|c| (c.start() < p.text.len() && boundaries.binary_search(&c.start()).is_err()).then_some(c.start())).collect();
     joined.sort_unstable();
     joined.dedup();
     joined
@@ -725,15 +725,16 @@ pub fn layout_para(p: &Paragraph, env: &ParaEnv) -> ParaLayout {
     if gone {
         collapse(&mut pl);
     }
+    pl.release_spare_room();
     pl
 }
 
 /// Neither ordinary nor hyphenated wrapping may split a drawing group inside a grapheme.
 fn keep_graphemes_whole(pl: &mut ParaLayout) {
     for c in &mut pl.clusters {
-        c.break_after &= pl.joined_cluster_starts.binary_search(&c.end).is_err();
+        c.break_after &= pl.joined_cluster_starts.binary_search(&c.end()).is_err();
     }
-    pl.hyph_after.retain(|&k| pl.clusters.get(k as usize).is_some_and(|c| pl.joined_cluster_starts.binary_search(&c.end).is_err()));
+    pl.hyph_after.retain(|&k| pl.clusters.get(k as usize).is_some_and(|c| pl.joined_cluster_starts.binary_search(&c.end()).is_err()));
     for k in pl.hyph_after.clone() {
         if let Some(c) = pl.clusters.get_mut(k as usize) {
             c.break_after = true;
@@ -765,7 +766,7 @@ pub(crate) fn word_widths(clusters: &[Cluster], hyph_after: &[u32]) -> Vec<f32> 
     let mut width = vec![0.0f32; n + 1];
     for k in (0..n).rev() {
         let c = &clusters[k];
-        let adv = if c.kind == ClKind::Space { 0.0 } else { c.adv };
+        let adv = if c.kind() == ClKind::Space { 0.0 } else { c.adv };
         // The word ends at a break opportunity. A hyphenation point isn't one: the break there
         // is optional, so the word runs on to the next.
         width[k] = if c.break_after && hyph_after.binary_search(&(k as u32)).is_err() { adv } else { adv + width[k + 1] };

@@ -104,7 +104,7 @@ struct Scan {
 /// Whether anything but markers (a bookmark, say) is among the clusters `c0..j`: an empty line
 /// has no room to wrap from.
 fn has_content(pl: &ParaLayout, c0: usize, j: usize) -> bool {
-    (c0..j).any(|k| pl.clusters.get(k).is_some_and(|c| c.kind != ClKind::Marker))
+    (c0..j).any(|k| pl.clusters.get(k).is_some_and(|c| c.kind() != ClKind::Marker))
 }
 
 /// A line's first item stays on it even when it doesn't fit; markers before it (a content
@@ -112,7 +112,7 @@ fn has_content(pl: &ParaLayout, c0: usize, j: usize) -> bool {
 /// a picture a little wider than the line, after an anchor, stays on the first line rather than
 /// leaving the anchor a line of its own).
 pub(crate) fn takes_room(c: &Cluster) -> bool {
-    c.kind != ClKind::Marker && !(matches!(c.kind, ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0)
+    c.kind() != ClKind::Marker && !(matches!(c.kind(), ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0)
 }
 
 /// How far the text after a decimal tab has been looked at for its first '.' (see
@@ -347,8 +347,8 @@ impl<'e> Breaker<'e> {
         let (c1, j, hyphen) = self.settle_clusters(pl, &mut sc);
         let v = self.measure(pl, (sc.c0, c1));
         self.align(pl, &mut sc, c1);
-        let start = pl.clusters.get(sc.c0).map(|c| c.start).unwrap_or(pl.text_len);
-        let stop = if c1 > sc.c0 { pl.clusters.get(c1 - 1).map(|c| c.end).unwrap_or(pl.text_len) } else { start };
+        let start = pl.clusters.get(sc.c0).map(|c| c.start()).unwrap_or(pl.text_len);
+        let stop = if c1 > sc.c0 { pl.clusters.get(c1 - 1).map(|c| c.end()).unwrap_or(pl.text_len) } else { start };
         if self.first_x0.is_none() {
             self.first_x0 = sc.xs.first().copied();
         }
@@ -419,12 +419,12 @@ impl<'e> Breaker<'e> {
             // its other characters (a line of only them takes the paragraph mark's), measured in
             // Word for Windows with 9 pt text and 11–20 pt tabs, spaces and ideographic spaces.
             // Floating and hidden drawings have no inline extent; their anchor font takes no height.
-            let anchor = matches!(c.kind, ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0;
-            if matches!(c.kind, ClKind::Marker | ClKind::Space | ClKind::Tab) || anchor || c0 + k < dropped {
+            let anchor = matches!(c.kind(), ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0;
+            if matches!(c.kind(), ClKind::Marker | ClKind::Space | ClKind::Tab) || anchor || c0 + k < dropped {
                 continue;
             }
             let Some(st) = pl.styles.get(c.style as usize) else { continue };
-            let object = if let ClKind::Object(o) = c.kind { Some(o) } else { None };
+            let object = if let ClKind::Object(o) = c.kind() { Some(o) } else { None };
             let math = object.is_some_and(|o| pl.maths.iter().any(|(k, _)| *k == o));
             let check_box = object.is_some_and(|o| pl.check_boxes.contains(&o));
             // A picture sits on the baseline of its run (raised or lowered by its position):
@@ -458,7 +458,7 @@ impl<'e> Breaker<'e> {
             any = true;
             // Text needs its descent below the line; so do inline math (an object with its own
             // descent) and a check box. A line break ending the line is no text.
-            ex.text |= math || check_box || !matches!(c.kind, ClKind::Object(_) | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak);
+            ex.text |= math || check_box || !matches!(c.kind(), ClKind::Object(_) | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak);
         }
         if (!any || (ex.asc == 0.0 && ex.desc == 0.0))
             && let Some(st) = pl.styles.get(self.mark_style as usize)
@@ -547,7 +547,7 @@ impl<'e> Breaker<'e> {
         let c0 = sc.c0;
         let content_end = content_end(pl, sc, c1);
         let slack = sc.right_edge - content_end;
-        let last_tab = (c0..c1).rev().find(|k| pl.clusters.get(*k).is_some_and(|c| c.kind == ClKind::Tab));
+        let last_tab = (c0..c1).rev().find(|k| pl.clusters.get(*k).is_some_and(|c| c.kind() == ClKind::Tab));
         let align_from = last_tab.map(|k| k + 1).unwrap_or(c0);
         let display = pl.displays.iter().find(|(ci, _)| *ci >= c0 && *ci < c1).map(|d| d.1);
         let shift = match (display, rp.align) {
@@ -713,7 +713,7 @@ struct Measure {
 fn content_end(pl: &ParaLayout, sc: &Scan, c1: usize) -> f32 {
     let mut content_end = sc.xs.last().copied().unwrap_or(sc.line_start_x);
     for k in (sc.c0..c1).rev() {
-        match pl.clusters.get(k).map(|c| c.kind) {
+        match pl.clusters.get(k).map(|c| c.kind()) {
             Some(ClKind::Space) | Some(ClKind::Marker) | Some(ClKind::LineBreak) | Some(ClKind::PageBreak) | Some(ClKind::ColumnBreak) => {
                 content_end = sc.xs.get(k - sc.c0).copied().unwrap_or(content_end);
             }
@@ -736,14 +736,16 @@ fn justify_line(pl: &ParaLayout, xs: &mut [f32], (c0, c1, align_from): (usize, u
     // character.
     let blank = |k: usize| {
         pl.clusters.get(k).is_some_and(|c| {
-            matches!(c.kind, ClKind::Space | ClKind::Marker | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak)
-                || (matches!(c.kind, ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0)
+            matches!(c.kind(), ClKind::Space | ClKind::Marker | ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak)
+                || (matches!(c.kind(), ClKind::Object(_)) && c.adv == 0.0 && c.obj_h == 0.0)
         })
     };
     let text_from = (align_from..c1).find(|k| !blank(*k)).unwrap_or(c1);
     // Spaces inside the content.
     let spaces: Vec<usize> = (text_from..c1)
-        .filter(|k| pl.clusters.get(*k).is_some_and(|c| c.kind == ClKind::Space) && xs.get(k - c0).copied().unwrap_or(f32::MAX) < content_end - 0.01)
+        .filter(|k| {
+            pl.clusters.get(*k).is_some_and(|c| c.kind() == ClKind::Space) && xs.get(k - c0).copied().unwrap_or(f32::MAX) < content_end - 0.01
+        })
         .collect();
     if distribute || spaces.is_empty() {
         // Distributed across the gaps between the first and last characters: spaces hanging at
@@ -785,11 +787,11 @@ impl Scan {
     /// Put the cluster at `j` on the line. True when the line ends here.
     fn step(&mut self, bk: &mut Breaker, pl: &mut ParaLayout) -> bool {
         let Some(c) = pl.clusters.get(self.j).cloned() else { return true };
-        match c.kind {
+        match c.kind() {
             ClKind::LineBreak | ClKind::PageBreak | ClKind::ColumnBreak => {
                 resolve_tab(pl, &mut self.pending_tab, &mut self.xs, self.c0, self.x, &mut self.x);
                 self.xs.push(self.x);
-                self.end = match c.kind {
+                self.end = match c.kind() {
                     ClKind::LineBreak => LineEnd::LineBreak,
                     ClKind::PageBreak => LineEnd::PageBreak,
                     _ => LineEnd::ColumnBreak,
@@ -895,15 +897,15 @@ impl Scan {
         };
         let fits = absorbs
             || self.x + advance - pl.auto_space_after(j) <= self.right_edge + shrink + 0.01
-            || c.kind == ClKind::Space
-            || c.kind == ClKind::Marker;
-        if !fits && pl.is_edit_boundary(c.start) && (c0..j).any(|k| pl.clusters.get(k).is_some_and(takes_room)) {
+            || c.kind() == ClKind::Space
+            || c.kind() == ClKind::Marker;
+        if !fits && pl.is_edit_boundary(c.start()) && (c0..j).any(|k| pl.clusters.get(k).is_some_and(takes_room)) {
             self.wrap(bk, pl);
             return true;
         }
         self.xs.push(self.x);
         self.x += c.adv;
-        if c.kind == ClKind::Space {
+        if c.kind() == ClKind::Space {
             self.space_w += c.adv;
         }
         self.shift_pending_tab(pl);
@@ -971,7 +973,7 @@ impl Scan {
     /// starts a new one.
     fn end_display(&mut self, pl: &ParaLayout, n: usize) {
         self.j += 1;
-        while self.j < n && pl.clusters.get(self.j).is_some_and(|c| c.kind == ClKind::Marker) {
+        while self.j < n && pl.clusters.get(self.j).is_some_and(|c| c.kind() == ClKind::Marker) {
             self.xs.push(self.x);
             self.j += 1;
         }
@@ -984,9 +986,9 @@ impl Scan {
         if pl.hyph_after.binary_search(&(j as u32)).is_err() {
             self.last_break = Some(j);
             self.last_plain = Some((j, self.x));
-            self.word_from = if c.kind == ClKind::Space { self.x - c.adv } else { self.x };
+            self.word_from = if c.kind() == ClKind::Space { self.x - c.adv } else { self.x };
         } else if self.hyph_ok
-            && !pl.clusters.get(j + 1).is_some_and(|n| n.kind == ClKind::Text && n.g1 <= n.g0)
+            && !pl.clusters.get(j + 1).is_some_and(|n| n.kind() == ClKind::Text && n.g1 <= n.g0)
             && self.x + hyphen_glyph(pl, c.style, &mut bk.hcache).2 <= self.right_edge + shrink + 0.01
         {
             self.last_break = Some(j);
@@ -1040,12 +1042,12 @@ impl Scan {
         self.skip = self.narrowed && bk.skipped < 50 && bk.widths.get(c0).is_some_and(|w| *w <= full + 0.01);
         // Never split a ligature's letters or a grapheme's drawing segments across
         // lines: back up to their first segment (unless it starts the line).
-        let glyphless = |k: usize| pl.clusters.get(k).is_some_and(|c| c.kind == ClKind::Text && c.g1 <= c.g0);
+        let glyphless = |k: usize| pl.clusters.get(k).is_some_and(|c| c.kind() == ClKind::Text && c.g1 <= c.g0);
         let mut b = j;
-        while b > c0 + 1 && (glyphless(b) || pl.clusters.get(b).is_some_and(|c| !pl.is_edit_boundary(c.start))) {
+        while b > c0 + 1 && (glyphless(b) || pl.clusters.get(b).is_some_and(|c| !pl.is_edit_boundary(c.start()))) {
             b -= 1;
         }
-        while b > c0 && pl.clusters.get(b).is_some_and(|c| !pl.is_edit_boundary(c.start)) {
+        while b > c0 && pl.clusters.get(b).is_some_and(|c| !pl.is_edit_boundary(c.start())) {
             b -= 1;
         }
         if b < j
