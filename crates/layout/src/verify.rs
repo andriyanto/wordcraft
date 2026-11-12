@@ -13,6 +13,7 @@ use crate::{DocLayout, Page};
 
 thread_local! {
     static VERIFY: Cell<bool> = const { Cell::new(false) };
+    static REPLAY: Cell<bool> = const { Cell::new(false) };
     static MISMATCH: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
@@ -23,6 +24,27 @@ pub fn verify_against_full(on: bool) {
 
 pub(crate) fn verifying() -> bool {
     VERIFY.with(Cell::get)
+}
+
+/// Turn replaying on or off for this thread: pagination then places every top-level block,
+/// takes it back to the snapshot it took before the block, and places it again. A snapshot that
+/// holds all of the walk's state makes that the same as placing the block once, so the pages (and
+/// every test's expectations of them) are unchanged; state a snapshot misses shows up as a
+/// difference. Resuming pagination from a saved snapshot rests on exactly that.
+pub fn replay_blocks(on: bool) {
+    REPLAY.with(|v| v.set(on));
+}
+
+pub(crate) fn replaying() -> bool {
+    // The crate's own tests can all be run this way: `WORDCRAFT_LAYOUT_REPLAY=1 cargo test`.
+    #[cfg(test)]
+    {
+        static FROM_ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *FROM_ENV.get_or_init(|| std::env::var_os("WORDCRAFT_LAYOUT_REPLAY").is_some_and(|v| v == "1")) {
+            return true;
+        }
+    }
+    REPLAY.with(Cell::get)
 }
 
 /// The first difference found since the last call, if any: which page, and the text of the two

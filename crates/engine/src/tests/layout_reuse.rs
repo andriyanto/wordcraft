@@ -88,10 +88,11 @@ fn step(r: &mut Rng) -> (&'static str, Value) {
 /// Run `steps` random edits from `seed`, laying the document out after each with the check on.
 /// Returns how many of the edits the document took (a command that isn't available where the
 /// caret is changes nothing) and how many pages it ended with.
-fn script(seed: u64, steps: usize) -> (usize, usize) {
+fn script(seed: u64, steps: usize, replay: bool) -> (usize, usize) {
     let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut s = Session::new(Document::new());
     wordcraft_layout::verify_against_full(true);
+    wordcraft_layout::replay_blocks(replay);
     let _ = wordcraft_layout::take_mismatch();
     let mut done: Vec<&'static str> = Vec::new();
     let mut pages = 0;
@@ -103,6 +104,7 @@ fn script(seed: u64, steps: usize) -> (usize, usize) {
         pages = s.layout().pages.len();
         if let Some(why) = wordcraft_layout::take_mismatch() {
             wordcraft_layout::verify_against_full(false);
+            wordcraft_layout::replay_blocks(false);
             let last: Vec<_> = done.iter().rev().take(8).rev().collect();
             panic!(
                 "seed {seed}, step {n} ({id} {params}): the layout differs from the document laid out from scratch\n{why}\nlast edits taken: {last:?}"
@@ -110,6 +112,7 @@ fn script(seed: u64, steps: usize) -> (usize, usize) {
         }
     }
     wordcraft_layout::verify_against_full(false);
+    wordcraft_layout::replay_blocks(false);
     (done.len(), pages)
 }
 
@@ -117,11 +120,24 @@ fn script(seed: u64, steps: usize) -> (usize, usize) {
 fn layouts_after_random_edits_are_the_layouts_from_scratch() {
     let (mut taken, mut most_pages) = (0, 0);
     for seed in 1..=12 {
-        let (done, pages) = script(seed, 220);
+        let (done, pages) = script(seed, 220, false);
         taken += done;
         most_pages = most_pages.max(pages);
     }
     // The scripts must really edit and really paginate, or the check checks nothing.
     assert!(taken > 1500, "only {taken} edits were taken");
+    assert!(most_pages >= 3, "the longest document was {most_pages} page(s)");
+}
+
+/// The same scripts with every block placed, taken back to the checkpoint before it, and placed
+/// again ([`wordcraft_layout::replay_blocks`]): the pages must still be the pages of the plain
+/// walk. A checkpoint that misses any of pagination's state fails here, which is what resuming
+/// pagination from a saved checkpoint depends on.
+#[test]
+fn pagination_resumed_from_a_checkpoint_before_every_block_gives_the_same_pages() {
+    let mut most_pages = 0;
+    for seed in 1..=12 {
+        most_pages = most_pages.max(script(seed, 220, true).1);
+    }
     assert!(most_pages >= 3, "the longest document was {most_pages} page(s)");
 }
