@@ -188,6 +188,18 @@ pub(crate) fn show(app: &mut WordApp, ctx: &egui::Context) {
 mod tests {
     use craft_update::updater::Status;
 
+    /// Updates come from this project's own releases, never from the Craft App Suite's
+    /// repository: the app is otherwise the one craft-update knows (the same asset names).
+    #[test]
+    fn updates_come_from_this_projects_own_repository() {
+        let (app, suite) = (crate::UPDATE_APP, craft_update::suite::WORDCRAFT);
+        assert_eq!(app.repo, "andriyanto/wordcraft");
+        assert_eq!(app.releases_url(), "https://github.com/andriyanto/wordcraft/releases");
+        assert_ne!(app.repo, suite.repo);
+        assert_ne!(app.developer, suite.developer);
+        assert_eq!((app.id, app.name), (suite.id, suite.name));
+    }
+
     /// With the self-update off, a startup check is never made, and Help ▸ Check for Updates (the
     /// command's own path) ends in the reason instead of a release to install (#5653).
     #[test]
