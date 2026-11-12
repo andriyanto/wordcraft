@@ -1021,10 +1021,10 @@ mod object_index_tests {
         };
         let layout = DocLayout {
             pages: vec![
-                Page { items: vec![object(&body, 10.0), object(&body, 11.0)], header: vec![object(&header, 12.0)], ..Default::default() },
+                Page { items: vec![object(&body, 10.0), object(&body, 11.0)].into(), header: vec![object(&header, 12.0)], ..Default::default() },
                 Page::default(),
                 Page {
-                    items: vec![object(&body, 30.0)],
+                    items: vec![object(&body, 30.0)].into(),
                     header: vec![object(&header, 31.0), object(&header, 32.0)],
                     footer: vec![object(&footer, 33.0)],
                     ..Default::default()

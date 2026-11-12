@@ -64,6 +64,7 @@ mod notes;
 mod page;
 mod pass;
 mod placed;
+mod resume;
 mod strict;
 mod substituted;
 mod table_flow;
@@ -95,7 +96,8 @@ use notes::{NOTE_SEP, note_numbers};
 use page::item_bottom;
 use pass::layout_pass;
 pub use pass::now_ms;
-pub use placed::{HfSlot, Placed, turn_point, turn_rect, unturn_point};
+pub use placed::{HfSlot, Items, Placed, turn_point, turn_rect, unturn_point};
+pub use resume::{mark_every, resume_passes, resumed_passes};
 pub use strict::{MAX_PDF_PICTURE_SIDE, MAX_PNG_PICTURE_SIDE, StrictOutput, media_check, undecodable_pictures};
 pub use substituted::MAX_SUBSTITUTED;
 pub use verify::{replay_blocks, same_layout, take_mismatch, verify_against_full};
@@ -192,7 +194,7 @@ fn hindi_locale(tag: &str) -> bool {
     matches!(lang.as_str(), "ar" | "fa" | "ur" | "ps" | "sd" | "ku" | "ckb")
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LayoutOptions {
     pub view: ViewMode,
     /// Width of the window in Web/Draft views, points.
@@ -295,7 +297,7 @@ pub struct Page {
     pub section: usize,
     /// Page number as displayed (after section restarts).
     pub number: u32,
-    pub items: Vec<Placed>,
+    pub items: Items,
     /// Header / footer items (drawn dimmed while editing the body).
     pub header: Vec<Placed>,
     pub footer: Vec<Placed>,
@@ -351,6 +353,23 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
 fn layout_reusing(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
     #[cfg(test)]
     crate::test_fonts();
+    let l = layout_passes(doc, cache, opts);
+    // The crate's own tests can all be run with every layout made a second time, starting from
+    // the middle of the first: `WORDCRAFT_LAYOUT_RESUME=1 cargo test`.
+    #[cfg(test)]
+    {
+        static FROM_ENV: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *FROM_ENV.get_or_init(|| std::env::var_os("WORDCRAFT_LAYOUT_RESUME").is_some_and(|v| v == "1")) {
+            resume::resume_from_the_middle(true);
+            let again = layout_passes(doc, cache, opts);
+            resume::resume_from_the_middle(false);
+            return again;
+        }
+    }
+    l
+}
+
+fn layout_passes(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
     let t0 = now_ms();
     // Page totals shown in the body (`NUMPAGES`, `SECTIONPAGES`) are known only after
     // paginating: lay out again with the totals found until they hold (bounded). Footnotes

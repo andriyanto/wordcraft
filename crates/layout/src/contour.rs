@@ -218,6 +218,11 @@ pub(crate) struct Alphas {
 }
 
 impl Alphas {
+    /// Whether no picture has been looked at (or charged for) yet: the budget is whole.
+    pub(crate) fn untouched(&self) -> bool {
+        self.seen.is_empty() && self.charged.is_empty() && self.costs.is_empty() && self.refused.is_empty() && self.decoded == 0
+    }
+
     /// The outline of picture `bytes`'s opaque pixels within `crop` (left, top, right, bottom
     /// fractions), in unit coordinates of the cropped picture. `None` for pictures without
     /// transparency (or that don't decode), and [`OverBudget`] past the budget: their rectangle

@@ -3284,7 +3284,7 @@ fn table_gridlines_include_header_and_footer_tables() {
         clip: false,
     };
     let page = Page {
-        items: vec![cell(100.0, false, StoryRef::Body), cell(110.0, true, StoryRef::Body)],
+        items: vec![cell(100.0, false, StoryRef::Body), cell(110.0, true, StoryRef::Body)].into(),
         header: vec![cell(10.0, false, StoryRef::Part(1)), cell(20.0, true, StoryRef::Part(1))],
         footer: vec![cell(200.0, false, StoryRef::Part(2))],
         ..Default::default()
@@ -5156,7 +5156,7 @@ fn a_pictures_corrections_and_crop_change_its_page_key() {
         let layout = s.layout();
         let items: Vec<Placed> = layout.pages[0].items.iter().filter(|i| matches!(i, Placed::Image { .. })).cloned().collect();
         assert_eq!(items.len(), 1, "the picture is an item of its page");
-        pages::page_content_key(&Page { items, ..Default::default() })
+        pages::page_content_key(&Page { items: items.into(), ..Default::default() })
     };
     let faded = key(&mut s);
     s.run("select.range", &json!({"anchor": {"block": 0, "off": 0}, "focus": {"block": 0, "off": 3}})).unwrap();
@@ -5174,7 +5174,8 @@ fn a_pictures_corrections_and_crop_change_its_page_key() {
             off: 0,
             spin: Default::default(),
             fx,
-        }],
+        }]
+        .into(),
         ..Default::default()
     };
     let plain = pages::page_content_key(&at([0.0; 4], PicFx::default()));

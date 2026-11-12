@@ -8,6 +8,7 @@ use super::headers::{HfLinks, bookmark_pages, headers_footers, headers_footers_r
 use super::notes::{MAX_NOTE_PAGES, NoteSeps, note_info, place_endnotes};
 use super::page::{PageBuilder, body_top_for, foot_top_for, item_bottom};
 use super::placed::Placed;
+use super::resume::{Mark, PassInput, keep};
 use super::table_flow::place_table;
 use super::{
     Arc, Block, Counters, DocLayout, Document, FieldCtx, HashMap, InlineObject, LayoutOptions, Page, Paragraph, SectionProps, SectionStart, StoryRef,
@@ -49,15 +50,17 @@ struct Sec<'p> {
     tops: Tops,
 }
 
-/// Forget cached layouts made for another environment, and what the last pass used.
-fn reset_cache(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) {
-    let env = env_hash(doc, opts);
+/// Forget cached layouts made for another environment (`env`), and what the last pass used —
+/// unless this pass starts part-way (`resuming`): it then uses what the pass before did, too.
+fn reset_cache(cache: &mut LayoutCache, env: u64, resuming: bool) {
     if env != cache.env {
         cache.paras.clear();
         cache.measures.clear();
         cache.env = env;
     }
-    cache.used.clear();
+    if !resuming {
+        cache.used.clear();
+    }
 }
 
 /// The walk state at the start of a pass, with the note references the body shows.
@@ -112,6 +115,10 @@ fn new_ctx<'a>(
         hf: Arc::new(HfLinks::new(doc.sections())),
         alphas: Default::default(),
         header_repeats: 0,
+        cur_block: 0,
+        typing_at: None,
+        saved: Vec::new(),
+        saved_pages: 0,
     }
 }
 
@@ -376,6 +383,15 @@ fn place_block(ctx: &mut Ctx, pb: &mut PageBuilder, outline: &Option<OutlinePass
     }
 }
 
+/// What the marks taken in a section say of it ([`Mark`]); `None` where none are taken.
+#[derive(Clone, Copy)]
+struct Marking {
+    si: usize,
+    entry_page: u32,
+    /// Text boxes thrown away before the section.
+    discarded: usize,
+}
+
 /// Place the blocks from `block` to `last`, balancing the columns of the last page if asked.
 /// Returns the block after them and the text boxes laid out in the balancing attempts thrown away.
 fn place_section_blocks(
@@ -384,6 +400,7 @@ fn place_section_blocks(
     outline: &Option<OutlinePass>,
     (mut block, last): (usize, usize),
     (balance, body_top): (bool, f32),
+    marking: Option<Marking>,
 ) -> (usize, usize) {
     let mut from = balance.then(|| (block, Snap::take(pb, ctx)));
     // Checking that a snapshot holds all of the walk's state: every block is placed, taken back
@@ -393,6 +410,28 @@ fn place_section_blocks(
     while block <= last && ctx.doc.body.get(block).is_some() {
         let before = balance.then(|| (pb.pages.len(), Snap::take(pb, ctx)));
         let again = replay.then(|| Checkpoint::take(pb, ctx));
+        // A mark at the first block boundary of a page, every few pages, where the walk's state
+        // is all a later pass needs to start from here (not while columns are balanced, which goes back
+        // over blocks, nor once pictures' outlines have been charged to this pass's budget).
+        if let Some(m) = marking
+            && !balance
+            && block > 0
+            && pb.pages.len() >= ctx.saved_pages + crate::resume::pages_between_marks()
+            && ctx.alphas.untouched()
+        {
+            ctx.saved_pages = pb.pages.len();
+            ctx.saved.push(Mark {
+                block,
+                si: m.si,
+                entry_page: m.entry_page,
+                body_top,
+                at: Checkpoint::take(pb, ctx),
+                boxes: ctx.boxes.clone(),
+                boxes_discarded: m.discarded + replayed_boxes,
+                uses_totals: ctx.uses_totals,
+            });
+        }
+        ctx.cur_block = block;
         pb.mark_block();
         place_block(ctx, pb, outline, block, body_top);
         if let Some(saved) = again {
@@ -408,6 +447,7 @@ fn place_section_blocks(
         }
         block += 1;
     }
+    ctx.cur_block = 0;
     let discarded = from.map_or(0, |(first, snap)| balance_columns(ctx, pb, (first, block), &snap, body_top));
     (block, discarded + replayed_boxes)
 }
@@ -538,11 +578,24 @@ pub(crate) fn layout_pass(
     may_repeat: bool,
     (early, may_rewrap): (&Arc<EarlyFloats>, bool),
 ) -> Pass {
-    reset_cache(doc, cache, opts);
+    let mode = Mode::of(opts.view);
+    let env = env_hash(doc, opts);
+    let settle = !may_rewrap && !mode.reflow;
+    let doc_sections = doc.sections();
+    let input = PassInput { doc, opts, env, sections: &doc_sections, note_pages, totals, early, settle };
+    // Start from where the document changed, if the pass before left what that takes.
+    let (mut resume, mut kept) = match cache.kept.take().map(|k| k.resume(&input)) {
+        Some(Ok(r)) => (Some(r), None),
+        Some(Err(k)) => (None, Some((k, false))),
+        None => (None, None),
+    };
+    reset_cache(cache, env, resume.is_some());
     let mut ctx = new_ctx(doc, cache, opts, (note_pages, totals));
+    if let Some(r) = resume.take_if(|r| !r.same_notes(ctx.notes_hash)) {
+        kept = Some((r.give_up(), false));
+    }
     let hf = Arc::clone(&ctx.hf);
     let sections = &hf.sections;
-    let mode = Mode::of(opts.view);
     ctx.mirror = doc.settings.mirror_margins && !mode.reflow;
     (ctx.stacked_marks, ctx.quiet_marks) = section_marks(doc, opts, sections);
     let outline = (opts.view == ViewMode::Outline).then(|| OutlinePass::new(doc, opts.outline.clone().unwrap_or_default()));
@@ -550,7 +603,11 @@ pub(crate) fn layout_pass(
     let first_sect = sections.first().map_or(&default_sect, |(_, s)| *s);
     let web_sect = mode.reflow.then(|| reflow_sect(first_sect, opts));
     let sect_ref = web_sect.as_ref().unwrap_or(first_sect);
-    let mut pb = new_page_builder(sect_ref, first_sect.page_num_format, early, mode.web, !may_rewrap && !mode.reflow);
+    let mut pb = new_page_builder(sect_ref, first_sect.page_num_format, early, mode.web, settle);
+    // Marks are for walks whose state they hold whole: pages (the long page of the continuous
+    // views would be copied at every mark), every block placed (not the outline view), and no
+    // text flowing from one box to another, which reads boxes anywhere in the document.
+    let marking = !mode.web && outline.is_none() && !doc.parts.values().any(|p| p.body.next.is_some());
     let mut endnotes = endnote_queue(&ctx);
     // Text boxes laid out in balancing attempts that were thrown away.
     let mut boxes_discarded = 0usize;
@@ -566,6 +623,23 @@ pub(crate) fn layout_pass(
             _ => sect,
         };
         let start = if si == 0 { SectionStart::NextPage } else { sect.start };
+        let last = (*end).min(doc.body.len().saturating_sub(1));
+        let from = resume.as_ref().and_then(|r| r.mark()).map(|m| (m.si, m.entry_page, m.block, m.body_top));
+        if let Some((at, ..)) = from
+            && si < at
+        {
+            // A section before the mark: its pages are kept. Its endnotes were placed at its end.
+            if doc.note_options(sect, true).pos == wordcraft_doc::section::NotePos::SectEnd {
+                while endnotes.front().is_some_and(|(_, s)| *s <= si) {
+                    endnotes.pop_front();
+                }
+            }
+            (block, prev_turn) = (last + 1, turn);
+            continue;
+        }
+        // The page field as the section's header and footer room was measured with.
+        let entry_page = from.map_or(ctx.fields.page, |(_, page, ..)| page);
+        ctx.fields.page = entry_page;
         if !mode.web && !pb.pages.is_empty() && (start != SectionStart::Continuous || turn != prev_turn) {
             // The page the section before ends on is finished with its own margins and footnote
             // separators, before this section's replace them: the footnotes pending on it
@@ -581,18 +655,25 @@ pub(crate) fn layout_pass(
         ctx.fields.page_format = page_format;
         apply_section_grid(&mut ctx, &mut pb, sect);
         let sec = Sec { si, sect, page_format, start, tops };
-        if mode.web && si > 0 {
-            // one long page
-        } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
-            start_section_page(&mut ctx, &mut pb, &hf, &sec, (mode, block));
+        let (balance, body_top) = if let (Some((.., at, body_top)), Some(r)) = (from, resume.take()) {
+            // The mark's section: go on from the mark, in the state the walk was in there.
+            let (was, discarded) = r.start(&mut pb, &mut ctx);
+            (kept, block, boxes_discarded) = (Some((was, true)), at, discarded);
+            (false, body_top)
         } else {
-            continue_page(&mut pb, sect, block);
-        }
+            if mode.web && si > 0 {
+                // one long page
+            } else if pb.pages.is_empty() || start != SectionStart::Continuous || turn != prev_turn {
+                start_section_page(&mut ctx, &mut pb, &hf, &sec, (mode, block));
+            } else {
+                continue_page(&mut pb, sect, block);
+            }
+            pb.foot_top = sec.tops.foot;
+            (prepare_section_end(&mut pb, sections, (si, mode.web)), sec.tops.body)
+        };
         prev_turn = turn;
-        pb.foot_top = sec.tops.foot;
-        let last = (*end).min(doc.body.len().saturating_sub(1));
-        let balance = prepare_section_end(&mut pb, sections, (si, mode.web));
-        let (next, discarded) = place_section_blocks(&mut ctx, &mut pb, &outline, (block, last), (balance, sec.tops.body));
+        let mark = marking.then_some(Marking { si, entry_page, discarded: boxes_discarded });
+        let (next, discarded) = place_section_blocks(&mut ctx, &mut pb, &outline, (block, last), (balance, body_top), mark);
         (block, boxes_discarded) = (next, boxes_discarded + discarded);
         section_endnotes(&mut ctx, &mut pb, &mut endnotes, (sect, si, block));
     }
@@ -602,6 +683,8 @@ pub(crate) fn layout_pass(
     // The rest of the endnotes after the last paragraph.
     let rest: Vec<u32> = endnotes.into_iter().map(|(id, _)| id).collect();
     place_endnotes(&mut ctx, &mut pb, rest, block);
+    let kept = keep(&input, &mut ctx, &pb, kept);
+    ctx.cache.kept = kept;
     let mut pages = finish_pages(pb, doc, sections, mode.web);
     if mode.web {
         fit_web_page(&mut pages);
@@ -690,7 +773,7 @@ impl Snap {
 /// (footnotes, column lines) and listed (floating tables), so going back to before that needs
 /// the page itself. Laying out from a `Checkpoint` is what resuming pagination where an edit is
 /// will do; [`crate::replay_blocks`] checks that it holds all of the walk's state.
-struct Checkpoint {
+pub(crate) struct Checkpoint {
     snap: Snap,
     /// The page being filled when the checkpoint was taken (`None` before the first page).
     page: Option<Page>,
@@ -708,6 +791,19 @@ impl Checkpoint {
         if let (Some(now), Some(then)) = (pb.pages.last_mut(), &self.page) {
             *now = then.clone();
         }
+    }
+
+    /// How many pages there were (the last being filled).
+    pub(crate) fn pages(&self) -> usize {
+        self.snap.pages
+    }
+
+    /// Start a walk in this state, in another pass: `pages` (and what is `behind` the text on
+    /// each) are the pages of the walk it was taken in, of which those before the one being
+    /// filled are kept.
+    pub(crate) fn resume(&self, pb: &mut PageBuilder, ctx: &mut Ctx, pages: Vec<Page>, behind: Vec<usize>) {
+        (pb.pages, pb.behind) = (pages, behind);
+        self.restore(pb, ctx);
     }
 }
 

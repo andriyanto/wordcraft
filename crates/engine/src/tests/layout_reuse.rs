@@ -6,7 +6,7 @@
 //! covered by the same scripts: a difference names the edit after which reuse went wrong.
 
 use serde_json::{Value, json};
-use wordcraft_doc::Document;
+use wordcraft_doc::{Document, Pos, StoryRef};
 
 use crate::Session;
 
@@ -92,6 +92,8 @@ fn script(seed: u64, steps: usize, replay: bool) -> (usize, usize) {
     let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1);
     let mut s = Session::new(Document::new());
     wordcraft_layout::verify_against_full(true);
+    // A mark on every page, so that a pass starts wherever one can.
+    wordcraft_layout::mark_every(1);
     wordcraft_layout::replay_blocks(replay);
     let _ = wordcraft_layout::take_mismatch();
     let mut done: Vec<&'static str> = Vec::new();
@@ -140,4 +142,50 @@ fn pagination_resumed_from_a_checkpoint_before_every_block_gives_the_same_pages(
         most_pages = most_pages.max(script(seed, 220, true).1);
     }
     assert!(most_pages >= 3, "the longest document was {most_pages} page(s)");
+}
+
+/// A document of several pages, edited mostly the way people write: typing where the caret is,
+/// which is often near the end. Pagination then starts from a mark near the edit rather than
+/// from the first block ([`wordcraft_layout::resumed_passes`]), and the pages must still be the
+/// pages of the document laid out from scratch.
+#[test]
+fn pagination_started_near_an_edit_gives_the_pages_from_scratch() {
+    wordcraft_layout::mark_every(1);
+    for seed in 1..=2u64 {
+        let mut r = Rng(seed.wrapping_mul(0xD1B5_4A32_D192_ED03) | 1);
+        let mut s = Session::new(Document::new());
+        for _ in 0..160 {
+            let words = (0..=r.below(40)).map(|_| r.pick(WORDS)).collect::<Vec<_>>().join(" ");
+            s.run("text.insert", &json!({"text": words})).unwrap();
+            s.run("text.newParagraph", &json!({})).unwrap();
+        }
+        assert!(s.layout().pages.len() >= 6, "seed {seed}: {} page(s)", s.layout().pages.len());
+        wordcraft_layout::verify_against_full(true);
+        let _ = wordcraft_layout::take_mismatch();
+        let before = wordcraft_layout::resumed_passes();
+        for n in 0..300 {
+            let (id, params) = match r.below(100) {
+                0..=54 => ("text.insert", json!({"text": r.pick(WORDS).to_string() + " "})),
+                55..=59 => ("caret.docEnd", json!({})),
+                60..=64 => ("caret.pageUp", json!({})),
+                65..=67 => ("caret.pageDown", json!({})),
+                _ => step(&mut r),
+            };
+            // Back to the body from a note, most of the time: near the end, or anywhere.
+            if s.sel.focus.story != StoryRef::Body && r.below(4) != 0 {
+                let blocks = s.doc.body.len() as u64;
+                let block = if r.below(5) == 0 { r.below(blocks) } else { blocks - 1 - r.below(blocks.min(30)) };
+                let _ = s.run("caret.set", &json!({"pos": Pos::body(block as usize, 0)}));
+            }
+            let _ = s.run(id, &params);
+            s.layout();
+            if let Some(why) = wordcraft_layout::take_mismatch() {
+                wordcraft_layout::verify_against_full(false);
+                panic!("seed {seed}, step {n} ({id} {params}): the layout differs from the document laid out from scratch\n{why}");
+            }
+        }
+        wordcraft_layout::verify_against_full(false);
+        let resumed = wordcraft_layout::resumed_passes() - before;
+        assert!(resumed >= 100, "seed {seed}: only {resumed} of the passes started from a mark");
+    }
 }

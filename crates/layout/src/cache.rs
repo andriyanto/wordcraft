@@ -46,6 +46,8 @@ pub struct LayoutCache {
     /// (shared, so an edited block is a different pointer) and `env` (styles and numbering). Kept
     /// while both are unchanged, so headers using STYLEREF don't rebuild it on every pass.
     pub(crate) styleref: Option<(Blocks, u64, Arc<styleref::StyleIndex>)>,
+    /// What the last pass left for the next to start part-way from ([`crate::resume`]).
+    pub(crate) kept: Option<Box<crate::resume::Kept>>,
     pub hits: u64,
     pub misses: u64,
 }
@@ -65,6 +67,7 @@ impl LayoutCache {
         self.measures.clear();
         self.outlines.clear();
         self.styleref = None;
+        self.kept = None;
     }
 
     /// The STYLEREF style index for `doc`, rebuilt only when the body or the styles changed.
