@@ -63,7 +63,7 @@ zbus = { version = "5", default-features = false, features = ["async-io", "block
 wl-clipboard-rs = "0.9"
 # Another program's RTF on X11 (`text/rtf`), which arboard doesn't read. Already in the build
 # through arboard, at this version.
-x11rb = "0.13"
+x11rb = "0.14"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # The upstream default-apps button opens Windows Settings; printing uses craft-print instead.
