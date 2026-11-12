@@ -8,7 +8,7 @@ use super::headers::{HfLinks, bookmark_pages, headers_footers, headers_footers_r
 use super::notes::{MAX_NOTE_PAGES, NoteSeps, note_info, place_endnotes};
 use super::page::{PageBuilder, body_top_for, foot_top_for, item_bottom};
 use super::placed::Placed;
-use super::resume::{Mark, PassInput, keep};
+use super::resume::{Mark, PassInput, converged, keep};
 use super::table_flow::place_table;
 use super::{
     Arc, Block, Counters, DocLayout, Document, FieldCtx, HashMap, InlineObject, LayoutOptions, Page, Paragraph, SectionProps, SectionStart, StoryRef,
@@ -119,6 +119,8 @@ fn new_ctx<'a>(
         typing_at: None,
         saved: Vec::new(),
         saved_pages: 0,
+        tail: None,
+        stopped: false,
     }
 }
 
@@ -409,6 +411,16 @@ fn place_section_blocks(
     let mut replayed_boxes = 0usize;
     while block <= last && ctx.doc.body.get(block).is_some() {
         let before = balance.then(|| (pb.pages.len(), Snap::take(pb, ctx)));
+        // In the state the last pass was in here, with the same blocks from here on: the rest
+        // is what it was.
+        if let Some(m) = marking
+            && !balance
+            && ctx.tail.is_some()
+            && converged(ctx, pb, block, (m.si, m.entry_page, body_top, m.discarded + replayed_boxes))
+        {
+            ctx.stopped = true;
+            break;
+        }
         let again = replay.then(|| Checkpoint::take(pb, ctx));
         // A mark at the first block boundary of a page, every few pages, where the walk's state
         // is all a later pass needs to start from here (not while columns are balanced, which goes back
@@ -589,11 +601,23 @@ pub(crate) fn layout_pass(
         Some(Err(k)) => (None, Some((k, false))),
         None => (None, None),
     };
-    reset_cache(cache, env, resume.is_some());
     let mut ctx = new_ctx(doc, cache, opts, (note_pages, totals));
     if let Some(r) = resume.take_if(|r| !r.same_notes(ctx.notes_hash)) {
         kept = Some((r.give_up(), false));
     }
+    // And stop where the walk comes to be as it was last time, with the same blocks after it.
+    let stop_from = match (&resume, &kept) {
+        (Some(r), _) => r.stoppable(&input, ctx.notes_hash),
+        (None, Some((k, _))) => k.stoppable(&input, ctx.notes_hash),
+        (None, None) => None,
+    };
+    if resume.is_none()
+        && let (Some(from), Some((k, used))) = (stop_from, kept.as_mut())
+    {
+        ctx.tail = k.whole_tail(from);
+        *used = ctx.tail.is_some();
+    }
+    reset_cache(ctx.cache, env, resume.is_some() || ctx.tail.is_some());
     let hf = Arc::clone(&ctx.hf);
     let sections = &hf.sections;
     ctx.mirror = doc.settings.mirror_margins && !mode.reflow;
@@ -657,7 +681,7 @@ pub(crate) fn layout_pass(
         let sec = Sec { si, sect, page_format, start, tops };
         let (balance, body_top) = if let (Some((.., at, body_top)), Some(r)) = (from, resume.take()) {
             // The mark's section: go on from the mark, in the state the walk was in there.
-            let (was, discarded) = r.start(&mut pb, &mut ctx);
+            let (was, discarded) = r.start(&mut pb, &mut ctx, stop_from);
             (kept, block, boxes_discarded) = (Some((was, true)), at, discarded);
             (false, body_top)
         } else {
@@ -675,15 +699,23 @@ pub(crate) fn layout_pass(
         let mark = marking.then_some(Marking { si, entry_page, discarded: boxes_discarded });
         let (next, discarded) = place_section_blocks(&mut ctx, &mut pb, &outline, (block, last), (balance, body_top), mark);
         (block, boxes_discarded) = (next, boxes_discarded + discarded);
+        if ctx.stopped {
+            break;
+        }
         section_endnotes(&mut ctx, &mut pb, &mut endnotes, (sect, si, block));
     }
-    if pb.pages.is_empty() {
-        pb.new_page(0, sect_ref.margin_top);
+    if let Some(tail) = ctx.tail.take().filter(|_| ctx.stopped) {
+        // The walk stopped at a mark of the last pass: the rest is that pass's.
+        boxes_discarded = tail.finish(&mut pb, &mut ctx);
+    } else {
+        if pb.pages.is_empty() {
+            pb.new_page(0, sect_ref.margin_top);
+        }
+        // The rest of the endnotes after the last paragraph.
+        let rest: Vec<u32> = endnotes.into_iter().map(|(id, _)| id).collect();
+        place_endnotes(&mut ctx, &mut pb, rest, block);
     }
-    // The rest of the endnotes after the last paragraph.
-    let rest: Vec<u32> = endnotes.into_iter().map(|(id, _)| id).collect();
-    place_endnotes(&mut ctx, &mut pb, rest, block);
-    let kept = keep(&input, &mut ctx, &pb, kept);
+    let kept = keep(&input, &mut ctx, &mut pb, kept, boxes_discarded);
     ctx.cache.kept = kept;
     let mut pages = finish_pages(pb, doc, sections, mode.web);
     if mode.web {
@@ -780,7 +812,7 @@ pub(crate) struct Checkpoint {
 }
 
 impl Checkpoint {
-    fn take(pb: &mut PageBuilder, ctx: &Ctx) -> Self {
+    pub(crate) fn take(pb: &mut PageBuilder, ctx: &Ctx) -> Self {
         Checkpoint { snap: Snap::take(pb, ctx), page: pb.pages.last().cloned() }
     }
 
@@ -796,6 +828,33 @@ impl Checkpoint {
     /// How many pages there were (the last being filled).
     pub(crate) fn pages(&self) -> usize {
         self.snap.pages
+    }
+
+    /// Whether the walk is in this state now: every value the builder and the walk hold, and
+    /// the page being filled. (The values are compared as they print, which every one of them
+    /// does in full; the few that tell most walks apart are compared first.)
+    pub(crate) fn same(&self, pb: &mut PageBuilder, ctx: &Ctx) -> bool {
+        let s = &self.snap;
+        if s.pages != pb.pages.len()
+            || s.pb.y != pb.y
+            || s.pb.number != pb.number
+            || s.pb.col != pb.col
+            || s.items != pb.pages.last().map_or(0, |p| p.items.len())
+            || s.behind != pb.behind.last().copied().unwrap_or(0)
+            || s.eq_count != ctx.eq_count
+            || s.page_field != ctx.fields.page
+            || s.header_repeats != ctx.header_repeats
+        {
+            return false;
+        }
+        if format!("{:?}", s.counters) != format!("{:?}", ctx.counters) || format!("{:?}", self.page) != format!("{:?}", pb.pages.last()) {
+            return false;
+        }
+        // The builder without its pages, as the snapshot holds it.
+        let (pages, behind) = (std::mem::take(&mut pb.pages), std::mem::take(&mut pb.behind));
+        let same = format!("{:?}", s.pb) == format!("{pb:?}");
+        (pb.pages, pb.behind) = (pages, behind);
+        same
     }
 
     /// Start a walk in this state, in another pass: `pages` (and what is `behind` the text on

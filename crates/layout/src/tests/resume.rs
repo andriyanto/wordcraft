@@ -190,3 +190,73 @@ fn a_mark_does_not_hold_when_a_paragraph_it_looked_ahead_at_changes() {
     let (l, _) = relay(&d, &mut cache, &opts);
     assert_eq!(page_of(&l, filler), Some(0));
 }
+
+/// How many of the passes `f` makes stopped at a mark.
+fn stops(f: impl FnOnce()) -> u64 {
+    let before = crate::stopped_passes();
+    f();
+    crate::stopped_passes() - before
+}
+
+/// After an edit that leaves the page breaks where they were, the walk comes to a mark in the
+/// state it was in there last time, with the same blocks after it: it stops, and the pages from
+/// there on are the ones kept.
+#[test]
+fn a_walk_stops_at_the_mark_where_it_is_as_it_was_last_time() {
+    let mut d = long_doc();
+    let (mut cache, opts) = (LayoutCache::new(), LayoutOptions::default());
+    let first = relay(&d, &mut cache, &opts).0;
+    let shared = |l: &DocLayout| first.pages.iter().zip(&l.pages).filter(|(a, b)| crate::Items::shared(&a.items, &b.items)).count();
+    // A word in the first paragraph (before every mark), and in others: a few pages are laid
+    // out, between the mark before the edit and the one after it.
+    for block in [0, 3, 150, 151, 390] {
+        let mut l = None;
+        let stopped = stops(|| l = Some(relay(&d_with(&mut d, block, " word"), &mut cache, &opts).0));
+        let l = l.unwrap();
+        assert_eq!(l.pages.len(), first.pages.len());
+        if std::env::var_os("WORDCRAFT_LAYOUT_RESUME").is_none() {
+            assert_eq!(stopped, u64::from(block < 380), "block {block}");
+            assert!(
+                shared(&l) + 4 >= first.pages.len() - usize::from(block == 390) * 2,
+                "block {block}: {} of {} pages kept",
+                shared(&l),
+                l.pages.len()
+            );
+        }
+    }
+    // A paragraph that grows by many lines moves the pages after it (until, perhaps, a page
+    // ends where it did before): whatever the walk does, the pages are those from scratch.
+    relay(&d_with(&mut d, 100, &" many more words".repeat(60)), &mut cache, &opts);
+    // A block more: the blocks after it are not where they were (an item says which block it
+    // is of), so the walk goes on to the end.
+    d.insert_block(StoryRef::Body, &Path::top(50), Block::Para(Paragraph::with_text("One more", Default::default()))).unwrap();
+    let stopped = stops(|| drop(relay(&d, &mut cache, &opts)));
+    started(stopped, 0);
+    // And typing goes on stopping after that.
+    let stopped = stops(|| drop(relay(&d_with(&mut d, 60, " word"), &mut cache, &opts)));
+    started(stopped, 1);
+}
+
+fn d_with(d: &mut Document, block: usize, text: &str) -> Document {
+    retype(d, block, text);
+    d.clone()
+}
+
+/// The walk does not stop where the blocks are the same but the state is not: a list numbered
+/// on from a paragraph that became an item of it, a footnote more on the page.
+#[test]
+fn a_walk_goes_on_while_its_state_is_not_what_it_was() {
+    let mut d = long_doc();
+    let num = wordcraft_doc::props::NumRef { num: Arc::make_mut(&mut d.numbering).add_list(wordcraft_doc::ListKind::Numbered), level: 0 };
+    for block in [300, 350, 399] {
+        d.para_mut(StoryRef::Body, &Path::top(block)).unwrap().props.numbering = Some(num);
+    }
+    let (mut cache, opts) = (LayoutCache::new(), LayoutOptions::default());
+    relay(&d, &mut cache, &opts);
+    // Block 10 joins the list: the items after it are numbered one higher, to the end.
+    let p = d.para_mut(StoryRef::Body, &Path::top(10)).unwrap();
+    p.props.numbering = Some(num);
+    p.touch();
+    let stopped = stops(|| drop(relay(&d, &mut cache, &opts)));
+    started(stopped, 0);
+}

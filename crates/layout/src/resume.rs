@@ -16,6 +16,13 @@
 //! - everything a pass is given besides the body ([`Given`]): the options, the styles, the
 //!   sections, the other stories, the settings, and the values a pass is done again with.
 //!
+//! The walk also stops early. Past an edit that leaves the page breaks where they were, it comes
+//! to one of the last pass's marks in the very state that pass was in there, with the same
+//! blocks from there on: what follows is then what followed last time, and the walk takes the
+//! rest of that pass ([`Tail`]) rather than laying it out. That needs more to be unchanged: the
+//! number of blocks (a placed item says which block it is of), and the block before the mark,
+//! which the walk looks back at ([`LOOK_BACK`]).
+//!
 //! Anything else (an edit to a footnote, a new section layout) and the pass walks the whole body,
 //! as it also does where a mark's state would not be all there is to the walk: documents with
 //! linked text boxes, pictures wrapped along their outline, columns being balanced, and the
@@ -48,6 +55,11 @@ const LOOK_AHEAD: usize = 12;
 /// meanwhile, and a whole walk is what lets it drop what no block uses any more.
 const MAX_IN_A_ROW: u32 = 256;
 
+/// How many blocks before the one being placed the walk reads: the one before (whether it ended
+/// a section, joined borders, spacing between paragraphs). The walk can stop at a mark only when
+/// these are unchanged too, and one more for good measure.
+const LOOK_BACK: usize = 2;
+
 /// A mark is taken every so many pages: taking one copies the walk's state, which a pass over
 /// a long document would otherwise do thousands of times to save the next pass a few pages.
 const PAGES_BETWEEN_MARKS: usize = if cfg!(test) { 1 } else { 8 };
@@ -55,9 +67,15 @@ const PAGES_BETWEEN_MARKS: usize = if cfg!(test) { 1 } else { 8 };
 thread_local! {
     static EVERY: Cell<usize> = const { Cell::new(PAGES_BETWEEN_MARKS) };
     static RESUMED: Cell<u64> = const { Cell::new(0) };
+    static STOPPED: Cell<u64> = const { Cell::new(0) };
     static OFF: Cell<bool> = const { Cell::new(false) };
     #[cfg(test)]
     static MIDDLE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// How many passes on this thread stopped at a mark rather than after the last block.
+pub fn stopped_passes() -> u64 {
+    STOPPED.with(Cell::get)
 }
 
 /// How many passes on this thread started from a mark rather than the first block.
@@ -195,7 +213,38 @@ pub(crate) struct Kept {
     pages: Vec<Page>,
     behind: Vec<usize>,
     floats_above: HashMap<(usize, usize), Option<(usize, WrapArea)>>,
+    /// The walk's state when it ended.
+    end: Option<End>,
     in_a_row: u32,
+}
+
+/// The walk's state after the last block (and the endnotes after it).
+pub(crate) struct End {
+    at: Checkpoint,
+    boxes: wordcraft_doc::BoxBudget,
+    boxes_discarded: usize,
+    uses_totals: bool,
+    /// The field values the last section left.
+    section: u32,
+    page_format: wordcraft_doc::section::NumFormat,
+}
+
+/// The rest of the last walk, for a walk that comes to be in the state the last one was in at
+/// one of its marks, with the same blocks from there on: what follows is then what followed last
+/// time, and the walk stops there and takes it.
+pub(crate) struct Tail {
+    /// The marks not yet reached, in order.
+    marks: std::collections::VecDeque<Mark>,
+    /// The last walk's pages from page `base` on, and what is behind the text on each.
+    pages: Vec<Page>,
+    behind: Vec<usize>,
+    base: usize,
+    /// The blocks from this one on are the ones laid out last time.
+    from: usize,
+    end: End,
+    floats_above: HashMap<(usize, usize), Option<(usize, WrapArea)>>,
+    /// The word being typed last time, and where it was laid out.
+    typing: Option<(TypingWord, usize)>,
 }
 
 /// A pass about to start from a mark.
@@ -226,6 +275,72 @@ fn holds_rev(block: &Block, rev: u64, depth: usize) -> bool {
 }
 
 impl Kept {
+    /// Whether what the pass is given is what the last one was (but for the body's blocks).
+    fn holds(&self, input: &PassInput) -> bool {
+        let PassInput { doc, opts, env, sections, note_pages, early, settle, .. } = *input;
+        !OFF.with(Cell::get)
+            && self.in_a_row < MAX_IN_A_ROW
+            && self.settle == settle
+            && early.is_empty()
+            && self.note_pages == *note_pages
+            && self.given.holds(doc, opts, env, sections)
+    }
+
+    /// Whether this pass can stop at a mark of the last one ([`Tail`]), and from which block on
+    /// the body is the same: the same number of blocks in the same sections (an item says
+    /// which block it is of), the same footnote numbers and page totals, and the word being
+    /// typed not among the blocks that are the same.
+    pub(crate) fn stoppable(&self, input: &PassInput, notes_hash: u64) -> Option<usize> {
+        let PassInput { doc, opts, sections, totals, .. } = *input;
+        let end = self.end.as_ref()?;
+        if !self.holds(input)
+            || self.notes_hash != notes_hash
+            || self.body.len() != doc.body.len()
+            || self.ends.len() != sections.len()
+            || self.ends.iter().zip(sections).any(|(was, (now, _))| was != now)
+            || (end.uses_totals && self.totals != *totals)
+        {
+            return None;
+        }
+        let same = self.body.iter().rev().zip(doc.body.iter().rev()).take_while(|(a, b)| Arc::ptr_eq(a, b)).count();
+        let from = doc.body.len() - same;
+        if self.typing != opts.typing_word {
+            let before = |at: usize| at < from;
+            if self.typing.is_some() && !self.typing_at.is_none_or(before) {
+                return None;
+            }
+            if let Some(w) = opts.typing_word
+                && !doc.body.iter().take(from).rev().take(4).any(|b| holds_rev(b, w.rev, 0))
+            {
+                return None;
+            }
+        }
+        Some(from)
+    }
+
+    /// Take the rest of the last walk after mark `pick` (all of it for `None`), for a walk
+    /// whose blocks from `from` on are the last one's.
+    fn tail(&mut self, pick: Option<usize>, from: usize) -> Option<Box<Tail>> {
+        let end = self.end.take()?;
+        let after = pick.map_or(0, |i| i + 1);
+        let base = pick.and_then(|i| self.marks.get(i)).map_or(0, |m| m.at.pages().saturating_sub(1));
+        if base > self.pages.len() || base > self.behind.len() {
+            return None;
+        }
+        let marks = self.marks.drain(after.min(self.marks.len())..).filter(|m| m.block >= from.saturating_add(LOOK_BACK)).collect();
+        let (pages, behind) = (self.pages.split_off(base), self.behind.split_off(base));
+        // The page the mark is on is the first of the rest, and the last of what is kept.
+        self.pages.extend(pages.first().cloned());
+        self.behind.extend(behind.first().copied());
+        let typing = self.typing.zip(self.typing_at);
+        Some(Box::new(Tail { marks, pages, behind, base, from, end, floats_above: self.floats_above.clone(), typing }))
+    }
+
+    /// For a pass that walks from the first block: the last walk as one it may stop in.
+    pub(crate) fn whole_tail(&mut self, from: usize) -> Option<Box<Tail>> {
+        self.tail(None, from)
+    }
+
     /// The mark to start this pass from, if what the pass is given leaves one usable. Else the
     /// kept state is handed back, for what it was laid out from ([`keep`]).
     pub(crate) fn resume(self: Box<Self>, input: &PassInput) -> Result<Resume, Box<Kept>> {
@@ -236,15 +351,8 @@ impl Kept {
     }
 
     fn usable(&self, input: &PassInput) -> Option<usize> {
-        let PassInput { doc, opts, env, sections, note_pages, totals, early, settle } = *input;
-        if OFF.with(Cell::get)
-            || self.marks.is_empty()
-            || self.in_a_row >= MAX_IN_A_ROW
-            || self.settle != settle
-            || !early.is_empty()
-            || self.note_pages != *note_pages
-            || !self.given.holds(doc, opts, env, sections)
-        {
+        let PassInput { doc, opts, sections, totals, .. } = *input;
+        if self.marks.is_empty() || !self.holds(input) {
             return None;
         }
         // The blocks up to here are the ones laid out last time.
@@ -293,14 +401,21 @@ impl Resume {
         self.kept.notes_hash == notes_hash
     }
 
+    /// [`Kept::stoppable`], of the state the mark is from.
+    pub(crate) fn stoppable(&self, input: &PassInput, notes_hash: u64) -> Option<usize> {
+        self.kept.stoppable(input, notes_hash)
+    }
+
     /// Give the kept state back without using it.
     pub(crate) fn give_up(self) -> Box<Kept> {
         self.kept
     }
 
     /// Put the walk in the mark's state: the pages before it, the builder and the counters.
-    /// Returns the kept state (for [`keep`]) and the text boxes thrown away before the mark.
-    pub(crate) fn start(mut self, pb: &mut PageBuilder, ctx: &mut Ctx) -> (Box<Kept>, usize) {
+    /// `from`: the walk may stop at a later mark ([`Kept::stoppable`]). Returns the kept state
+    /// (for [`keep`]) and the text boxes thrown away before the mark.
+    pub(crate) fn start(mut self, pb: &mut PageBuilder, ctx: &mut Ctx, from: Option<usize>) -> (Box<Kept>, usize) {
+        ctx.tail = from.and_then(|from| self.kept.tail(Some(self.pick), from));
         self.kept.marks.truncate(self.pick + 1);
         let (pages, behind) = (std::mem::take(&mut self.kept.pages), std::mem::take(&mut self.kept.behind));
         let mut discarded = 0;
@@ -321,10 +436,74 @@ impl Resume {
     }
 }
 
+/// Whether the walk, about to place `block`, is in the state the last walk was in at its mark
+/// there, with the same blocks around and after it: it can stop.
+pub(crate) fn converged(ctx: &mut Ctx, pb: &mut PageBuilder, block: usize, at: (usize, u32, f32, usize)) -> bool {
+    let Some(mut tail) = ctx.tail.take() else { return false };
+    while tail.marks.front().is_some_and(|m| m.block < block) {
+        tail.marks.pop_front();
+    }
+    let (si, entry_page, body_top, discarded) = at;
+    let same = tail.marks.front().is_some_and(|m| {
+        m.block == block
+            && block >= tail.from.saturating_add(LOOK_BACK)
+            && m.si == si
+            && m.entry_page == entry_page
+            && m.body_top == body_top
+            && m.boxes_discarded == discarded
+            && m.uses_totals == ctx.uses_totals
+            && m.boxes == ctx.boxes
+            && ctx.alphas.untouched()
+            && m.at.pages() > tail.base
+            && m.at.same(pb, ctx)
+    });
+    // Once the marks are behind the walk there is nothing left to stop at.
+    if same || !tail.marks.is_empty() {
+        ctx.tail = Some(tail);
+    }
+    same
+}
+
+impl Tail {
+    /// The walk stopped at the first of the marks left: the pages from the mark's on are the
+    /// last walk's, and so is the state the walk ends in. Returns the text boxes thrown away.
+    pub(crate) fn finish(mut self: Box<Self>, pb: &mut PageBuilder, ctx: &mut Ctx) -> usize {
+        let block = self.marks.front().map_or(0, |m| m.block);
+        // The page being filled is the mark's (the states are the same): the last walk's page
+        // there holds it, and what came after.
+        let n = pb.pages.len().saturating_sub(1);
+        let (mut pages, mut behind) = (std::mem::take(&mut pb.pages), std::mem::take(&mut pb.behind));
+        pages.truncate(n);
+        behind.truncate(n);
+        let skip = n.saturating_sub(self.base);
+        pages.extend(self.pages.drain(skip.min(self.pages.len())..));
+        behind.extend(self.behind.drain(skip.min(self.behind.len())..));
+        self.end.at.resume(pb, ctx, pages, behind);
+        ctx.boxes = self.end.boxes.clone();
+        ctx.uses_totals = self.end.uses_totals;
+        ctx.fields.section = self.end.section;
+        ctx.fields.page_format = self.end.page_format;
+        ctx.floats_above.extend(self.floats_above.drain().filter(|((b, _), _)| *b >= block));
+        if let Some((_, at)) = self.typing.filter(|(word, _)| ctx.opts.typing_word == Some(*word)) {
+            ctx.typing_at = Some(ctx.typing_at.map_or(at, |now| now.min(at)));
+        }
+        ctx.saved.extend(self.marks);
+        STOPPED.with(|n| n.set(n.get() + 1));
+        self.end.boxes_discarded
+    }
+}
+
 /// Keep what the next pass needs to resume this one, as the walk ends (`pb`'s pages are the
 /// walk's own, before anything is added to them). `before`: the state this pass was given, with
-/// whether it resumed from it.
-pub(crate) fn keep(input: &PassInput, ctx: &mut Ctx, pb: &PageBuilder, before: Option<(Box<Kept>, bool)>) -> Option<Box<Kept>> {
+/// whether the pass used it (started from a mark of it, or could have stopped at one);
+/// `boxes_discarded`: the text boxes laid out in attempts thrown away.
+pub(crate) fn keep(
+    input: &PassInput,
+    ctx: &mut Ctx,
+    pb: &mut PageBuilder,
+    before: Option<(Box<Kept>, bool)>,
+    boxes_discarded: usize,
+) -> Option<Box<Kept>> {
     let marks = std::mem::take(&mut ctx.saved);
     if marks.is_empty() {
         return None;
@@ -350,6 +529,14 @@ pub(crate) fn keep(input: &PassInput, ctx: &mut Ctx, pb: &PageBuilder, before: O
         pages: pb.pages.clone(),
         behind: pb.behind.clone(),
         floats_above: ctx.floats_above.clone(),
+        end: Some(End {
+            at: Checkpoint::take(pb, ctx),
+            boxes: ctx.boxes.clone(),
+            boxes_discarded,
+            uses_totals: ctx.uses_totals,
+            section: ctx.fields.section,
+            page_format: ctx.fields.page_format,
+        }),
         in_a_row,
     }))
 }
