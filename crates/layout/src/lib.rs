@@ -67,6 +67,7 @@ mod placed;
 mod strict;
 mod substituted;
 mod table_flow;
+mod verify;
 
 #[cfg(test)]
 use boxes::{BOX_INSET_X, BOX_INSET_Y};
@@ -97,6 +98,7 @@ pub use pass::now_ms;
 pub use placed::{HfSlot, Placed, turn_point, turn_rect, unturn_point};
 pub use strict::{MAX_PDF_PICTURE_SIDE, MAX_PNG_PICTURE_SIDE, StrictOutput, media_check, undecodable_pictures};
 pub use substituted::MAX_SUBSTITUTED;
+pub use verify::{replay_blocks, same_layout, take_mismatch, verify_against_full};
 
 /// How the document is viewed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -333,6 +335,20 @@ pub struct DocLayout {
 
 /// Lay out the whole document.
 pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
+    let l = layout_reusing(doc, cache, opts);
+    if verify::verifying() {
+        // The reference is the plain walk: nothing reused, nothing replayed.
+        let replay = verify::replaying();
+        replay_blocks(false);
+        let full = layout_reusing(doc, &mut LayoutCache::new(), opts);
+        replay_blocks(replay);
+        verify::record(&l, &full);
+    }
+    l
+}
+
+/// [`layout`], reusing what `cache` holds.
+fn layout_reusing(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
     #[cfg(test)]
     crate::test_fonts();
     let t0 = now_ms();
@@ -345,7 +361,7 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
     let mut note_passes = 1;
     let mut totals = Totals::first_guess(doc.sections().len());
     let mut passes = 0;
-    let (mut early, mut rewraps) = (EarlyFloats::new(), 0);
+    let (mut early, mut rewraps) = (Arc::new(EarlyFloats::new()), 0);
     let mut l = loop {
         match layout_pass(doc, cache, opts, &note_pages, &totals, passes < MAX_TOTAL_PASSES, (&early, rewraps < MAX_REWRAP_PASSES)) {
             Pass::Again(t) => {
@@ -353,7 +369,7 @@ pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> 
                 passes += 1;
             }
             Pass::Rewrap(found) => {
-                merge_early(&mut early, found);
+                merge_early(Arc::make_mut(&mut early), found);
                 rewraps += 1;
             }
             Pass::Done(l) => {
