@@ -23,6 +23,6 @@ concurrency:
 
 jobs:
   house-rules:
-    uses: storytold/craft-common-actions/.github/workflows/house-rules.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
+    uses: storytold/craft-common-actions/.github/workflows/house-rules.yml@293de72429d3ed5d9fa92aded5e500544c0fa28f # main, 2026-11-11
     with:
       rust: true

@@ -23,7 +23,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
-    uses: storytold/craft-common-actions/.github/workflows/refresh-contributors.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
+    uses: storytold/craft-common-actions/.github/workflows/refresh-contributors.yml@293de72429d3ed5d9fa92aded5e500544c0fa28f # main, 2026-11-11
   release:
     needs: credits
     # Only this job publishes the GitHub release, so only it gets write access.
@@ -31,7 +31,7 @@ jobs:
       contents: write
       packages: write
     # Pinned to a commit, not @main: a change to the shared workflows reaches this repository (and, for a release, its signing secrets) only through a reviewed bump of this hash.
-    uses: storytold/craft-common-actions/.github/workflows/release.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
+    uses: storytold/craft-common-actions/.github/workflows/release.yml@293de72429d3ed5d9fa92aded5e500544c0fa28f # main, 2026-11-11
     with:
       app-name: wordcraft
       app-title: WordCraft
