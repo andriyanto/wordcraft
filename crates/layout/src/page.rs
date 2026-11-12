@@ -334,7 +334,7 @@ impl PageBuilder {
         self.page_items_start = decor.len();
         self.block_marks.clear();
         self.page_valign = s.valign;
-        self.pages.push(Page { w, h, section: self.sect_idx, number: self.number, body, first_block, items: decor, ..Default::default() });
+        self.pages.push(Page { w, h, section: self.sect_idx, number: self.number, body, first_block, items: decor.into(), ..Default::default() });
         self.behind.push(0);
         self.col = 0;
         self.cols = s.column_boxes();

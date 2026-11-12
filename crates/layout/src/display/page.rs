@@ -549,7 +549,7 @@ mod tests_clips {
     #[test]
     fn a_line_finds_its_clipped_cell_by_path() {
         let mut page = Page {
-            items: vec![cell(StoryRef::Body, vec![0], 0, 1, false, 1.0), cell(StoryRef::Body, vec![2], 1, 0, true, 2.0)],
+            items: vec![cell(StoryRef::Body, vec![0], 0, 1, false, 1.0), cell(StoryRef::Body, vec![2], 1, 0, true, 2.0)].into(),
             ..Default::default()
         };
         // A nested clipped cell inside the second one; the outer one comes first in the page.

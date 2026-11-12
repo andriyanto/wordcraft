@@ -431,7 +431,7 @@ fn drawn_alone(d: &Document, page: &Page, it: &Placed, opts: &display::DisplayOp
         let cells = page.header.iter().chain(&page.footer).chain(&page.items).filter(|c| matches!(c, Placed::Cell { clip: true, .. }));
         items.extend(cells.cloned());
     }
-    let one = Page { w: page.w, h: page.h, section: page.section, number: page.number, items, body: page.body, ..Default::default() };
+    let one = Page { w: page.w, h: page.h, section: page.section, number: page.number, items: items.into(), body: page.body, ..Default::default() };
     display::page_display(d, &one, opts)
 }
 

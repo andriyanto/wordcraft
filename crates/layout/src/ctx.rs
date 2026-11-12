@@ -77,6 +77,14 @@ pub(crate) struct Ctx<'a> {
     /// Items re-placed as repeated table header rows so far, in the whole layout (see
     /// [`MAX_HEADER_ITEMS`]).
     pub(crate) header_repeats: usize,
+    /// The top-level body block being placed (0 outside the body's walk).
+    pub(crate) cur_block: usize,
+    /// The first block a paragraph holding the word being typed was laid out for.
+    pub(crate) typing_at: Option<usize>,
+    /// The marks taken so far for the next pass to resume from ([`crate::resume`]), and how
+    /// many pages there were at the last.
+    pub(crate) saved: Vec<crate::resume::Mark>,
+    pub(crate) saved_pages: usize,
 }
 
 struct ParaEnvInput<'a> {
@@ -416,6 +424,9 @@ impl Ctx<'_> {
             sref: if self.fields.styleref.is_some() && styleref::has_styleref(p) { self.fields.styleref_key(p) } else { 0 },
             typing: self.opts.typing_word.filter(|t| t.rev == p.rev).map(|t| (t.start, t.end)),
         };
+        if key.typing.is_some() {
+            self.typing_at = Some(self.typing_at.map_or(self.cur_block, |at| at.min(self.cur_block)));
+        }
         (key, eq_number)
     }
 
@@ -536,6 +547,10 @@ mod tests {
             hf: Arc::new(HfLinks::new(doc.sections())),
             alphas: Default::default(),
             header_repeats: 0,
+            cur_block: 0,
+            typing_at: None,
+            saved: Vec::new(),
+            saved_pages: 0,
         };
 
         ctx.fitted_boxes(&p);

@@ -73,7 +73,8 @@ pub(crate) fn place_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragraph, blo
 
 /// Remove the list label from a mark's lines; optionally keep its other drawing items.
 fn strip_mark(page: &mut Page, drawn: usize, keep_others: bool) {
-    let tail = page.items.split_off(drawn.min(page.items.len()));
+    let drawn = drawn.min(page.items.len());
+    let tail = page.items.split_off(drawn);
     page.items.extend(tail.into_iter().filter_map(|item| match item {
         Placed::Lines { story, path, para, l0, l1, x, y, turn } if para.label.is_some() => {
             let mut bare = (*para).clone();
@@ -816,7 +817,8 @@ fn add_items(pb: &mut PageBuilder, behind: Vec<Placed>, items: Vec<Placed>) {
     let n_behind = behind.len();
     if let Some(pg) = pb.pages.last_mut() {
         for (i, it) in behind.into_iter().enumerate() {
-            pg.items.insert(i.min(pg.items.len()), it);
+            let i = i.min(pg.items.len());
+            pg.items.insert(i, it);
         }
         pg.items.extend(items);
     }
@@ -953,7 +955,8 @@ pub(crate) fn place_outline_para(ctx: &mut Ctx, pb: &mut PageBuilder, p: &Paragr
     items.extend(outline::symbol_items(&pl, x, y, level, children, collapsed));
     if let Some(pg) = pb.page() {
         for (i, it) in behind.into_iter().enumerate() {
-            pg.items.insert(i.min(pg.items.len()), it);
+            let i = i.min(pg.items.len());
+            pg.items.insert(i, it);
         }
         pg.items.extend(items);
     }

@@ -235,3 +235,71 @@ pub enum HfSlot {
     /// An even page with "Different Odd & Even Pages".
     Even,
 }
+
+/// A page's items: a list that is shared until it is changed. Laying a document out again keeps
+/// most of its pages as they were ([`crate::resume`]), and a kept page and the page handed out
+/// are then one list, not two.
+#[derive(Clone, Default)]
+pub struct Items(std::sync::Arc<Vec<Placed>>);
+
+impl Items {
+    /// Whether `a` and `b` are one list (not merely equal ones).
+    pub fn shared(a: &Items, b: &Items) -> bool {
+        std::sync::Arc::ptr_eq(&a.0, &b.0)
+    }
+}
+
+impl std::ops::Deref for Items {
+    type Target = Vec<Placed>;
+    fn deref(&self) -> &Vec<Placed> {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Items {
+    fn deref_mut(&mut self) -> &mut Vec<Placed> {
+        std::sync::Arc::make_mut(&mut self.0)
+    }
+}
+
+impl std::fmt::Debug for Items {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<Vec<Placed>> for Items {
+    fn from(items: Vec<Placed>) -> Self {
+        Items(std::sync::Arc::new(items))
+    }
+}
+
+impl FromIterator<Placed> for Items {
+    fn from_iter<I: IntoIterator<Item = Placed>>(iter: I) -> Self {
+        Items(std::sync::Arc::new(iter.into_iter().collect()))
+    }
+}
+
+impl IntoIterator for Items {
+    type Item = Placed;
+    type IntoIter = std::vec::IntoIter<Placed>;
+    fn into_iter(self) -> Self::IntoIter {
+        std::sync::Arc::unwrap_or_clone(self.0).into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Items {
+    type Item = &'a Placed;
+    type IntoIter = std::slice::Iter<'a, Placed>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Items {
+    type Item = &'a mut Placed;
+    type IntoIter = std::slice::IterMut<'a, Placed>;
+    fn into_iter(self) -> Self::IntoIter {
+        std::sync::Arc::make_mut(&mut self.0).iter_mut()
+    }
+}

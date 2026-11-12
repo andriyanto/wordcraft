@@ -64,7 +64,7 @@ fn page_ink_keeps_item_order_duplicates_story_paths_and_unmatched_storage() {
     ];
     items.extend([0, 1, 2, 3, 4, 11, 14, usize::MAX].map(|off| placed(StoryRef::Body, Path::top(0), off, 0.0)));
     items.push(placed(StoryRef::Part(999), Path::top(0), 0, 0.0));
-    let l = DocLayout { pages: vec![Page { items, ..Default::default() }], ..Default::default() };
+    let l = DocLayout { pages: vec![Page { items: items.into(), ..Default::default() }], ..Default::default() };
     let mut s = Session::new(d);
     let original = s.doc.clone();
     let got = ink_on(&s, &l, 0);
