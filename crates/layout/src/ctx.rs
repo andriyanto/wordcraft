@@ -239,12 +239,12 @@ impl Ctx<'_> {
     pub(crate) fn has_label(&self, p: &Paragraph) -> bool {
         p.props
             .numbering
-            .or_else(|| self.doc.styles.resolve_para(&p.props).numbering)
+            .or_else(|| crate::memo::resolved_para(self.doc, &p.props).numbering)
             .filter(|n| n.num != 0)
             .is_some_and(|n| self.doc.numbering.shows_label(n.num, n.level))
     }
     pub(crate) fn next_label(&mut self, p: &Paragraph) -> Option<(String, Level)> {
-        let n = p.props.numbering.or_else(|| self.doc.styles.resolve_para(&p.props).numbering).filter(|n| n.num != 0)?;
+        let n = p.props.numbering.or_else(|| crate::memo::resolved_para(self.doc, &p.props).numbering).filter(|n| n.num != 0)?;
         self.counters.next_label(&self.doc.numbering, n.num, n.level)
     }
 
