@@ -65,13 +65,10 @@ impl FastHasher {
 
 impl Hasher for FastHasher {
     fn write(&mut self, bytes: &[u8]) {
-        let mut chunks = bytes.chunks_exact(8);
-        for c in &mut chunks {
-            let mut w = [0u8; 8];
-            w.copy_from_slice(c);
-            self.add(u64::from_le_bytes(w));
+        let (words, rest) = bytes.as_chunks::<8>();
+        for w in words {
+            self.add(u64::from_le_bytes(*w));
         }
-        let rest = chunks.remainder();
         if !rest.is_empty() {
             let mut w = [0u8; 8];
             for (to, from) in w.iter_mut().zip(rest) {
