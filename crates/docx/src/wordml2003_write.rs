@@ -95,7 +95,7 @@ pub fn write(doc: &Document) -> Result<Vec<u8>, DocxError> {
         ("w:ocxPresent", "no"),
         ("xml:space", "preserve"),
     ];
-    let root = El { name: "w:wordDocument".into(), attrs: attrs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect(), kids };
+    let root = El { name: "w:wordDocument".into(), attrs: attrs.iter().map(|(k, v)| ((*k).into(), (*v).to_string())).collect(), kids };
     let mut s = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<?mso-application progid=\"Word.Document\"?>\n");
     s.push_str(&root.to_xml());
     Ok(s.into_bytes())
@@ -106,7 +106,7 @@ fn plain(name: &str, kids: Vec<Node>) -> El {
 }
 
 fn attr_el(name: &str, attrs: &[(&str, &str)]) -> El {
-    El { name: name.into(), attrs: attrs.iter().map(|(k, v)| ((*k).to_string(), (*v).to_string())).collect(), kids: Vec::new() }
+    El { name: name.into(), attrs: attrs.iter().map(|(k, v)| ((*k).into(), (*v).to_string())).collect(), kids: Vec::new() }
 }
 
 fn text_el(name: &str, text: &str) -> El {
@@ -278,7 +278,7 @@ impl<'a> Conv<'a> {
         if !allowed(name) {
             return Vec::new();
         }
-        let mut el = El { name: rename(name), attrs: attrs(e), kids: Vec::new() };
+        let mut el = El { name: rename(name).into(), attrs: attrs(e), kids: Vec::new() };
         if name == "v:imagedata" {
             let id = e.attr("r:id").or_else(|| e.attr("r:pict")).map(str::to_string);
             if let Some(src) = id.and_then(|id| rels.by_id(&id).map(|r| r.target.clone())).and_then(|t| self.bin_for(&t)) {
@@ -380,11 +380,11 @@ impl<'a> Conv<'a> {
     fn hyperlink(&mut self, e: &El, rels: &Rels, depth: usize) -> El {
         let mut a = Vec::new();
         if let Some(r) = e.attr("r:id").and_then(|id| rels.by_id(id)).filter(|r| r.external) {
-            a.push(("w:dest".to_string(), r.target.clone()));
+            a.push(("w:dest".into(), r.target.clone()));
         }
         for (from, to) in [("w:anchor", "w:bookmark"), ("w:tooltip", "w:screenTip"), ("w:tgtFrame", "w:target")] {
             if let Some(v) = e.attr(from) {
-                a.push((to.to_string(), v.to_string()));
+                a.push((to.into(), v.to_string()));
             }
         }
         El { name: "w:hlink".into(), attrs: a, kids: self.kids(e, rels, "w:hlink", depth) }
@@ -411,8 +411,8 @@ impl<'a> Conv<'a> {
         vec![Node::El(plain(name, kids))]
     }
 
-    fn annotation(&self, kind: &str, id: i64, mut extra: Vec<(String, String)>, content: Option<Vec<Node>>) -> El {
-        let mut a = vec![("aml:id".to_string(), id.to_string())];
+    fn annotation(&self, kind: &str, id: i64, mut extra: Vec<(crate::xml::Name, String)>, content: Option<Vec<Node>>) -> El {
+        let mut a: Vec<(crate::xml::Name, String)> = vec![("aml:id".into(), id.to_string())];
         a.append(&mut extra);
         a.push(("w:type".into(), kind.into()));
         El { name: "aml:annotation".into(), attrs: a, kids: content.map(|c| vec![Node::El(plain("aml:content", c))]).unwrap_or_default() }
@@ -436,13 +436,13 @@ impl<'a> Conv<'a> {
         self.in_note = false;
         let mut extra = Vec::new();
         if let Some(v) = c.attr("w:author") {
-            extra.push(("aml:author".to_string(), v.to_string()));
+            extra.push(("aml:author".into(), v.to_string()));
         }
         if let Some(v) = c.attr("w:date") {
-            extra.push(("aml:createdate".to_string(), v.to_string()));
+            extra.push(("aml:createdate".into(), v.to_string()));
         }
         if let Some(v) = c.attr("w:initials") {
-            extra.push(("w:initials".to_string(), v.to_string()));
+            extra.push(("w:initials".into(), v.to_string()));
         }
         vec![Node::El(self.annotation("Word.Comment", n, extra, Some(content)))]
     }
@@ -456,7 +456,7 @@ impl<'a> Conv<'a> {
             _ => ('b', "Word.Bookmark.End"),
         };
         let n = self.ann_id(kind, id);
-        let extra = if e.name == "w:bookmarkStart" { vec![("w:name".to_string(), e.attr("w:name").unwrap_or("").to_string())] } else { Vec::new() };
+        let extra = if e.name == "w:bookmarkStart" { vec![("w:name".into(), e.attr("w:name").unwrap_or("").to_string())] } else { Vec::new() };
         vec![Node::El(self.annotation(ty, n, extra, None))]
     }
 
@@ -466,10 +466,10 @@ impl<'a> Conv<'a> {
         let n = self.ann_id('r', e.attr("w:id").unwrap_or(""));
         let mut extra = Vec::new();
         if let Some(v) = e.attr("w:author") {
-            extra.push(("aml:author".to_string(), v.to_string()));
+            extra.push(("aml:author".into(), v.to_string()));
         }
         if let Some(v) = e.attr("w:date") {
-            extra.push(("aml:createdate".to_string(), v.to_string()));
+            extra.push(("aml:createdate".into(), v.to_string()));
         }
         let content = self.kids(e, rels, parent, depth);
         vec![Node::El(self.annotation(ty, n, extra, Some(content)))]
@@ -618,7 +618,7 @@ fn fold(style: &mut El, name: &str, defaults: &[El]) {
         }
     };
     if let Some(Node::El(block)) = style.kids.get_mut(idx) {
-        let have: Vec<String> = block.els().map(|e| e.name.clone()).collect();
+        let have: Vec<crate::xml::Name> = block.els().map(|e| e.name.clone()).collect();
         let mut add: Vec<Node> = defaults.iter().filter(|d| !have.contains(&d.name)).cloned().map(Node::El).collect();
         add.append(&mut block.kids);
         block.kids = add;
@@ -935,7 +935,7 @@ fn is_toggle(local: &str) -> bool {
 
 /// The attributes of `e` that 2003 has, renamed: theme references, revision ids and attributes of
 /// other vocabularies (`w14:`, `r:`…) are dropped.
-fn attrs(e: &El) -> Vec<(String, String)> {
+fn attrs(e: &El) -> Vec<(crate::xml::Name, String)> {
     let local_el = e.name.strip_prefix("w:").unwrap_or("");
     let vml = e.name.starts_with("v:") || e.name.starts_with("o:") || e.name.starts_with("w10:");
     let mut out = Vec::new();
@@ -948,16 +948,16 @@ fn attrs(e: &El) -> Vec<(String, String)> {
                 }
                 rename(k)
             }
-            Some(("xml", "space")) => k.clone(),
-            Some(("v" | "o" | "w10", _)) if vml => k.clone(),
-            None if vml => k.clone(),
+            Some(("xml", "space")) => k.clone().to_string(),
+            Some(("v" | "o" | "w10", _)) if vml => k.clone().to_string(),
+            None if vml => k.clone().to_string(),
             _ => continue,
         };
         let mut val = v.clone();
         if (key == "w:val" && is_toggle(local_el)) || ((key == "w:default" || key == "w:customStyle") && e.name == "w:style") {
             val = switch(&val);
         }
-        out.push((key, val));
+        out.push((key.into(), val));
     }
     out
 }

@@ -237,7 +237,7 @@ impl Conv {
         if !keep(&e.name) {
             return Vec::new();
         }
-        let mut el = El { name: rename(&e.name), attrs: attrs(e), kids: self.kids(e, part, depth) };
+        let mut el = El { name: rename(&e.name).into(), attrs: attrs(e), kids: self.kids(e, part, depth) };
         if el.name == "v:imagedata"
             && let Some(target) = e.attr("src").and_then(|s| self.media.get(s)).cloned()
             && let Some(r) = self.rels.get_mut(part)
@@ -297,9 +297,9 @@ impl Conv {
     /// `aml:annotation`: bookmarks, comments and tracked insertions/deletions.
     fn annotation(&mut self, e: &El, part: usize, depth: usize) -> Vec<Node> {
         let id = e.attr("aml:id").filter(|v| v.parse::<i64>().is_ok()).unwrap_or("0").to_string();
-        let el = |name: &str, attrs: Vec<(String, String)>| vec![Node::El(El { name: name.into(), attrs, kids: Vec::new() })];
+        let el = |name: &str, attrs: Vec<(crate::xml::Name, String)>| vec![Node::El(El { name: name.into(), attrs, kids: Vec::new() })];
         let author_date = |e: &El| {
-            let mut a = vec![("w:id".to_string(), id.clone())];
+            let mut a: Vec<(crate::xml::Name, String)> = vec![("w:id".into(), id.clone())];
             if let Some(v) = e.attr("aml:author") {
                 a.push(("w:author".into(), v.to_string()));
             }
@@ -500,8 +500,8 @@ fn rename(name: &str) -> String {
 }
 
 /// The attributes of `e` that the package keeps, renamed.
-fn attrs(e: &El) -> Vec<(String, String)> {
-    e.attrs.iter().filter(|(k, _)| keep(k)).map(|(k, v)| (rename(k), v.clone())).collect()
+fn attrs(e: &El) -> Vec<(crate::xml::Name, String)> {
+    e.attrs.iter().filter(|(k, _)| keep(k)).map(|(k, v)| (rename(k).into(), v.clone())).collect()
 }
 
 /// A picture's file extension: from its bytes, else from its `wordml://` name.

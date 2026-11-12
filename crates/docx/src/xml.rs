@@ -207,11 +207,132 @@ pub fn is_rel_attr(element: &str, k: &str) -> bool {
     k.starts_with("r:") || k == "o:relid" || (REL_ELEMENTS.contains(&element) && REL_ALIASES.contains(&k))
 }
 
+/// An element's or attribute's canonical-prefixed name (`w:p`, `w:val`).
+///
+/// A part has hundreds of thousands of elements and a few dozen names. Held as a `String` each
+/// name was 24 bytes and an allocation of its own; a `Name` is a counted pointer to one copy of
+/// the text, which the parser hands out for every element and attribute of that name
+/// ([`Names`]). It reads like the `str` it holds.
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct Name(std::sync::Arc<str>);
+
+impl Name {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::ops::Deref for Name {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for Name {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for Name {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&*self.0, f)
+    }
+}
+
+impl std::fmt::Display for Name {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<&str> for Name {
+    fn from(s: &str) -> Self {
+        Name(s.into())
+    }
+}
+
+impl From<String> for Name {
+    fn from(s: String) -> Self {
+        Name(s.into())
+    }
+}
+
+impl From<&String> for Name {
+    fn from(s: &String) -> Self {
+        Name(s.as_str().into())
+    }
+}
+
+impl From<Name> for String {
+    fn from(n: Name) -> Self {
+        n.0.as_ref().to_owned()
+    }
+}
+
+impl PartialEq<str> for Name {
+    fn eq(&self, other: &str) -> bool {
+        &*self.0 == other
+    }
+}
+
+impl PartialEq<&str> for Name {
+    fn eq(&self, other: &&str) -> bool {
+        &*self.0 == *other
+    }
+}
+
+impl PartialEq<String> for Name {
+    fn eq(&self, other: &String) -> bool {
+        &*self.0 == other.as_str()
+    }
+}
+
+impl PartialEq<Name> for str {
+    fn eq(&self, other: &Name) -> bool {
+        self == &*other.0
+    }
+}
+
+impl PartialEq<Name> for &str {
+    fn eq(&self, other: &Name) -> bool {
+        *self == &*other.0
+    }
+}
+
+impl PartialEq<Name> for String {
+    fn eq(&self, other: &Name) -> bool {
+        self.as_str() == &*other.0
+    }
+}
+
+/// The names met so far in a parse, one copy of each.
+#[derive(Default)]
+struct Names(std::collections::HashSet<Name>);
+
+impl Names {
+    fn get(&mut self, name: &str) -> Name {
+        if let Some(n) = self.0.get(name) {
+            return n.clone();
+        }
+        let n = Name::from(name);
+        self.0.insert(n.clone());
+        n
+    }
+}
+
 /// An element with canonical-prefixed name and attributes.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct El {
-    pub name: String,
-    pub attrs: Vec<(String, String)>,
+    pub name: Name,
+    pub attrs: Vec<(Name, String)>,
     pub kids: Vec<Node>,
 }
 
@@ -382,6 +503,8 @@ fn parse_with(bytes: &[u8], extra: &[(&'static str, &str)], strict: bool) -> Res
     let mut root: Option<El> = None;
     let mut count = 0usize;
     let mut buf = Vec::new();
+    let mut names = Names::default();
+    let mut scratch = String::new();
     loop {
         buf.clear();
         let (res, ev) = r.read_resolved_event_into(&mut buf).map_err(|e| DocxError::Xml(e.to_string()))?;
@@ -398,10 +521,17 @@ fn parse_with(bytes: &[u8], extra: &[(&'static str, &str)], strict: bool) -> Res
                 if count > MAX_ELEMENTS {
                     return Err(DocxError::Limit("too many XML elements".into()));
                 }
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).into_owned();
+                let local_name = e.local_name();
+                let local = String::from_utf8_lossy(local_name.as_ref());
                 let name = match el_ns {
-                    Some(ns) => format!("{}:{local}", element_prefix(ns, &local, stack.last().map(|p| p.name.as_str()), extra)),
-                    None => local,
+                    Some(ns) => {
+                        scratch.clear();
+                        scratch.push_str(element_prefix(ns, &local, stack.last().map(|p| p.name.as_str()), extra));
+                        scratch.push(':');
+                        scratch.push_str(&local);
+                        names.get(&scratch)
+                    }
+                    None => names.get(&local),
                 };
                 let mut el = El { name, attrs: Vec::new(), kids: Vec::new() };
                 for a in e.attributes().with_checks(false) {
@@ -415,10 +545,16 @@ fn parse_with(bytes: &[u8], extra: &[(&'static str, &str)], strict: bool) -> Res
                         continue;
                     }
                     let (ares, alocal) = r.resolver_mut().resolve_attribute(key);
-                    let alocal = String::from_utf8_lossy(alocal.as_ref()).into_owned();
+                    let alocal = String::from_utf8_lossy(alocal.as_ref());
                     let aname = match ares {
-                        ResolveResult::Bound(ns) => format!("{}:{alocal}", prefix_for(ns.as_ref(), extra)),
-                        _ => alocal,
+                        ResolveResult::Bound(ns) => {
+                            scratch.clear();
+                            scratch.push_str(prefix_for(ns.as_ref(), extra));
+                            scratch.push(':');
+                            scratch.push_str(&alocal);
+                            names.get(&scratch)
+                        }
+                        _ => names.get(&alocal),
                     };
                     let val = match a.normalized_value(XmlVersion::Explicit1_0) {
                         Ok(v) => v.into_owned(),
@@ -622,8 +758,8 @@ impl W {
 }
 
 /// `xmlns:` declarations for the body-part namespaces, plus `mc:Ignorable`.
-pub fn body_ns() -> Vec<(String, String)> {
-    let mut v: Vec<(String, String)> = NAMESPACES.iter().map(|(p, u)| (format!("xmlns:{p}"), (*u).to_string())).collect();
+pub fn body_ns() -> Vec<(Name, String)> {
+    let mut v: Vec<(Name, String)> = NAMESPACES.iter().map(|(p, u)| (format!("xmlns:{p}").into(), (*u).to_string())).collect();
     v.push(("mc:Ignorable".into(), "w14 w15 wp14".into()));
     v
 }
@@ -650,7 +786,7 @@ mod tests {
 
     /// Every element name in `e`, depth first.
     fn names(e: &El, out: &mut Vec<String>) {
-        out.push(e.name.clone());
+        out.push(e.name.clone().to_string());
         for c in e.els() {
             names(c, out);
         }

@@ -495,7 +495,7 @@ impl super::Writer<'_> {
             // A turned object needs an effect extent (filled in below) right after its extent.
             "wp:inline" | "wp:anchor" if !e.els().any(|c| c.name == "wp:effectExtent") && float.spin().deg != 0.0 => {
                 if let Some(at) = e.kids.iter().position(|k| matches!(k, xml::Node::El(c) if c.name == "wp:extent")) {
-                    e.kids.insert(at + 1, xml::Node::El(El { name: "wp:effectExtent".to_string(), attrs: Vec::new(), kids: Vec::new() }));
+                    e.kids.insert(at + 1, xml::Node::El(El { name: "wp:effectExtent".to_string().into(), attrs: Vec::new(), kids: Vec::new() }));
                 }
             }
             "wp:effectExtent" => {
@@ -506,14 +506,14 @@ impl super::Writer<'_> {
                 let ext = [el + px, et + py, er + px, eb + py].map(emu);
                 e.attrs.retain(|(k, _)| !matches!(k.as_str(), "l" | "t" | "r" | "b"));
                 for (k, v) in ["l", "t", "r", "b"].into_iter().zip(ext) {
-                    e.attrs.push((k.to_string(), v));
+                    e.attrs.push((k.to_string().into(), v));
                 }
             }
             // The picture's own frame (`pic:spPr`): its size and the object's rotation and flips.
             "a:xfrm" => {
                 e.attrs.retain(|(k, _)| !matches!(k.as_str(), "rot" | "flipH" | "flipV"));
                 for (k, v) in super::story::spin_attrs(float.spin()) {
-                    e.attrs.push((k.to_string(), v));
+                    e.attrs.push((k.to_string().into(), v));
                 }
                 for k in e.kids.iter_mut() {
                     if let xml::Node::El(c) = k
@@ -549,7 +549,7 @@ impl super::Writer<'_> {
         if e.name == "w14:xfrm" {
             e.attrs.retain(|(k, _)| !matches!(k.as_str(), "rot" | "flipH" | "flipV"));
             for (k, v) in super::story::spin_attrs(float.spin()) {
-                e.attrs.push((k.to_string(), v));
+                e.attrs.push((k.to_string().into(), v));
             }
             let scale = |old: f32, new: f32| if old.is_finite() && old > 0.0 && new.is_finite() { (new.max(0.0) / old) as f64 } else { 1.0 };
             let (sx, sy) = (scale(from.0, to.0), scale(from.1, to.1));
@@ -598,12 +598,12 @@ impl super::Writer<'_> {
         if matches!(e.name.as_str(), "w14:xfrm" | "a:xfrm") {
             e.attrs.retain(|(k, _)| !matches!(k.as_str(), "rot" | "flipH" | "flipV"));
             for (k, v) in super::story::spin_attrs(float.spin()) {
-                e.attrs.push((k.to_string(), v));
+                e.attrs.push((k.to_string().into(), v));
             }
             let [x, y, w, h] = frame.map(|v| v.clamp(-MAX_LEN_PT, MAX_LEN_PT));
             e.kids.retain(|k| !matches!(k, xml::Node::El(c) if matches!(c.name.as_str(), "a:off" | "a:ext")));
             let el = |name: &str, attrs: [(&str, String); 2]| {
-                xml::Node::El(El { name: name.to_string(), attrs: attrs.map(|(k, v)| (k.to_string(), v)).to_vec(), kids: Vec::new() })
+                xml::Node::El(El { name: name.to_string().into(), attrs: attrs.map(|(k, v)| (k.into(), v)).to_vec(), kids: Vec::new() })
             };
             e.kids.insert(0, el("a:ext", [("cx", emu(w.max(0.0))), ("cy", emu(h.max(0.0)))]));
             e.kids.insert(0, el("a:off", [("x", emu(x)), ("y", emu(y))]));
@@ -633,7 +633,7 @@ fn set_size_attrs(e: &mut El, w: f32, h: f32) {
 fn set_attr(e: &mut El, k: &str, v: &str) {
     match e.attrs.iter_mut().find(|(n, _)| n == k) {
         Some((_, old)) => *old = v.to_string(),
-        None if !v.is_empty() => e.attrs.push((k.to_string(), v.to_string())),
+        None if !v.is_empty() => e.attrs.push((k.to_string().into(), v.to_string())),
         None => {}
     }
 }
