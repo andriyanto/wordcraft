@@ -67,6 +67,7 @@ mod placed;
 mod strict;
 mod substituted;
 mod table_flow;
+mod verify;
 
 #[cfg(test)]
 use boxes::{BOX_INSET_X, BOX_INSET_Y};
@@ -97,6 +98,7 @@ pub use pass::now_ms;
 pub use placed::{HfSlot, Placed, turn_point, turn_rect, unturn_point};
 pub use strict::{MAX_PDF_PICTURE_SIDE, MAX_PNG_PICTURE_SIDE, StrictOutput, media_check, undecodable_pictures};
 pub use substituted::MAX_SUBSTITUTED;
+pub use verify::{same_layout, take_mismatch, verify_against_full};
 
 /// How the document is viewed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
@@ -333,6 +335,15 @@ pub struct DocLayout {
 
 /// Lay out the whole document.
 pub fn layout(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
+    let l = layout_reusing(doc, cache, opts);
+    if verify::verifying() {
+        verify::record(&l, &layout_reusing(doc, &mut LayoutCache::new(), opts));
+    }
+    l
+}
+
+/// [`layout`], reusing what `cache` holds.
+fn layout_reusing(doc: &Document, cache: &mut LayoutCache, opts: &LayoutOptions) -> DocLayout {
     #[cfg(test)]
     crate::test_fonts();
     let t0 = now_ms();

@@ -16,6 +16,7 @@ mod find_apostrophes;
 mod font_sizes;
 mod fonts;
 mod ime_noop;
+mod layout_reuse;
 mod para_tools;
 mod revision_checks;
 mod status_counts;
