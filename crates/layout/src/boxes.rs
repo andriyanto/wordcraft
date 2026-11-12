@@ -623,48 +623,16 @@ fn border_group(doc: &Document, a: &Paragraph, b: &Paragraph, table: Option<&wor
 /// indents; `None` without borders.
 type GroupEdges = (wordcraft_doc::props::Borders, f32, f32);
 
-/// The styles the memo below was filled with, and each formatting's answer by its address. The
-/// formatting is held with its answer, so its address isn't another's while the entry is kept.
-#[derive(Default)]
-struct GroupMemo {
-    styles: Option<Arc<wordcraft_doc::styles::StyleSheet>>,
-    edges: HashMap<usize, (wordcraft_doc::Shared<wordcraft_doc::props::ParaProps>, Option<GroupEdges>)>,
-}
-
-/// Most formattings remembered; past it the memo starts over.
-const GROUP_MEMO_MAX: usize = 4096;
-
-thread_local! {
-    static GROUP_MEMO: std::cell::RefCell<GroupMemo> = std::cell::RefCell::new(GroupMemo::default());
-}
-
-/// [`GroupEdges`] of `p`. Every pagination pass asks this of every paragraph and its neighbour,
-/// and resolving a paragraph's formatting through its style chain each time was a third of the
-/// time a keystroke's layout took in a long document. Paragraphs with the same formatting share
-/// it ([`wordcraft_doc::Shared`]), so outside a table style the answer is remembered by the
-/// formatting's address, for as long as the styles are the same.
+/// [`GroupEdges`] of `p`. Every pagination pass asks this of every paragraph and its neighbour;
+/// outside a table style the paragraph's resolved formatting is remembered
+/// ([`crate::memo::resolved_para`]).
 fn group_edges(doc: &Document, p: &Paragraph, table: Option<&wordcraft_doc::props::ParaProps>) -> Option<GroupEdges> {
-    let resolve = || {
-        let r = doc.styles.resolve_para_in(&p.props, table);
-        r.borders.map(|b| (b, r.indent_left, r.indent_right))
-    };
     if table.is_some() {
-        return resolve();
+        let r = doc.styles.resolve_para_in(&p.props, table);
+        return r.borders.map(|b| (b, r.indent_left, r.indent_right));
     }
-    GROUP_MEMO.with(|memo| {
-        let mut memo = memo.borrow_mut();
-        if !memo.styles.as_ref().is_some_and(|s| Arc::ptr_eq(s, &doc.styles)) || memo.edges.len() >= GROUP_MEMO_MAX {
-            memo.edges.clear();
-            memo.styles = Some(doc.styles.clone());
-        }
-        let key = wordcraft_doc::Shared::as_ptr(&p.props) as usize;
-        if let Some((_, edges)) = memo.edges.get(&key) {
-            return *edges;
-        }
-        let edges = resolve();
-        memo.edges.insert(key, (p.props.clone(), edges));
-        edges
-    })
+    let r = crate::memo::resolved_para(doc, &p.props);
+    r.borders.map(|b| (b, r.indent_left, r.indent_right))
 }
 
 /// Whether paragraph `i` of `blocks` and the one at `j` are of one border group.

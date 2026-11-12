@@ -10,8 +10,8 @@ use super::page::{PageBuilder, body_top_for, foot_top_for, item_bottom};
 use super::placed::Placed;
 use super::table_flow::place_table;
 use super::{
-    Arc, Block, Counters, DocLayout, Document, FieldCtx, HashMap, InlineObject, LayoutOptions, Page, Paragraph, Path, SectionProps, SectionStart,
-    StoryRef, TextDirection, ViewMode, balloons, para, vertical,
+    Arc, Block, Counters, DocLayout, Document, FieldCtx, HashMap, InlineObject, LayoutOptions, Page, Paragraph, SectionProps, SectionStart, StoryRef,
+    TextDirection, ViewMode, balloons, para, vertical,
 };
 use wordcraft_doc::legacy_form::LegacyForm;
 
@@ -502,8 +502,8 @@ fn evict_unused(cache: &mut LayoutCache) {
     }
 }
 
-fn index_lines(pages: &[Page]) -> HashMap<(StoryRef, Path), Vec<(usize, usize)>> {
-    let mut index: HashMap<(StoryRef, Path), Vec<(usize, usize)>> = HashMap::new();
+fn index_lines(pages: &[Page]) -> crate::LineIndex {
+    let mut index = crate::LineIndex::default();
     for (pi, p) in pages.iter().enumerate() {
         for (ii, it) in p.items.iter().enumerate() {
             if let Placed::Lines { story, path, .. } = it {

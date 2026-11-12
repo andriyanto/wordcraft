@@ -192,7 +192,7 @@ impl<'a> Flow<'a> {
         // Floating objects anchored here join the page's wrap areas before the text is laid out; if
         // the paragraph then starts somewhere else (another column or page, or contextual spacing
         // drops its space before), they are placed again there.
-        let space_before = ctx.doc.styles.resolve_para(&p.props).space_before;
+        let space_before = crate::memo::resolved_para(ctx.doc, &p.props).space_before;
         let excl_mark = pb.excl.len();
         let guess = pb.y + space_before;
         let label = ctx.next_label(p);
@@ -982,7 +982,7 @@ fn space_after_kept(ctx: &Ctx, block: usize, rp: &wordcraft_doc::resolve::Resolv
         return 0.0;
     }
     if let Some(Block::Para(next)) = ctx.doc.body.get(block + 1).map(|b| &**b) {
-        let nrp = ctx.doc.styles.resolve_para(&next.props);
+        let nrp = crate::memo::resolved_para(ctx.doc, &next.props);
         if nrp.style == rp.style && rp.contextual_spacing {
             return 0.0;
         }
@@ -1004,7 +1004,7 @@ fn next_first_line(ctx: &mut Ctx, block: usize, width: f32, depth: usize, counte
     match ctx.doc.body.get(block + 1).map(|b| &**b) {
         Some(Block::Para(p)) => {
             // Keep list indents and label metrics without consuming the document counters.
-            let rp = ctx.doc.styles.resolve_para(&p.props);
+            let rp = crate::memo::resolved_para(ctx.doc, &p.props);
             let label =
                 p.props.numbering.or(rp.numbering).filter(|n| n.num != 0).and_then(|n| counters.next_label(&ctx.doc.numbering, n.num, n.level));
             let pl = match ctx.para_ahead(p, width, label.clone()) {

@@ -58,6 +58,7 @@ mod ctx;
 mod floats;
 mod flow;
 mod headers;
+mod memo;
 mod missing;
 mod notes;
 mod page;
@@ -314,12 +315,16 @@ pub struct Page {
     pub float_tables: Vec<Path>,
 }
 
+/// [`DocLayout::index`]: built for every paragraph on every pass, so it hashes with the layout's
+/// own fast hasher.
+pub type LineIndex = HashMap<(StoryRef, Path), Vec<(usize, usize)>, memo::FastBuild>;
+
 /// The whole layout.
 #[derive(Clone, Debug, Default)]
 pub struct DocLayout {
     pub pages: Vec<Page>,
     /// Index: (story, paragraph path) → (page, item index) of each placed piece, in order.
-    pub index: HashMap<(StoryRef, Path), Vec<(usize, usize)>>,
+    pub index: LineIndex,
     /// Layout time, milliseconds.
     pub ms: f64,
     /// Text box stories laid out (each time a box's text was).
