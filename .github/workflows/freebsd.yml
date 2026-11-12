@@ -26,6 +26,6 @@ permissions:
 jobs:
   freebsd:
     # Pinned to a commit, not @main: a change to the shared workflows reaches this repository (and, for a release, its signing secrets) only through a reviewed bump of this hash.
-    uses: storytold/craft-common-actions/.github/workflows/freebsd.yml@91e2c7617393ce0dfbe67ef5daf7254ade368203 # main, 2026-11-11
+    uses: storytold/craft-common-actions/.github/workflows/freebsd.yml@293de72429d3ed5d9fa92aded5e500544c0fa28f # main, 2026-11-11
     with:
       craft-fonts-ref: b076417b5880bd4154bd22f00695b1d28c6bea83
