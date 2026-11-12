@@ -97,7 +97,7 @@ use page::item_bottom;
 use pass::layout_pass;
 pub use pass::now_ms;
 pub use placed::{HfSlot, Items, Placed, turn_point, turn_rect, unturn_point};
-pub use resume::{mark_every, resume_passes, resumed_passes};
+pub use resume::{mark_every, resume_passes, resumed_passes, stopped_passes};
 pub use strict::{MAX_PDF_PICTURE_SIDE, MAX_PNG_PICTURE_SIDE, StrictOutput, media_check, undecodable_pictures};
 pub use substituted::MAX_SUBSTITUTED;
 pub use verify::{replay_blocks, same_layout, take_mismatch, verify_against_full};

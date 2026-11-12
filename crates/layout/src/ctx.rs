@@ -85,6 +85,10 @@ pub(crate) struct Ctx<'a> {
     /// many pages there were at the last.
     pub(crate) saved: Vec<crate::resume::Mark>,
     pub(crate) saved_pages: usize,
+    /// The rest of the last pass's walk, which this one may stop in ([`crate::resume::Tail`]),
+    /// and whether it did.
+    pub(crate) tail: Option<Box<crate::resume::Tail>>,
+    pub(crate) stopped: bool,
 }
 
 struct ParaEnvInput<'a> {
@@ -551,6 +555,8 @@ mod tests {
             typing_at: None,
             saved: Vec::new(),
             saved_pages: 0,
+            tail: None,
+            stopped: false,
         };
 
         ctx.fitted_boxes(&p);

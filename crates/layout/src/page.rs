@@ -5,7 +5,7 @@ use super::notes::{NOTE_SEP, NOTE_SEP_W, NoteBox, NoteSeps, v_span};
 use super::placed::Placed;
 use super::{Arc, Block, Border, FloatAlign, Page, ParaLayout, Rect, SectionProps, StoryRef};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct PageBuilder {
     pub(crate) pages: Vec<Page>,
     /// The section being laid out. Held, not borrowed from the document, so that the builder's

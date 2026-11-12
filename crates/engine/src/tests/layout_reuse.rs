@@ -162,7 +162,7 @@ fn pagination_started_near_an_edit_gives_the_pages_from_scratch() {
         assert!(s.layout().pages.len() >= 6, "seed {seed}: {} page(s)", s.layout().pages.len());
         wordcraft_layout::verify_against_full(true);
         let _ = wordcraft_layout::take_mismatch();
-        let before = wordcraft_layout::resumed_passes();
+        let before = (wordcraft_layout::resumed_passes(), wordcraft_layout::stopped_passes());
         for n in 0..300 {
             let (id, params) = match r.below(100) {
                 0..=54 => ("text.insert", json!({"text": r.pick(WORDS).to_string() + " "})),
@@ -171,8 +171,9 @@ fn pagination_started_near_an_edit_gives_the_pages_from_scratch() {
                 65..=67 => ("caret.pageDown", json!({})),
                 _ => step(&mut r),
             };
-            // Back to the body from a note, most of the time: near the end, or anywhere.
-            if s.sel.focus.story != StoryRef::Body && r.below(4) != 0 {
+            // Back to the body from a note, most of the time, and now and then somewhere else in
+            // it: near the end, or anywhere.
+            if (s.sel.focus.story != StoryRef::Body && r.below(4) != 0) || r.below(8) == 0 {
                 let blocks = s.doc.body.len() as u64;
                 let block = if r.below(5) == 0 { r.below(blocks) } else { blocks - 1 - r.below(blocks.min(30)) };
                 let _ = s.run("caret.set", &json!({"pos": Pos::body(block as usize, 0)}));
@@ -185,7 +186,10 @@ fn pagination_started_near_an_edit_gives_the_pages_from_scratch() {
             }
         }
         wordcraft_layout::verify_against_full(false);
-        let resumed = wordcraft_layout::resumed_passes() - before;
+        let resumed = wordcraft_layout::resumed_passes() - before.0;
+        let stopped = wordcraft_layout::stopped_passes() - before.1;
         assert!(resumed >= 100, "seed {seed}: only {resumed} of the passes started from a mark");
+        // An edit that leaves the page breaks where they were is laid out to the next mark only.
+        assert!(stopped >= 30, "seed {seed}: only {stopped} of the passes stopped at a mark");
     }
 }
