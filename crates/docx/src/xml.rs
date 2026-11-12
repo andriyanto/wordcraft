@@ -448,6 +448,7 @@ fn parse_with(bytes: &[u8], extra: &[(&'static str, &str)], strict: bool) -> Res
                     };
                     el.attrs.push((aname, val));
                 }
+                el.attrs.shrink_to_fit();
                 if matches!(ev, Event::Start(_)) {
                     if stack.len() >= MAX_DEPTH {
                         return Err(DocxError::Limit("XML nesting too deep".into()));
@@ -458,7 +459,11 @@ fn parse_with(bytes: &[u8], extra: &[(&'static str, &str)], strict: bool) -> Res
                 }
             }
             Event::End(_) => {
-                if let Some(el) = stack.pop() {
+                if let Some(mut el) = stack.pop() {
+                    // Children are appended one by one, which leaves the list with room for up to
+                    // twice as many (a run with two children holds room for four): in a large
+                    // part that spare room was a third of the tree. The element is complete now.
+                    el.kids.shrink_to_fit();
                     attach(&mut stack, &mut root, el);
                 }
             }
