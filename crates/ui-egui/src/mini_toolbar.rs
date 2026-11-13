@@ -381,6 +381,16 @@ fn hover_small(ui: &mut egui::Ui, app: &mut WordApp, icon: &str, tip: &str, id: 
     preview_on_hover_if(app, &r, id, json!({}), preview);
 }
 
+/// Shows the page as command `id` with `params` would leave it, for this frame: the live
+/// preview of a list entry, colour or style the pointer is over, in the bar or the ribbon. The
+/// document itself changes only when the entry is picked. Nothing for a command that can't run
+/// here.
+pub(crate) fn live_preview(app: &mut WordApp, id: &str, params: Value) {
+    if widgets::enabled(app, id) {
+        app.canvas.command_preview = Some((id.to_string(), params));
+    }
+}
+
 /// Previews command `id` with `params` while its button `r` is hovered and not pressed. After a
 /// click the preview stays off until the pointer leaves the button: a toggle would otherwise
 /// preview its other state under the pointer and look as if it flashed.

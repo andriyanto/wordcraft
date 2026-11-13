@@ -1092,3 +1092,104 @@ fn shape_and_chart_formats_leave_out_of_range_sizes_alone() {
     assert_eq!(before.0, Some((20.0, 2500.0)));
     assert_eq!(shown(a), before, "Chart Design shown, the chart untouched");
 }
+
+/// A window on a sentence with two words selected, drawn for a few frames.
+fn window_with_a_selection() -> egui_kittest::Harness<'static, crate::WordApp> {
+    use serde_json::json;
+    let mut a = crate::WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Default::default());
+    a.ui.language = "en".into();
+    a.run("text.insert", json!({"text": "The quick brown fox jumps over the lazy dog"})).unwrap();
+    a.run("select.text", json!({"text": "brown fox"})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::Vec2::new(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut crate::WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    frames(&mut h);
+    h
+}
+
+fn frames(h: &mut egui_kittest::Harness<'static, crate::WordApp>) {
+    for _ in 0..6 {
+        h.step();
+    }
+}
+
+/// The ribbon's font and size boxes (above the page), left to right.
+fn ribbon_boxes(h: &egui_kittest::Harness<'static, crate::WordApp>) -> Vec<egui::Rect> {
+    use egui_kittest::kittest::Queryable;
+    let top = h.state().canvas.viewport.unwrap().min.y;
+    let mut boxes: Vec<egui::Rect> = h.get_all_by_role(egui::accesskit::Role::TextInput).map(|n| n.rect()).filter(|r| r.max.y < top).collect();
+    boxes.sort_by(|a, b| a.min.x.total_cmp(&b.min.x));
+    boxes
+}
+
+fn press(h: &mut egui_kittest::Harness<'static, crate::WordApp>, at: egui::Pos2) {
+    h.event(egui::Event::PointerMoved(at));
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() });
+    }
+    frames(h);
+}
+
+/// The Home tab's lists show on the page what the entry under the pointer would do, as the bar
+/// over a selection does: a size in the Font Size list, a family in the Font list. The document
+/// changes only when the entry is picked.
+#[test]
+fn hovering_an_entry_of_the_ribbons_font_and_size_lists_previews_it() {
+    use egui_kittest::kittest::Queryable;
+    use serde_json::json;
+    let mut h = window_with_a_selection();
+    let doc = h.state().session.doc.clone();
+    let boxes = ribbon_boxes(&h);
+    let (font_box, size_box) = (boxes[0], boxes[1]);
+    // Font Size.
+    press(&mut h, egui::pos2(size_box.max.x + 8.0, size_box.center().y));
+    let twenty = h.get_all_by_label("20").map(|n| n.rect().center()).find(|p| p.y > size_box.max.y).expect("the list shows 20");
+    h.event(egui::Event::PointerMoved(twenty));
+    frames(&mut h);
+    assert_eq!(h.state().canvas.command_previewed, Some(("format.size".to_string(), json!({"size": 20.0}))));
+    assert_ne!(crate::canvas::page_doc(h.state()), &doc, "the page shows the 20 pt text");
+    assert_eq!(&h.state().session.doc, &doc, "nothing is applied yet");
+    // Off the list: the page is the document's again.
+    h.event(egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() });
+    h.event(egui::Event::PointerMoved(egui::pos2(720.0, 600.0)));
+    frames(&mut h);
+    assert_eq!(h.state().canvas.command_previewed, None);
+    // Font.
+    press(&mut h, egui::pos2(font_box.max.x + 8.0, font_box.center().y));
+    let family = h.state_mut().previews.families().into_iter().find(|f| f != "Aptos Display" && f != "Aptos").expect("another family is installed");
+    let at = h.get_all_by_label(&family).map(|n| n.rect().center()).find(|p| p.y > font_box.max.y).expect("the list shows the family");
+    h.event(egui::Event::PointerMoved(at));
+    frames(&mut h);
+    assert!(h.state().canvas.command_previewed.as_ref().is_some_and(|(id, _)| id == "format.font"), "{:?}", h.state().canvas.command_previewed);
+    assert_eq!(&h.state().session.doc, &doc);
+    press(&mut h, at);
+    assert_ne!(&h.state().session.doc, &doc, "clicking the family applies it");
+}
+
+/// A style in the Home tab's gallery is shown on the page while the pointer is over its tile.
+#[test]
+fn hovering_a_style_in_the_gallery_previews_it() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = window_with_a_selection();
+    let doc = h.state().session.doc.clone();
+    let top = h.state().canvas.viewport.unwrap().min.y;
+    let tile = h.get_all_by_label("Heading 1").map(|n| n.rect()).find(|r| r.max.y < top).expect("the gallery shows Heading 1");
+    h.event(egui::Event::PointerMoved(tile.center()));
+    frames(&mut h);
+    let previewed = h.state().canvas.command_previewed.clone();
+    assert!(
+        previewed.as_ref().is_some_and(|(id, p)| id == "para.style" && p["style"].as_str().is_some_and(|s| s.contains("Heading"))),
+        "{previewed:?}"
+    );
+    assert_ne!(crate::canvas::page_doc(h.state()), &doc, "the page shows the heading");
+    assert_eq!(&h.state().session.doc, &doc, "nothing is applied yet");
+    h.event(egui::Event::PointerMoved(egui::pos2(720.0, 600.0)));
+    frames(&mut h);
+    assert_eq!(h.state().canvas.command_previewed, None);
+    assert_eq!(crate::canvas::page_doc(h.state()), &doc);
+}

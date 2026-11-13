@@ -51,7 +51,8 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                 let fams = app.previews.families();
                 let recent: Vec<String> = app.ui.recent_fonts.iter().map(|f| app.previews.font_shown(f)).collect();
                 let prev = app.previews.font_preview_fn();
-                if let Some(f) = crate::widgets::font_combo_with_recent_hint(
+                let _ = crate::widgets::take_hover(ui.ctx());
+                let picked = crate::widgets::font_combo_with_recent_hint(
                     ui,
                     crate::widgets::FontComboOptions {
                         id: "font",
@@ -63,7 +64,18 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                         tip: tl!("Font"),
                         shown_as: warning.as_deref(),
                     },
-                ) {
+                );
+                // The family the pointer is over in the list is shown on the page (as the bar
+                // over a selection does); it is applied when picked.
+                if picked.is_none()
+                    && let Some(f) = crate::widgets::take_hover(ui.ctx())
+                    && f != crate::widgets::ADD_FONT
+                    && f != crate::widgets::LOAD_SYSTEM_FONTS
+                {
+                    let name = app.previews.font_stored(&f);
+                    crate::mini_toolbar::live_preview(app, "format.font", json!({"name": name}));
+                }
+                if let Some(f) = picked {
                     let _ = if f == crate::widgets::ADD_FONT {
                         app.run("font.add", json!({}))
                     } else if f == crate::widgets::LOAD_SYSTEM_FONTS {
@@ -80,7 +92,14 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                     .unwrap_or_default();
                 let sizes: Vec<String> =
                     wordcraft_engine::cmd::format::SIZES.iter().map(|s| if s.fract() == 0.0 { format!("{s:.0}") } else { s.to_string() }).collect();
-                if let Some(v) = crate::widgets::combo_hint(ui, "size", 52.0, &size, &sizes, None, tl!("Font Size"))
+                let _ = crate::widgets::take_hover(ui.ctx());
+                let picked = crate::widgets::combo_hint(ui, "size", 52.0, &size, &sizes, None, tl!("Font Size"));
+                if picked.is_none()
+                    && let Some(x) = crate::widgets::take_hover(ui.ctx()).and_then(|v| v.trim().parse::<f64>().ok())
+                {
+                    crate::mini_toolbar::live_preview(app, "format.size", json!({"size": x}));
+                }
+                if let Some(v) = picked
                     && let Ok(x) = v.trim().parse::<f64>()
                 {
                     let _ = app.run("format.size", json!({"size": x}));
@@ -148,7 +167,13 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                     "Text Highlight Color",
                     crate::widgets::ButtonAction::new("format.highlight", json!({"color": color}), false),
                     sw,
-                    crate::mini_toolbar::highlight_menu,
+                    |ui, app| {
+                        let _ = crate::widgets::take_hover(ui.ctx());
+                        crate::mini_toolbar::highlight_menu(ui, app);
+                        if let Some(c) = crate::widgets::take_hover(ui.ctx()) {
+                            crate::mini_toolbar::live_preview(app, "format.highlight", json!({"color": c}));
+                        }
+                    },
                 );
                 let fc = app.canvas.last_font_color.clone();
                 let sw = wordcraft_doc::Rgb::parse(&fc).map(crate::theme::c32);
@@ -160,9 +185,13 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                     crate::widgets::ButtonAction::new("format.color", json!({"color": fc}), false),
                     sw,
                     |ui, app| {
+                        let _ = crate::widgets::take_hover(ui.ctx());
                         mi(ui, app, "Automatic", "format.color", json!({"color": "auto"}));
                         let theme = app.session.doc.settings.theme_colors.clone();
                         crate::colors::menu(ui, app, &theme, Target::cmd("format.color").remember(Remember::FontColor));
+                        if let Some(c) = crate::widgets::take_hover(ui.ctx()) {
+                            crate::mini_toolbar::live_preview(app, "format.color", json!({"color": c}));
+                        }
                     },
                 );
             });
