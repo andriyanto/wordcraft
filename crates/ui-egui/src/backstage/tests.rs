@@ -1156,3 +1156,47 @@ fn the_file_page_scrolls_with_the_wheel_at_the_window_edge() {
     assert!(after < before - 1.0, "expected doc0.docx to scroll up at the edge: before={before}, after={after}");
     assert!((bar.right() - 1432.0).abs() < 1.0, "expected the scrollbar at the window edge: {bar:?}");
 }
+
+/// File › Export said "Exported …" in the status bar, which the Backstage covers: nothing told
+/// the person the file had been written. The message is shown over the Backstage, at the bottom
+/// of the window, for as long as the status bar would show it.
+#[test]
+fn a_status_message_is_shown_over_the_backstage() {
+    let mut app = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), Services::default());
+    app.ui.language = "en".into();
+    app.ui.backstage = true;
+    app.ui.backstage_page = "export".into();
+    let screen = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(1440.0, 900.0));
+    let draw = |app: &mut WordApp, ctx: &egui::Context| {
+        for frame in 0..3 {
+            let input = egui::RawInput { time: Some(f64::from(frame) * 0.1), screen_rect: Some(screen), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                app.logic(&ctx.clone());
+                app.ui(ui);
+            });
+            out.textures_delta.clear();
+        }
+    };
+    // Nothing to say: no notice.
+    let ctx = egui::Context::default();
+    draw(&mut app, &ctx);
+    assert!(ctx.read_response(super::status_notice_id()).is_none());
+    // An export just ended.
+    app.status("Exported report.pdf");
+    let ctx = egui::Context::default();
+    draw(&mut app, &ctx);
+    let notice = ctx.read_response(super::status_notice_id()).expect("the message is shown over the Backstage");
+    assert!(screen.contains_rect(notice.rect), "{:?}", notice.rect);
+    assert!(notice.rect.center().y > screen.height() * 0.75, "at the bottom of the window: {:?}", notice.rect);
+    // Once the status bar would have dropped it, so does the Backstage.
+    app.status_msg = Some(("Exported report.pdf".into(), crate::now_ms() - 7000.0));
+    let ctx = egui::Context::default();
+    draw(&mut app, &ctx);
+    assert!(ctx.read_response(super::status_notice_id()).is_none());
+    // With the Backstage closed the status bar has it, and there is no notice.
+    app.status("Exported report.pdf");
+    app.ui.backstage = false;
+    let ctx = egui::Context::default();
+    draw(&mut app, &ctx);
+    assert!(ctx.read_response(super::status_notice_id()).is_none());
+}
