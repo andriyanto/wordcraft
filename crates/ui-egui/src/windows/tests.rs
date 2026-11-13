@@ -698,3 +698,19 @@ fn newly_opened_window_does_not_exceed_screen_width() {
     std::fs::remove_dir_all(doc1.parent().unwrap()).ok();
     std::fs::remove_dir_all(doc2.parent().unwrap()).ok();
 }
+
+/// A maximized window on Windows starts a little above and left of its monitor. The next window
+/// still opens on that monitor, not on one up and to the left that isn't there.
+#[test]
+fn a_window_after_a_maximized_one_opens_on_the_screen() {
+    use craft_window::{CASCADE_STEP, Rect, cascade};
+    let monitor = egui::vec2(1280.0, 800.0);
+    let maximized = Rect::new(-5.3, -5.3, 1290.6, 770.6);
+    let bounds = super::monitor_of(maximized, monitor);
+    assert_eq!((bounds.x, bounds.y), (0.0, 0.0), "the monitor the window is on");
+    let placed = cascade(maximized, [1200.0, 700.0], bounds, CASCADE_STEP);
+    assert!(placed.x >= 0.0 && placed.y >= 0.0 && placed.right() <= 1280.0, "on the screen: {placed:?}");
+    // A window on a second monitor to the right stays there.
+    let second = super::monitor_of(Rect::new(1400.0, 100.0, 800.0, 600.0), monitor);
+    assert_eq!((second.x, second.y), (1280.0, 0.0));
+}
