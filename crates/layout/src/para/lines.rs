@@ -1009,7 +1009,9 @@ impl Scan {
             self.last_break = Some(pj);
         }
         self.tab_with_its_text(pl);
-        if let Some(b) = self.last_break.filter(|b| *b >= c0) {
+        if self.long_word_after_tab(bk, pl) {
+            self.break_long_word(bk, pl);
+        } else if let Some(b) = self.last_break.filter(|b| *b >= c0) {
             self.xs.truncate(b + 1 - c0);
             self.j = b + 1;
             // Recompute x for the kept clusters.
@@ -1031,6 +1033,18 @@ impl Scan {
             self.pending_tab = None;
             self.leaders.retain(|(k, _)| *k < tj);
         }
+    }
+
+    /// The only place to break is after a left tab, and the word after it is too long for a line
+    /// of its own, so it is split wherever it starts. It starts after the tab then, rather than
+    /// leaving the line empty after its label ("Name<tab>:<tab>long-unbroken-text").
+    fn long_word_after_tab(&self, bk: &Breaker, pl: &ParaLayout) -> bool {
+        let Some(b) = self.last_break.filter(|b| *b >= self.c0 && *b + 1 < self.j) else { return false };
+        let next_line = bk.base_right - bk.rp.indent_left;
+        self.pending_tab.is_none()
+            && !self.narrowed
+            && pl.clusters.get(b).is_some_and(|c| c.kind() == ClKind::Tab)
+            && bk.widths.get(b + 1).is_some_and(|w| *w > next_line + 0.01)
     }
 
     /// No opportunity to break: break here (a long word), unless the span is beside a floating
