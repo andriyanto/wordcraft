@@ -66,6 +66,47 @@ fn bottom_links(app: &WordApp) -> Vec<(&'static str, &'static str)> {
     links
 }
 
+/// How long a notice stays ([`notice`]): as long as the status bar shows a message.
+const NOTICE_MS: f64 = 6000.0;
+
+pub(crate) fn status_notice_id() -> egui::Id {
+    egui::Id::unique("backstage_status_notice")
+}
+
+/// A notice at the bottom of the window, for a few seconds:
+///
+/// - what the person asked for and should see has happened ([`WordApp::notify`]: an export
+///   written), over the document or the Backstage;
+/// - while the Backstage is open, the status bar's message, whatever it is: the Backstage covers
+///   the status bar, so what an action there came to was said where nobody could see it. Not a
+///   message the page shows itself (the Open and Save As pages' errors).
+pub(crate) fn notice(app: &WordApp, ctx: &egui::Context) {
+    let now = crate::now_ms();
+    let fresh = |m: &Option<(String, f64)>| m.as_ref().filter(|(msg, at)| !msg.is_empty() && now - at < NOTICE_MS).cloned();
+    // A page that says it itself (a file that didn't open, a save that failed) says it once.
+    let said = |msg: &String| {
+        ctx.data(|d| [open_error_id(), personal_error_id(), save_as_error_id()].into_iter().any(|id| d.get_temp::<String>(id).as_ref() == Some(msg)))
+    };
+    let status = || fresh(&app.status_msg).filter(|(msg, _)| app.ui.backstage && !said(msg));
+    let Some((msg, at)) = fresh(&app.notice).or_else(status) else { return };
+    let t = Tokens::get(ctx);
+    // Clear of the status bar when the document is showing.
+    let up = if app.ui.backstage { 28.0 } else { 52.0 };
+    egui::Area::new(app.window_id("backstage_status_notice"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -up))
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::NONE.fill(t.accent).corner_radius(6).inner_margin(egui::Margin::symmetric(18, 10)).show(ui, |ui| {
+                ui.set_max_width(560.0);
+                let shown = ui.label(egui::RichText::new(&msg).font(medium(13.5)).color(t.on_accent));
+                let _ = ui.interact(shown.rect, status_notice_id(), Sense::hover());
+            });
+        });
+    // Drawn again when it is due to go.
+    ctx.request_repaint_after(std::time::Duration::from_millis((NOTICE_MS - (now - at)).max(0.0) as u64 + 30));
+}
+
 /// Draws the Backstage side menu and the active page. Without a document only the Home, New, Open
 /// and Options pages work, and it handles Back, Escape, Save, Save As and Close routing.
 pub fn show(app: &mut WordApp, ui: &mut Ui) {

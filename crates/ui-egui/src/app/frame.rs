@@ -21,6 +21,14 @@ impl WordApp {
         self.status_msg = Some((s.into(), now_ms()));
     }
 
+    /// A status message that is also shown as a notice over the window ([`chrome::notice`]),
+    /// for what the person asked for and should see has happened: an export written.
+    pub fn notify(&mut self, s: impl Into<String>) {
+        let s = s.into();
+        self.notice = Some((s.clone(), now_ms()));
+        self.status(s);
+    }
+
     /// Write the current preferences out through the host's hook, if it has one (#2716). The
     /// desktop app saves them at exit; a change that should survive a crash, like taking a
     /// document off the recent list, needs a save at the moment of the change. `None`: the host
@@ -67,6 +75,7 @@ impl WordApp {
     pub(super) fn paint_window(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, t: theme::Tokens) {
         let window = self.windows.shown();
         let moved = |app: &WordApp| app.windows.shown() != window;
+        backstage::notice(self, ctx);
         if self.ui.backstage {
             backstage::show(self, ui);
         } else if !self.has_document() {

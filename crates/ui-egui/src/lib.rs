@@ -636,6 +636,9 @@ pub struct WordApp {
     /// The language-aware spelling and grammar task pane.
     pub spelling_review: Option<proofing_pane::SpellingForm>,
     pub status_msg: Option<(String, f64)>,
+    /// What an action came to that the person should not miss (an export written), and when:
+    /// shown as a notice over the window for a few seconds ([`WordApp::notify`]).
+    pub notice: Option<(String, f64)>,
     pub previews: previews::Previews,
     /// Media key of the picture a pending Change Picture replaces (#147).
     pub change_picture_target: Option<String>,

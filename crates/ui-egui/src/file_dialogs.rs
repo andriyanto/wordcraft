@@ -301,7 +301,7 @@ impl WordApp {
                     self.run("file.saveAs", json!({"path": path}))
                 };
                 if r.is_ok() {
-                    self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &crate::i18n::isolate_path(&path))]));
+                    self.exported(&path);
                 }
                 r
             }
@@ -311,7 +311,7 @@ impl WordApp {
                 params["path"] = json!(path);
                 let r = self.run("file.printPdf", params);
                 if r.is_ok() {
-                    self.status(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &crate::i18n::isolate_path(&path))]));
+                    self.exported(&path);
                 }
                 r
             }
@@ -432,6 +432,14 @@ impl WordApp {
     }
 
     /// File › Export: ask where to save a copy in this format, then write it.
+    /// An export was written to `path`: back to the document (from File › Export or the Print
+    /// page), with a notice saying where the file went.
+    fn exported(&mut self, path: &str) {
+        self.ui.backstage = false;
+        self.canvas.want_focus = true;
+        self.notify(crate::i18n::fmt(tl!("Exported {path}"), &[("path", &crate::i18n::isolate_path(path))]));
+    }
+
     pub(crate) fn export_dialog(&mut self, ext: &str) {
         let file_ext = if ext == crate::print_page::EXPORT_WORD_2003 { "xml" } else { ext };
         let name = format!("{}.{file_ext}", self.title_stem());
