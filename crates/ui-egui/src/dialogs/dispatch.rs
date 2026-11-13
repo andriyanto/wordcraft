@@ -1179,8 +1179,19 @@ fn about_dialog(ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.hyperlink_to(tl!("getartcraft.com/apps/wordcraft"), "https://getartcraft.com/apps/wordcraft");
             ui.hyperlink_to(tl!("Join us on Discord: discord.gg/artcraft"), "https://discord.gg/artcraft");
             ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
+            // This copy is built from its own repository: where to get it and its source.
+            ui.hyperlink_to(tl!("Get this build: github.com/andriyanto/wordcraft/releases"), "https://github.com/andriyanto/wordcraft/releases");
+            ui.hyperlink_to(tl!("Source code of this build: github.com/andriyanto/wordcraft"), "https://github.com/andriyanto/wordcraft");
             ui.add_space(6.0);
             ui.label(egui::RichText::new(tl!("MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.")).small().weak());
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(tl!(
+                    "Disclaimer: this copy of WordCraft has been modified from the original to use memory more efficiently. It is not an official ArtCraft release."
+                ))
+                .small()
+                .weak(),
+            );
         }
     }
     // One Close button: About has nothing to cancel.

@@ -4,7 +4,7 @@
   "branch": "main",
   "head": "d7d9702bda1fe626952024dc37fd2624323dad0f",
   "head_date": "2026-10-09T13:22:42Z",
-  "commits": 45,
+  "commits": 97,
   "unattributed_commits": 0,
   "contributors": [
     {
@@ -136,6 +136,19 @@
       "binary_deleted": 0,
       "first_commit": "2026-10-09T13:22:04Z",
       "last_commit": "2026-10-09T13:22:04Z"
+    },
+    {
+      "login": "andriyanto",
+      "people_entry": true,
+      "github_name": null,
+      "prs": 16,
+      "commits": 52,
+      "lines_added": 3910,
+      "lines_deleted": 804,
+      "binary_added": 0,
+      "binary_deleted": 0,
+      "first_commit": "2026-11-11T08:25:35Z",
+      "last_commit": "2026-11-13T08:16:24Z"
     }
   ],
   "models": [
@@ -156,6 +169,15 @@
       "commits": 1,
       "lines_added": 22,
       "lines_deleted": 1
+    },
+    {
+      "id": "anthropic/claude-fable/5.2",
+      "company": "Anthropic",
+      "model": "Claude Fable",
+      "version": "5.2",
+      "commits": 29,
+      "lines_added": 3910,
+      "lines_deleted": 804
     }
   ]
 }

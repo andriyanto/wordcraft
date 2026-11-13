@@ -207,3 +207,8 @@ real_name = "Ashok Ram"
 
 [people.benandez]
 sync_github_name = true
+
+# The owner of this repository (andriyanto/wordcraft), added at their own request.
+[people.andriyanto]
+display_name = "andriyanto"
+consent_source = "asked for by andriyanto while working on this repository, 2026-11-13"
