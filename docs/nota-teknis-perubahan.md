@@ -1,6 +1,6 @@
 # Nota teknis: perubahan repo ini dibanding repo asal
 
-Nota ini mencatat apa yang diubah di `andriyanto/wordcraft` sejak disalin dari proyek asalnya, mengapa, bagaimana rancangannya, dan bagaimana hasilnya dibanding titik awal. Ditulis 13 November 2026.
+Nota ini mencatat apa yang diubah di `andriyanto/wordcraft` sejak disalin dari proyek asalnya, mengapa, bagaimana rancangannya, dan bagaimana hasilnya dibanding titik awal. Ditulis 13 November 2026. Versi bahasa Inggris: [`technical-note-changes.md`](technical-note-changes.md).
 
 ## 1. Ruang lingkup
 
