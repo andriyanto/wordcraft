@@ -1,8 +1,12 @@
+# Version updates are switched off in this repository: open-pull-requests-limit 0 stops the
+# routine pull requests. Security updates are a separate repository setting and are not affected.
+# Remove the two limits to switch the routine updates back on.
 version: 2
 updates:
   # Maintain Rust / Cargo dependencies
   - package-ecosystem: "cargo"
     directory: "/"
+    open-pull-requests-limit: 0
     schedule:
       interval: "daily"
       time: "06:00"
@@ -37,6 +41,7 @@ updates:
   # Maintain GitHub Actions workflows
   - package-ecosystem: "github-actions"
     directory: "/"
+    open-pull-requests-limit: 0
     schedule:
       interval: "daily"
       time: "06:00"
