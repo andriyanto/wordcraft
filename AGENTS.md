@@ -1,39 +1,34 @@
-<!-- craft-house-rules:start core source=dde09ea31e2e457f5b4653a6e76f7cdf55944bdf sha256=540e6cea75d12d0710c3dca89658328e81e508ecef102446ca5bb95b7c0b92bb -->
-## House rules
+## About this repository
 
-These apply in every Craft repository. A later rule may be stricter, not weaker. The source is `standards/house-rules-core.md` in `storytold/craft-contrib`. Propose changes there, not in a copy.
+This is `andriyanto/wordcraft`: WordCraft developed on its own by its owner, from a copy of [`storytold/wordcraft`](https://github.com/storytold/wordcraft) at commit `118eb8a` (11 November 2026). It does not track the original and is not bound by the original project's house rules; the rules below are this repository's own. What has changed since the copy, and why, is in [`docs/technical-note-changes.md`](docs/technical-note-changes.md).
 
-1. **A person is accountable.** Whoever runs an agent answers for what it opens and for its review comments.
-2. **Check, then claim.** Before writing code, read the issue comments, search pull requests for `#N` and the keywords, and check recent commits on `main`. Comment on the issue first. Release a claim you will not finish.
+## Working rules
+
+1. **The owner decides.** The owner merges pull requests and deletes their branches. An agent works on a branch, opens a pull request and reports; it does not merge.
+2. **`main` changes through a pull request.** Do not push to it.
 3. **Verify, don't guess.** Open a definition before using it. Confirm the cause in the code, even when someone names a location.
-4. **Keep fixes narrow and tested.** Fix what the issue describes, where the bug is. Add a test that fails without the fix.
+4. **Keep fixes narrow and tested.** Fix what was asked, where the bug is. Add a test that fails without the fix.
 5. **Review the diff before opening a pull request.** Identifiers exist as used, the test fails without the fix, nothing unrelated changed, and the description is true.
-6. **Look for a better pull request.** If another fixes the same thing, close yours when it is better or equal, and say why.
-7. **Report only what ran.** Say what you tested and what you could not run. Without a local build or test, say so and rely on CI before marking ready.
-8. **`main` changes through a pull request.** Do not push to it. Branch protection enforces this. There is no exception.
-9. **Stop and ask only about** licensing outside the allowlist, publishing, releases, a new remote, secrets, spending money, destructive git, and anything else hard to undo. Otherwise keep working. `plan/` is a gitignored notebook, not rules. Without it, do not ask for it and do not stop.
-10. **Keep secrets and personal details out** of the repository, logs and requests.
-11. **CI stays shared.** Workflows call `storytold/craft-common-actions`. Do not change CI in a feature or fix pull request. If CI cannot cover a change, open an issue there.
-12. **Guards say why.** A check that looks removable says what it prevents. Read that before changing it.
-13. **Instructions must be readable by everyone.** No notes about one machine, and no links to files a reader cannot open. `craftrules` is retired. Do not link to it.
-14. **Keep pull requests moving.** Concurrent pull requests are fine; unanswered actionable feedback is not. Respond in 7 days, a reminder at 14, closure eligible at 30, from when an actionable request waits on the author. Suggestions and unconfirmed bot findings do not start the clock. A fix, explanation or agreed plan resets it; unrelated activity does not. Waiting on a reviewer or maintainer pauses it and does not count against the author. A maintainer decides closure; it is never automatic. Reuse search results, do not poll, and stop at a rate limit.
-15. **No agent attribution.** A pull request does not say an agent wrote it. A repository rule may not require that.
-<!-- craft-house-rules:end -->
-<!-- craft-house-rules:start rust source=dde09ea31e2e457f5b4653a6e76f7cdf55944bdf sha256=387e0ccb4b49e567f60951d7d6fff7305054c89f43ad812b9993dc7c38528013 -->
-## Rust Craft repositories
+6. **Report only what ran.** Say what you tested and what you could not run or see (a device, a platform, the desktop app). Without a local build or test, say so and rely on CI.
+7. **Be honest about who did the work.** Commits and pull requests made with an agent say so: the agent is named as co-author. Never hide it.
+8. **Stop and ask only about** licensing outside the allowlist, publishing, releases, a new remote, secrets, spending money, destructive git, sending anything to people outside this repository, and anything else hard to undo. Otherwise keep working. `plan/` is a gitignored notebook, not rules. Without it, do not ask for it and do not stop.
+9. **Keep secrets and personal details out** of the repository, logs and requests.
+10. **Guards say why.** A check that looks removable says what it prevents. Read that before changing it.
+11. **Instructions must be readable by everyone.** No notes about one machine, and no links to files a reader cannot open.
+12. **Security findings in someone else's code go to them privately first**, the way their security policy asks, before a fix is public here.
 
-These apply to native Craft apps and to shared Rust libraries. Select them by repository type. A repository that merely contains some Rust does not take this block. Rules later in a repository's file may be stricter, but not weaker. The source is `standards/house-rules-rust.md` in [storytold/craft-contrib](https://github.com/storytold/craft-contrib).
+## Rust rules
 
-1. **Never crash.** Non-test code does not panic and has no `unsafe`, except where the repository file names an exception. Return errors, treat input as hostile, and bound recursion and allocations. New production crate roots copy the `deny` attribute from an existing crate: `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic`, `clippy::unimplemented`, `clippy::todo`, `clippy::unreachable`. Every crash fix comes with a test that panicked before the fix.
+1. **Never crash.** Non-test code does not panic and has no `unsafe`. Return errors, treat input as hostile, and bound recursion and allocations. New production crate roots copy the `deny` attribute from an existing crate: `clippy::unwrap_used`, `clippy::expect_used`, `clippy::panic`, `clippy::unimplemented`, `clippy::todo`, `clippy::unreachable`. Every crash fix comes with a test that panicked before the fix.
 2. **Clean room.** Learn from observed behaviour and public specifications. Do not copy another product's code, assets, strings or artwork. Check a dependency's licence before adding it.
-3. **Assets and fonts.** Every asset is original or suitably licensed, and is recorded in `ATTRIBUTION.md` in the same change. Font files live in [storytold/craft-fonts](https://github.com/storytold/craft-fonts), not in the app repository.
-4. **Rust only for native Craft apps.** No handwritten JavaScript or TypeScript, and no Tauri, Electron or webview shell, in those apps. Shared tooling follows its documented technical scope and maintainer-approved exceptions. Craft PR Review's existing Tauri and TypeScript UI is one such exception. It does not relax this rule for native apps. Preserve any existing web build.
-5. **Time goes through `chrono`.** Do not hand-roll calendar conversion. For dates beyond what `chrono` can represent, follow [standards/time.md](https://github.com/storytold/craft-contrib/blob/main/standards/time.md).
-6. **Contributor credits.** Add or edit only your own person's entry in `contributors/people.toml`, and only after asking them. Never guess a name or hand-edit `contributors.json`.
+3. **Assets and fonts.** Every asset is original or suitably licensed, and is recorded in `ATTRIBUTION.md` in the same change. Font files are not kept in this repository.
+4. **Rust only.** No handwritten JavaScript or TypeScript, and no Tauri, Electron or webview shell. Preserve the existing web build.
+5. **Time goes through `chrono`.** Do not hand-roll calendar conversion.
+6. **The output must not change by accident.** A change meant to save time or memory is compared with the build before it: rendered pages and conversions byte for byte, and for the layout, against the document laid out from scratch (`wordcraft_layout::verify_against_full`).
 
 ## Licence allowlist
 
-Dependencies and assets use SPDX identifiers. An expression is allowed when every identifier is in this list. A repository may name a shorter list. It may not add an identifier here by editing its own copy of these rules.
+Dependencies and assets use SPDX identifiers. An expression is allowed when every identifier is in this list. Adding an identifier is the owner's decision.
 
 - `ISC`
 - `MIT`
@@ -49,14 +44,13 @@ Dependencies and assets use SPDX identifiers. An expression is allowed when ever
 - `LicenseRef-Public-Domain`
 
 `LicenseRef-Storyteller-Trademark` is not in this list. It covers Storyteller brand marks only, where a repository already says so.
-<!-- craft-house-rules:end -->
 
 # WordCraft — instructions for agents
 
-WordCraft is a clean-room, open-source, Rust-native word processor targeting Microsoft Word parity — and going further on speed, openness and agent control. It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Siblings with the same conventions: `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../pdfcraft` (Acrobat), `../effectcraft` (After Effects), `../designcraft` (InDesign).
+WordCraft is a clean-room, open-source, Rust-native word processor targeting Microsoft Word parity — and going further on speed, openness and agent control. It runs natively on macOS, Windows, Linux and BSD, and on the web via WASM. Sibling projects of the original: `../photocraft` (Photoshop), `../vectorcraft` (Illustrator), `../filmcraft` (Premiere), `../lightcraft` (Lightroom), `../pdfcraft` (Acrobat), `../effectcraft` (After Effects), `../designcraft` (InDesign).
 
 ## Start every session here
-Read [`ROADMAP.md`](ROADMAP.md), [`docs/gaps.md`](docs/gaps.md) and [`docs/roadmap.md`](docs/roadmap.md). `plan/` is an optional gitignored notebook. Do not ask for it and do not stop when it is absent.
+Read [`docs/technical-note-changes.md`](docs/technical-note-changes.md) for what this repository changed and what is still open, then [`ROADMAP.md`](ROADMAP.md), [`docs/gaps.md`](docs/gaps.md) and [`docs/roadmap.md`](docs/roadmap.md) (those three are the original project's, as of the copy). `plan/` is an optional gitignored notebook. Do not ask for it and do not stop when it is absent.
 
 ## Never crash
 People trust WordCraft with their writing; a crash loses their work. **This outranks feature work**: never ship a feature through a panic path, and fix a crash before building on top of it.
@@ -119,22 +113,15 @@ Progress docs: `ROADMAP.md` (stage, headline numbers, progress log), `docs/targe
 
 ## Contributor credits (About window)
 
-- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json`
-  (commit stats; never hand-edit) and `contributors/people.toml` (names people chose for
-  themselves). See `docs/contributors.md`.
-- **Agents working for a contributor:** when you prepare a PR, check whether your human's GitHub
-  username has a `[people.<username>]` entry in `contributors/people.toml`. If not, ask them once
-  whether they want to be credited by more than their username: a real name, a display name, and/or
-  their public GitHub profile name (`sync_github_name = true`). If yes, add **only their own** entry
-  (copy the template at the top of the file)
-  and include it in their PR, committed as them. If no, change nothing: they are credited as
-  `@username` anyway.
-- Never add, edit, guess or copy anyone else's entry or name (not from git config, commit authors or
-  GitHub profiles). Never hand-edit `contributors.json`.
+- About ▸ Contributors/Models are compiled into the binary from `contributors/contributors.json` (commit stats) and `contributors/people.toml` (the names people chose for themselves). See `docs/contributors.md`.
+- In this repository `contributors.json` is a snapshot kept by hand: the original project's rows are left as they are, and this repository's own rows (its owner, and the model that helped) are added from its git history. When you update it, count from the history and say in the pull request where each number comes from. A release workflow that regenerates the file replaces the snapshot.
+- Add or change a person's entry in `contributors/people.toml` only when that person asked, and record where they asked in `consent_source`. Never guess a name.
 
 ## CI workflows
-- Workflows in `.github/workflows/` call the shared workflows in [`storytold/craft-common-actions`](https://github.com/storytold/craft-common-actions) at `@main`, with their inputs and secrets. No other jobs: if no shared workflow does what's needed, it doesn't go here.
-- Don't add or change CI in a feature or fix PR. If the existing workflows can't build or test a change, link an existing craft-common-actions issue or PR, or open a new issue, or a PR only for a small fix that is safe for every app and does not increase CI time.
-- Some workflow files here still run their own jobs. Don't add to them. Moving a job into craft-common-actions is its own task, never part of another PR, and the job stays here until a shared workflow runs it.
+
+- Most workflows in `.github/workflows/` call the shared workflows in [`storytold/craft-common-actions`](https://github.com/storytold/craft-common-actions), **pinned to a commit hash**, not `@main`: a change there reaches this repository only through a reviewed bump of that hash.
+- This repository may have workflows of its own where no shared one does the job (`audit.yml`).
+- Change CI in a pull request of its own, not inside a feature or fix, and say what the change is for.
+- Dependabot pull requests are merged only when the `gate` job is green; a bump that needs code changes is closed until the code is ported.
 
 New workspace crates include `workspace = true` under `[lints]` in `Cargo.toml`. Production crate roots declare the crate-level lint attributes before modules; crate-level `//!` documentation may precede them.
