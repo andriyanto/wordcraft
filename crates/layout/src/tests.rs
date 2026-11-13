@@ -20,6 +20,7 @@ mod numeral;
 mod pages;
 mod resume;
 mod styleref;
+mod tab_word;
 mod table_contact;
 mod textbox;
 mod vertical;
