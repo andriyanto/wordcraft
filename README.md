@@ -24,6 +24,15 @@
   <i>By the ArtCraft team.</i>
 </p>
 
+> [!IMPORTANT]
+> **This repository is an independently maintained, modified copy of WordCraft.** The original
+> project is [`storytold/wordcraft`](https://github.com/storytold/wordcraft) by the ArtCraft team.
+> The builds on this repository's [Releases page](https://github.com/andriyanto/wordcraft/releases)
+> are made by [@andriyanto](https://github.com/andriyanto), not by the ArtCraft team, which does
+> not endorse or support them. What was changed is in
+> [docs/technical-note-changes.md](docs/technical-note-changes.md). These builds are **not
+> code-signed yet**: see [Code signing policy](#code-signing-policy) and [Privacy](#privacy).
+
 <p align="center">
   <img alt="Written in Rust" src="https://img.shields.io/badge/written%20in-Rust-2b47b5?style=flat-square&logo=rust&logoColor=white">
   <img alt="Runs on macOS, Windows, Linux, BSD and the web" src="https://img.shields.io/badge/runs%20on-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20BSD%20%C2%B7%20Web-3b5bdb?style=flat-square">
@@ -66,6 +75,8 @@
   <a href="#roadmap">Roadmap</a> ·
   <a href="#downloads">Downloads</a> ·
   <a href="#the-crafting-apps">The Crafting Apps</a> ·
+  <a href="#privacy">Privacy</a> ·
+  <a href="#code-signing-policy">Code signing policy</a> ·
   <a href="#license-and-credits">License and credits</a>
 </p>
 
@@ -265,7 +276,13 @@ closer pagination fidelity, a stability sweep and native printing. Details and e
 
 ## Downloads
 
-**Download WordCraft** from GitHub: the [latest release](https://github.com/storytold/wordcraft/releases/latest) has every build listed below, and [all releases](https://github.com/storytold/wordcraft/releases) has earlier versions and their notes. `<ver>` in the file names is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
+**Download WordCraft** from GitHub: the [latest release](https://github.com/andriyanto/wordcraft/releases/latest) has every build listed below, and [all releases](https://github.com/andriyanto/wordcraft/releases) has earlier versions and their notes. `<ver>` in the file names is the version number, and `SHA256SUMS.txt` lists a checksum for every file.
+
+These are this repository's own builds, and they are **not code-signed yet**
+([Code signing policy](#code-signing-policy)). Until they are, Windows SmartScreen and macOS
+Gatekeeper warn before the first start, and the Windows and macOS apps tell you about a new
+release but do not install it themselves: download the new version here. The original project's
+signed builds are on [its own releases page](https://github.com/storytold/wordcraft/releases).
 
 ### Windows
 
@@ -273,13 +290,13 @@ closer pagination fidelity, a stability sweep and native printing. Details and e
 |---|---|---|
 | x64 (64-bit Intel/AMD) | `wordcraft-<ver>-windows-x64.msi` | `wordcraft-<ver>-windows-x64-portable.zip` |
 | arm64 (Snapdragon and other ARM PCs) | `wordcraft-<ver>-windows-arm64.msi` | `wordcraft-<ver>-windows-arm64-portable.zip` |
-| x86 (32-bit) | `wordcraft-<ver>-windows-x86.msi` | `wordcraft-<ver>-windows-x86-portable.zip` |
 
 The installer is one dual-scope package. By default it installs for your account only,
 into `%LOCALAPPDATA%\Programs\ArtCraft\WordCraft`, and needs no administrator rights; choosing
 "Everyone on this computer" on the first page installs into `C:\Program Files\ArtCraft\WordCraft` (`Program Files (x86)` for the 32-bit build)
 and asks for an administrator. Install only one copy: a copy for another scope is refused, so
-uninstall first to change who WordCraft is installed for. Installers and executables are code-signed.
+uninstall first to change who WordCraft is installed for. The installers and executables are not
+code-signed yet. No 32-bit build is published here.
 
 **If the app doesn't open on Windows:** the desktop app initializes only DirectX 12 by default.
 Letting wgpu also create an OpenGL instance can crash some graphics drivers (AMD's
@@ -318,29 +335,26 @@ adapter. The log file records the choice (lines starting with
 
 | Build | File | Notes |
 |---|---|---|
-| App, universal (Apple silicon + Intel) | `wordcraft-<ver>-macos-universal.dmg` | Signed and notarized |
-| Command-line tool, universal | `wordcraft-cli-<ver>-macos-universal.zip` | Signed and notarized |
+| App, universal (Apple silicon + Intel) | `wordcraft-<ver>-macos-universal.dmg` | Ad-hoc signature, not notarized |
+| Command-line tool, universal | `wordcraft-cli-<ver>-macos-universal.zip` | Ad-hoc signature, not notarized |
 
 ### Linux
 
 | Format | x86_64 | aarch64 (ARM64) | Notes |
 |---|---|---|---|
 | AppImage | `wordcraft-<ver>-linux-x86_64.AppImage` | `wordcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
-| Flatpak | `wordcraft-<ver>-linux-x86_64.flatpak` | `wordcraft-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
 | Debian/Ubuntu | `wordcraft-<ver>-linux-x86_64.deb` | `wordcraft-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `wordcraft-<ver>-linux-x86_64.rpm` | `wordcraft-<ver>-linux-aarch64.rpm` | |
 | Tarball | `wordcraft-<ver>-linux-x86_64.tar.gz` | `wordcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
 
-RISC-V (riscv64): `wordcraft-<ver>-linux-riscv64.tar.gz`, a tarball cross-compiled for glibc 2.39+
-(Ubuntu 24.04, Debian 13 and newer).
+No Flatpak, RISC-V, FreeBSD or web build is published here.
 
 **Read Aloud** (Review › Read Aloud) speaks through a speech program installed on the system: it
 tries `espeak-ng`, then `espeak`, and when neither is installed it talks to Speech Dispatcher.
 The `.rpm` package recommends `espeak-ng`; the `.deb` recommends `espeak-ng` or
 `speech-dispatcher`, so the package manager installs one of the two by default. With the
 AppImage or the tarball, install one yourself if neither is there (`sudo apt install espeak-ng`,
-`sudo dnf install espeak-ng`, `sudo pacman -S espeak-ng`). The Flatpak doesn't speak yet: it has
-no audio access and doesn't include `espeak-ng`, `espeak` or Speech Dispatcher.
+`sudo dnf install espeak-ng`, `sudo pacman -S espeak-ng`).
 
 **Wayland:** on a Wayland desktop the app runs through XWayland when it is available, because
 winit (the windowing library) supports dragging files into the window only on X11. To use the
@@ -354,8 +368,8 @@ XWayland:
 WORDCRAFT_WAYLAND=1 wordcraft
 ```
 
-**Arch Linux (AUR).** Community members maintain three AUR packages; the project doesn't publish
-to the AUR itself. Install one of them:
+**Arch Linux (AUR).** Community members maintain three AUR packages of the original project
+(`storytold/wordcraft`); they install its releases, not this repository's. Install one of them:
 | Package | What it installs | Choose it when |
 |---|---|---|
 | [`wordcraft-bin`](https://aur.archlinux.org/packages/wordcraft-bin) | The release tarball above, prebuilt (x86_64, aarch64) | You want the latest release without compiling (quickest) |
@@ -365,7 +379,8 @@ For example `yay -S wordcraft-bin` or `paru -S wordcraft-bin`.
 
 #### Community packages
 
-These packages are maintained by community members, not by the WordCraft team.
+These packages are maintained by community members, not by the WordCraft team, and package the
+original project's releases, not this repository's.
 
 On Gentoo, the [::snakebyte overlay](https://github.com/switch87/snakebyte-overlay) packages the
 Linux release as `app-office/wordcraft-bin` (prebuilt) and `app-office/wordcraft` (built from source):
@@ -376,18 +391,6 @@ emaint sync -r snakebyte
 echo 'app-office/wordcraft-bin ~amd64' >> /etc/portage/package.accept_keywords/wordcraft
 emerge --ask app-office/wordcraft-bin
 ```
-
-### FreeBSD
-
-| Build | File |
-|---|---|
-| x86_64 | `wordcraft-<ver>-freebsd-x86_64.tar.gz` |
-
-### Web (WebAssembly)
-
-| Build | File | Notes |
-|---|---|---|
-| Static site | `wordcraft-web-<ver>.zip` | Runs in a modern browser; host it on any static server |
 
 ## The Crafting Apps
 
@@ -437,6 +440,61 @@ And [**ArtCraft**](https://getartcraft.com/) itself, our AI image and video stud
   <a href="https://getartcraft.com/apps">The Crafting Apps</a> ·
   <a href="https://getartcraft.com/apps/wordcraft">WordCraft</a>
 </p>
+
+## Privacy
+
+WordCraft has no accounts, no telemetry, no analytics and no crash reporting. Your documents and
+the [log file](#logs) stay on your computer, and nothing in them is sent anywhere. A picture a
+document only links to is not fetched.
+
+The builds published from this repository connect to the network in these cases only:
+
+| When | Where | What is sent |
+|---|---|---|
+| Each time the desktop app starts, and when you choose **Help ▸ Check for Updates** | GitHub (`api.github.com`, `github.com`): the releases of `andriyanto/wordcraft` | A request for the latest release, labelled `WordCraft/Update`. Nothing about you, your computer or your documents. Like any web request, it shows GitHub your IP address. |
+| When you accept an update the app offers (builds that can install updates) | GitHub: the release's files | The download request. |
+| When you click **Install** or **Add a language…** for a Language pack or font. Downloading is off until you do, and stays on afterwards, when the app may also fetch the list of packs once at start | GitHub (`github.com`, `raw.githubusercontent.com`) and jsDelivr (`cdn.jsdelivr.net`) | The download requests. |
+| When you click a link in a document or in Help | Your web browser opens the address | Whatever your browser sends. |
+
+There is no setting yet that turns off the update check at start. Nothing else leaves your
+computer: the Zotero integration talks only to the Zotero app on the same computer (`127.0.0.1`),
+Read Aloud speaks through speech software on the same computer, and the control channel and MCP
+server run only when you start them and accept connections from the same computer only.
+
+GitHub and jsDelivr handle those requests under their own policies: the
+[GitHub General Privacy Statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement)
+and the [jsDelivr privacy policy](https://www.jsdelivr.com/terms/privacy-policy-jsdelivr-net).
+The maintainer of this repository receives no data from the app.
+
+## Code signing policy
+
+**Status: the builds published so far (up to v1.0.1) are not code-signed.** Windows installers
+and executables carry no signature, and the macOS builds carry an ad-hoc signature and are not
+notarized. Verify a download against `SHA256SUMS.txt` in the same release.
+
+This project is applying to SignPath Foundation for free code signing for open source projects.
+If the application is accepted, this will hold for the Windows builds, and the status above will
+be removed:
+
+> Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+> [SignPath Foundation](https://signpath.org).
+
+How a release is made, signed or not:
+
+- Since this copy was made, every change has reached `main` through a pull request. Many are
+  prepared with an AI coding agent (Claude), and the commits say so; the maintainer reviews and
+  merges each one.
+- Release files are built by GitHub Actions in this repository, from a commit that is on `main`
+  ([`.github/workflows/release-unsigned.yml`](.github/workflows/release-unsigned.yml),
+  [docs/releasing.md](docs/releasing.md)). Nothing built on a personal computer is published.
+- A release is a draft until the maintainer has checked it and publishes it.
+
+Team roles:
+
+- Committers and reviewers: [@andriyanto](https://github.com/andriyanto)
+- Approvers: [@andriyanto](https://github.com/andriyanto)
+
+What these builds send over the network is described under [Privacy](#privacy).
 
 ## License and credits
 

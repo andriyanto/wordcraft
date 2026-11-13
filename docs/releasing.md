@@ -7,7 +7,9 @@ This copy has no signing certificates, so it releases through
 
 1. Bump the version on `main` through a pull request: `cargo xtask version set <version>`.
 2. In the Actions tab run **Release (unsigned)** on `main` with "draft" ticked.
-3. Review the draft GitHub Release `WordCraft v<version>` and publish it.
+3. Review the draft GitHub Release `WordCraft v<version>`. Add this line to its notes, so the
+   download page names the policy, then publish it:
+   `Code signing policy and privacy: https://github.com/andriyanto/wordcraft#code-signing-policy`
 
 It builds macOS (universal dmg, ad-hoc signature, not notarized), Windows x64 and arm64 (MSI and
 portable zip, unsigned) and Linux x86_64 and aarch64 (AppImage, deb, rpm, tar.gz). There is no
