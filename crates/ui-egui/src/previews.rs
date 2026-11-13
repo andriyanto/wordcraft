@@ -661,6 +661,10 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
                 ui.close();
             }
         });
+        // The style under the pointer is shown on the page; a click applies it.
+        if resp.hovered() && !active && !resp.is_pointer_button_down_on() && !resp.clicked() {
+            crate::mini_toolbar::live_preview(app, "para.style", json!({"style": id}));
+        }
         if resp.on_hover_text(name).clicked() {
             let _ = app.run("para.style", json!({"style": id}));
         }
