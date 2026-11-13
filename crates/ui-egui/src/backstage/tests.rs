@@ -1200,3 +1200,58 @@ fn a_status_message_is_shown_over_the_backstage() {
     draw(&mut app, &ctx);
     assert!(ctx.read_response(super::status_notice_id()).is_none());
 }
+
+/// File › Export: once the file is written the window is back on the document, and a notice
+/// over it says where the file went (it stayed on the Export page, saying nothing).
+#[test]
+fn an_export_returns_to_the_document_and_says_where_the_file_went() {
+    use std::sync::mpsc::channel;
+    let shown: std::rc::Rc<std::cell::RefCell<Vec<(crate::FileDialogRequest, std::sync::mpsc::Sender<crate::FileDialogAnswer>)>>> =
+        Default::default();
+    let log = shown.clone();
+    let services = Services {
+        file_dialog: Some(Box::new(move |req| {
+            let (tx, rx) = channel();
+            log.borrow_mut().push((req, tx));
+            rx
+        })),
+        ..Default::default()
+    };
+    let dir = std::env::temp_dir().join(format!("wordcraft-backstage-export-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let out = dir.join("report.txt");
+
+    let mut a = WordApp::new(wordcraft_engine::Session::new(wordcraft_doc::Document::new()), services);
+    a.ui.language = "en".into();
+    a.run("text.insert", json!({"text": "exported text"})).unwrap();
+    a.run("ui.backstage", json!({"value": true, "page": "export"})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 900.0)).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        a,
+    );
+    h.run_steps(4);
+    h.get_by_label("Plain text (*.txt)").click();
+    h.run_steps(4);
+    // Cancelling the system's dialog changes nothing: still the Export page, no notice.
+    let (_, tx) = shown.borrow_mut().pop().unwrap();
+    tx.send(Ok(Vec::new())).unwrap();
+    h.run_steps(4);
+    assert!(h.state().ui.backstage && h.state().notice.is_none());
+    h.get_by_label("Plain text (*.txt)").click();
+    h.run_steps(4);
+    let (_, tx) = shown.borrow_mut().pop().unwrap();
+    tx.send(Ok(vec![out.to_string_lossy().to_string()])).unwrap();
+    h.run_steps(6);
+    assert!(std::fs::read_to_string(&out).unwrap().contains("exported text"));
+    assert!(!h.state().ui.backstage, "back on the document");
+    let said = h.state().notice.as_ref().map(|(m, _)| m.clone()).expect("a notice");
+    assert!(said.contains("report.txt"), "{said}");
+    let notice = h.ctx.read_response(super::status_notice_id()).expect("the notice is drawn over the document");
+    assert!(notice.rect.center().y > 600.0, "{:?}", notice.rect);
+    let _ = std::fs::remove_dir_all(&dir);
+}

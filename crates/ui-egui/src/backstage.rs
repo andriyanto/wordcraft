@@ -66,50 +66,50 @@ fn bottom_links(app: &WordApp) -> Vec<(&'static str, &'static str)> {
     links
 }
 
-/// How long a status message stays on the Backstage ([`status_notice`]): as long as the status
-/// bar shows it.
+/// How long a notice stays ([`notice`]): as long as the status bar shows a message.
 const NOTICE_MS: f64 = 6000.0;
 
 pub(crate) fn status_notice_id() -> egui::Id {
     egui::Id::unique("backstage_status_notice")
 }
 
-/// The status bar's message, shown over the Backstage: the Backstage covers the status bar, so
-/// what an action here came to ("Exported report.pdf", from File › Export) was said where nobody
-/// could see it. A notice at the bottom of the window, for as long as the status bar would show
-/// the message. Not for a message the page shows itself (the Open and Save As pages' errors).
-fn status_notice(app: &WordApp, ctx: &egui::Context) {
-    let Some((msg, at)) = &app.status_msg else { return };
-    let left = NOTICE_MS - (crate::now_ms() - at);
-    if left <= 0.0 || msg.is_empty() {
-        return;
-    }
+/// A notice at the bottom of the window, for a few seconds:
+///
+/// - what the person asked for and should see has happened ([`WordApp::notify`]: an export
+///   written), over the document or the Backstage;
+/// - while the Backstage is open, the status bar's message, whatever it is: the Backstage covers
+///   the status bar, so what an action there came to was said where nobody could see it. Not a
+///   message the page shows itself (the Open and Save As pages' errors).
+pub(crate) fn notice(app: &WordApp, ctx: &egui::Context) {
+    let now = crate::now_ms();
+    let fresh = |m: &Option<(String, f64)>| m.as_ref().filter(|(msg, at)| !msg.is_empty() && now - at < NOTICE_MS).cloned();
     // A page that says it itself (a file that didn't open, a save that failed) says it once.
-    let said =
-        ctx.data(|d| [open_error_id(), personal_error_id(), save_as_error_id()].into_iter().any(|id| d.get_temp::<String>(id).as_ref() == Some(msg)));
-    if said {
-        return;
-    }
+    let said = |msg: &String| {
+        ctx.data(|d| [open_error_id(), personal_error_id(), save_as_error_id()].into_iter().any(|id| d.get_temp::<String>(id).as_ref() == Some(msg)))
+    };
+    let status = || fresh(&app.status_msg).filter(|(msg, _)| app.ui.backstage && !said(msg));
+    let Some((msg, at)) = fresh(&app.notice).or_else(status) else { return };
     let t = Tokens::get(ctx);
+    // Clear of the status bar when the document is showing.
+    let up = if app.ui.backstage { 28.0 } else { 52.0 };
     egui::Area::new(app.window_id("backstage_status_notice"))
         .order(egui::Order::Foreground)
-        .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -28.0))
+        .anchor(egui::Align2::CENTER_BOTTOM, vec2(0.0, -up))
         .interactable(false)
         .show(ctx, |ui| {
             egui::Frame::NONE.fill(t.accent).corner_radius(6).inner_margin(egui::Margin::symmetric(18, 10)).show(ui, |ui| {
                 ui.set_max_width(560.0);
-                let shown = ui.label(egui::RichText::new(msg).font(medium(13.5)).color(t.on_accent));
+                let shown = ui.label(egui::RichText::new(&msg).font(medium(13.5)).color(t.on_accent));
                 let _ = ui.interact(shown.rect, status_notice_id(), Sense::hover());
             });
         });
     // Drawn again when it is due to go.
-    ctx.request_repaint_after(std::time::Duration::from_millis(left.max(0.0) as u64 + 30));
+    ctx.request_repaint_after(std::time::Duration::from_millis((NOTICE_MS - (now - at)).max(0.0) as u64 + 30));
 }
 
 /// Draws the Backstage side menu and the active page. Without a document only the Home, New, Open
 /// and Options pages work, and it handles Back, Escape, Save, Save As and Close routing.
 pub fn show(app: &mut WordApp, ui: &mut Ui) {
-    status_notice(app, ui.ctx());
     let t = Tokens::get(ui.ctx());
     // No document open (#1129): only the pages that open or create one, and Options.
     let has_document = app.has_document();
