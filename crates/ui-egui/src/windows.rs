@@ -230,6 +230,20 @@ impl Windows {
     }
 }
 
+/// The monitor `window` (an outer rectangle, in points) is on, for placing a new window. egui
+/// reports a monitor's size but not its origin, so monitors of that size are taken to tile the
+/// desktop, and the tile is the one holding the window's centre.
+///
+/// The centre, not the top-left corner: a maximized window on Windows starts a few points above
+/// and left of its monitor (its resize border is off-screen). By its corner it belonged to a
+/// monitor up and to the left that isn't there, and the next document's window opened on it: listed
+/// in the taskbar, never seen.
+pub(crate) fn monitor_of(window: craft_window::Rect, monitor: egui::Vec2) -> craft_window::Rect {
+    let tile = |pos: f32, len: f32| if len > 0.0 && pos.is_finite() { (pos / len).floor() * len } else { 0.0 };
+    let (cx, cy) = (window.x + window.width / 2.0, window.y + window.height / 2.0);
+    craft_window::Rect::new(tile(cx, monitor.x), tile(cy, monitor.y), monitor.x, monitor.y)
+}
+
 /// Control-channel input for a window in a viewport of its own: eframe's raw-input hook
 /// ([`WordApp::raw_input_hook`]) sees only the root viewport's input, and egui runs a plugin's
 /// input hook for every viewport. On macOS it also reads Control-click as the secondary button
@@ -639,6 +653,8 @@ impl WordApp {
             Some(mon) => crate::window_geometry::fit_builder_to_monitor(self.windows.builder.clone(), mon, frame),
             None => self.windows.builder.clone(),
         };
+        // Where a new window may go: the monitor the last focused window is on.
+        viewports.set_bounds(list.cascade_origin(None).zip(target_monitor).map(|(w, m)| monitor_of(w, m)));
         self.windows.showing = true;
         let events = viewports.show(
             ui,
