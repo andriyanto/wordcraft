@@ -1,5 +1,20 @@
 # Releasing WordCraft
 
+## This repository (unsigned builds)
+
+This copy has no signing certificates, so it releases through
+`.github/workflows/release-unsigned.yml` instead of the `release` branch described below:
+
+1. Bump the version on `main` through a pull request: `cargo xtask version set <version>`.
+2. In the Actions tab run **Release (unsigned)** on `main` with "draft" ticked.
+3. Review the draft GitHub Release `WordCraft v<version>` and publish it.
+
+It builds macOS (universal dmg, ad-hoc signature, not notarized), Windows x64 and arm64 (MSI and
+portable zip, unsigned) and Linux x86_64 and aarch64 (AppImage, deb, rpm, tar.gz). There is no
+Android build: the project has no Android target. The rest of this page describes the release
+inherited from the original project.
+
+
 1. Bump the version on `main`: `cargo xtask version set 0.2.0` (the one source of truth is
    `[workspace.package] version`; the app shows it in `--version` and About, with the commit from
    `WORDCRAFT_BUILD_SHA`).
