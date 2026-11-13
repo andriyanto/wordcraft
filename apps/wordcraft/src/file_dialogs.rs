@@ -54,13 +54,26 @@ pub fn hook(ctx: &egui::Context) -> (Hook, Launcher) {
     (hook, Launcher { queue, ctx: ctx.clone() })
 }
 
+/// Whether a dialog asked for in the window drawn in viewport `active` gets the app's first
+/// window as its parent: only when that is the window asking. The first window (the root
+/// viewport) is the one window whose handle the frame gives; every other document window is a
+/// viewport of its own with no handle to pass on. A dialog parented to the first window brings
+/// that window to the front, so asked for from another window it showed the wrong document
+/// behind the dialog, and left it in front afterwards. With no parent the system shows the
+/// dialog on top of the window in use, which stays where it is.
+pub fn first_window_asks(active: egui::ViewportId) -> bool {
+    active == egui::ViewportId::ROOT
+}
+
 impl Launcher {
-    /// Show the queued dialogs with the window as their parent, so the portal (or the system)
-    /// keeps them on top of it. Call after every pass that may ask for one.
-    pub fn show(&self, parent: &eframe::Frame) {
+    /// Show the queued dialogs. `first_window`: the app's first window asked ([`first_window_asks`]),
+    /// and is their parent, so the portal (or the system) keeps them on top of it; a dialog for
+    /// another window has no parent. Call after every pass that may ask for one.
+    pub fn show(&self, parent: &eframe::Frame, first_window: bool) {
         while let Ok((req, answer)) = self.queue.try_recv() {
             // Built here, on the UI thread: macOS shows the panel as a sheet on the window now.
-            let picking = picker(rfd::AsyncFileDialog::new().set_parent(parent), &req);
+            let dialog = if first_window { rfd::AsyncFileDialog::new().set_parent(parent) } else { rfd::AsyncFileDialog::new() };
+            let picking = picker(dialog, &req);
             #[cfg(all(unix, not(target_os = "macos")))]
             let unparented = picker(rfd::AsyncFileDialog::new(), &req);
             let ctx = self.ctx.clone();
@@ -252,6 +265,14 @@ fn format_name(ext: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{pick, save_exts, save_filters};
+
+    /// A dialog is parented to the app's first window only when that window asked for it:
+    /// parented to it from another document's window, it brought the first document forward.
+    #[test]
+    fn only_the_first_window_is_a_dialogs_parent() {
+        assert!(super::first_window_asks(egui::ViewportId::ROOT));
+        assert!(!super::first_window_asks(egui::ViewportId::from_hash_of("another document's window")));
+    }
     use std::time::Duration;
 
     /// #2999: a dialog that "cancels" at once is a portal that failed: asked again without a

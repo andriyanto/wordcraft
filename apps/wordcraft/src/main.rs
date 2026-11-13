@@ -55,7 +55,7 @@ impl eframe::App for App {
         #[cfg(target_os = "macos")]
         apple_events::poll(&self.5, &mut self.0, ctx);
         self.0.logic(ctx);
-        self.3.show(frame);
+        self.3.show(frame, file_dialogs::first_window_asks(self.0.active_viewport()));
         let mut window = self.4;
         // Only until the off-screen check below has run: it is the one reader.
         if self.1.is_some() {
@@ -124,7 +124,7 @@ impl eframe::App for App {
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.0.ui(ui);
-        self.3.show(frame);
+        self.3.show(frame, file_dialogs::first_window_asks(self.0.active_viewport()));
     }
     fn on_exit(&mut self) {
         print::finish_pending_jobs();
