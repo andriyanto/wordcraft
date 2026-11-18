@@ -99,28 +99,26 @@ impl Writer<'_> {
         }
         w.open("wps:spPr", &[]);
         xfrm(w, off, *sw, *sh, float.spin());
-        let prst = match kind {
-            ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => "rect",
-            ShapeKind::RoundedRectangle => "roundRect",
-            ShapeKind::Ellipse => "ellipse",
-            ShapeKind::FlowchartOr => "flowChartOr",
-            ShapeKind::Triangle => "triangle",
-            ShapeKind::RightTriangle => "rtTriangle",
-            ShapeKind::Diamond => "diamond",
-            ShapeKind::Line => "line",
-            ShapeKind::StraightConnector => "straightConnector1",
-            ShapeKind::ElbowConnector => "bentConnector3",
-            ShapeKind::CurvedConnector => "curvedConnector3",
-            ShapeKind::Arrow => "rightArrow",
-            ShapeKind::ArrowLeft => "leftArrow",
-            ShapeKind::ArrowUp => "upArrow",
-            ShapeKind::ArrowDown => "downArrow",
-            ShapeKind::Star => "star5",
-            ShapeKind::Heart => "heart",
-        };
-        match geom {
-            Some(f) => cust_geom(w, f, *sw, *sh),
-            None => {
+        let prst = crate::read::shape_style::kind_preset(*kind);
+        // The preset a file gave this shape, where it is more than the kind says (a hexagon,
+        // shown as a rectangle): written back as it was, with its adjust values.
+        let kept = extra.preset.as_deref().filter(|p| crate::read::shape_style::preset_fits(p, *kind));
+        match (geom, kept) {
+            (Some(f), _) => cust_geom(w, f, *sw, *sh),
+            (None, Some(p)) => {
+                w.open("a:prstGeom", &[("prst", &p.name)]);
+                if p.adjust.is_empty() {
+                    w.empty("a:avLst", &[]);
+                } else {
+                    w.open("a:avLst", &[]);
+                    for (name, value) in &p.adjust {
+                        w.empty("a:gd", &[("name", name), ("fmla", &format!("val {value}"))]);
+                    }
+                    w.close("a:avLst");
+                }
+                w.close("a:prstGeom");
+            }
+            (None, None) => {
                 w.open("a:prstGeom", &[("prst", prst)]);
                 match extra.corner.filter(|_| *kind == ShapeKind::RoundedRectangle) {
                     Some(c) => {

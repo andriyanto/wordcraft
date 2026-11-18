@@ -169,17 +169,22 @@ impl Reader<'_> {
             Some("round") => wordcraft_doc::connector::LineCap::Round,
             _ => wordcraft_doc::connector::LineCap::Flat,
         };
+        // A preset's shape type, unless the shape's own path replaces its shapetype's geometry.
+        let spt = (shape.local() == "shape" && shape.attr("path").is_none() && shape.child("v:path").and_then(|p| p.attr("v")).is_none())
+            .then(|| vml_spt(shape, shapetype, type_id))
+            .flatten();
         let kind = match shape.local() {
             "line" => Some(ShapeKind::Line),
             "rect" => Some(ShapeKind::Rectangle),
             "roundrect" => Some(ShapeKind::RoundedRectangle),
             "oval" => Some(ShapeKind::Ellipse),
-            // A preset, unless the shape's own path replaces its shapetype's geometry.
-            "shape" if shape.attr("path").is_none() && shape.child("v:path").and_then(|p| p.attr("v")).is_none() => {
-                vml_spt(shape, shapetype, type_id).and_then(vml_preset_kind)
-            }
+            "shape" => spt.and_then(vml_preset_kind),
             _ => None,
         };
+        // The same preset in DrawingML, kept for saving where the kind drawn is another shape (an
+        // eight-point star, drawn with five). Its adjust values are VML's own and are not carried.
+        let kept =
+            |kind: ShapeKind| spt.and_then(crate::read::shape_style::vml_preset).and_then(|p| crate::read::shape_style::kept_preset(p, [], kind));
         // Word 2007 WordArt: a `v:shape` whose `v:textpath` draws its `string` (the header watermark
         // is taken before this). Shown as a text box holding that text, in the textpath's font and the
         // shape's `fillcolor`; the box itself has neither fill nor outline, as the letters are the art.
@@ -280,7 +285,7 @@ impl Reader<'_> {
                 story,
                 freeform: None,
                 effects: Default::default(),
-                extra: ShapeExtra { cap, ..Default::default() },
+                extra: ShapeExtra { cap, preset: kept(kind), ..Default::default() },
             });
         }
         // A freeform: its `path`, in its `coordsize` space; a `v:fill` with no opacity
@@ -313,7 +318,7 @@ impl Reader<'_> {
             });
         }
         let kind = kind?;
-        let mut extra = ShapeExtra { cap, ..Default::default() };
+        let mut extra = ShapeExtra { cap, preset: kept(kind), ..Default::default() };
         // A horizontal rule (`o:hr`, a pasted `<hr>`): across `o:hrpct` tenths of a percent of its
         // line, or its own width (`o:hrpct="0"`); a width of 0 with no percentage is the whole
         // line. `o:hralign` places a shorter one (Word, measured: 50 % centred, left, right).

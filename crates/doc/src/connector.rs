@@ -223,6 +223,44 @@ pub struct ShapeExtra {
     /// line, and is drawn across [`HorizontalRule::pct`] of it or at the shape's own width.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hr: Option<HorizontalRule>,
+    /// The DrawingML preset geometry as a file gave it, when it says more than the shape's kind
+    /// does: a preset WordCraft draws as another shape (a hexagon as a rectangle, an eight-point
+    /// star as a five-point one), or adjust values. Saved back as it was, so Word draws its own
+    /// shape instead of the one WordCraft showed. Dropped when the shape is made another kind.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<std::sync::Arc<PresetGeom>>,
+}
+
+/// A DrawingML preset geometry (`a:prstGeom`, ECMA-376 §20.1.9.18): the preset's name
+/// (ST_ShapeType) and its adjust values (`a:avLst/a:gd`, each `name` with `fmla="val n"`).
+#[derive(Clone, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PresetGeom {
+    pub name: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adjust: Vec<(String, i32)>,
+}
+
+impl PresetGeom {
+    /// Longest preset or adjust-value name kept (the longest ST_ShapeType name has 26 letters).
+    pub const MAX_NAME: usize = 40;
+    /// Most adjust values kept for one shape (no preset has more than 8).
+    pub const MAX_ADJUST: usize = 16;
+
+    /// A name that can stand in a file as it is: a letter, then letters and digits only.
+    pub fn valid_name(name: &str) -> bool {
+        name.len() <= Self::MAX_NAME && name.starts_with(|c: char| c.is_ascii_alphabetic()) && name.chars().all(|c| c.is_ascii_alphanumeric())
+    }
+
+    /// The geometry to keep for a preset named `name` with the adjust values `adjust` as read,
+    /// or `None` when the name can't be written back. Adjust values with another kind of name,
+    /// and those past [`Self::MAX_ADJUST`], are left out.
+    pub fn new(name: &str, adjust: impl IntoIterator<Item = (String, i32)>) -> Option<PresetGeom> {
+        Self::valid_name(name).then(|| PresetGeom {
+            name: name.to_string(),
+            adjust: adjust.into_iter().filter(|(n, _)| Self::valid_name(n)).take(Self::MAX_ADJUST).collect(),
+        })
+    }
 }
 
 /// How a horizontal rule sits on its line (VML `o:hrpct`, `o:hralign`), as Word draws one:

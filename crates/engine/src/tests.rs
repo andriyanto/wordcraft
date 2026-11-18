@@ -7501,6 +7501,29 @@ fn changing_a_shape_drops_the_geometry_kept_from_a_file() {
     assert_eq!(geometry(&s), None);
 }
 
+/// The same for the preset a DOCX file gave a shape: a hexagon WordCraft shows as a rectangle is
+/// saved as a hexagon, but made an oval it is an oval, and is saved as one.
+#[test]
+fn changing_a_shape_drops_the_preset_kept_from_a_file() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle"}));
+    let preset = |s: &Session| match cmd::objects::selected(s) {
+        Some((_, wordcraft_doc::InlineObject::Shape { extra, .. })) => extra.preset.clone(),
+        o => panic!("{o:?}"),
+    };
+    let Some((pos, _)) = cmd::objects::selected(&s) else { panic!() };
+    let para = s.doc.para_mut(pos.story, &pos.path).unwrap();
+    if let Some(wordcraft_doc::InlineObject::Shape { extra, .. }) = para.object_at_mut(pos.off) {
+        extra.preset = wordcraft_doc::connector::PresetGeom::new("hexagon", [("adj".to_string(), 25000)]).map(std::sync::Arc::new);
+    }
+    assert!(preset(&s).is_some());
+    // Other changes leave it: the shape is still the file's hexagon.
+    run(&mut s, "shape.fill", json!({"color": "FF0000"}));
+    assert!(preset(&s).is_some());
+    run(&mut s, "shape.change", json!({"kind": "ellipse"}));
+    assert_eq!(preset(&s), None);
+}
+
 /// Shape Format › Shape Effects (#275): presets and custom values apply to the selected shape,
 /// an omitted key is kept, hostile numbers are clamped and each change is one undo step.
 #[test]
