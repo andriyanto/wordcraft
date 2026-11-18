@@ -7501,6 +7501,91 @@ fn changing_a_shape_drops_the_geometry_kept_from_a_file() {
     assert_eq!(geometry(&s), None);
 }
 
+/// Typing with a shape selected types in the shape, as in Word: it replaced the shape with the
+/// letters before. The shape gets a text of its own: centred, in the middle of the shape, white
+/// on the dark fill a new shape has. One undo step takes the text and the typing back.
+#[test]
+fn typing_with_a_shape_selected_types_in_the_shape() {
+    use wordcraft_doc::para::ShapeKind;
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "diamond"}));
+    let shape = |s: &Session| match s.doc.para(StoryRef::Body, &wordcraft_doc::Path(vec![0])).and_then(|p| p.objects.first().cloned()) {
+        Some(wordcraft_doc::InlineObject::Shape { kind, story, .. }) => (kind, story),
+        o => panic!("{o:?}"),
+    };
+    assert_eq!(shape(&s), (ShapeKind::Diamond, None));
+    assert!(cmd::objects::takes_typing(&s));
+    let before = s.doc.clone();
+    run(&mut s, "text.insert", json!({"text": "Decide"}));
+    let (kind, story) = shape(&s);
+    assert_eq!(kind, ShapeKind::Diamond, "the shape is still there");
+    let id = story.expect("and has a text");
+    assert_eq!(s.doc.plain_text(StoryRef::Part(id)).trim_end(), "Decide");
+    assert_eq!(s.doc.plain_text(StoryRef::Body).trim_end_matches(['\n', wordcraft_doc::para::OBJ]), "", "nothing was typed in the body");
+    let part = &s.doc.parts[&id];
+    assert_eq!(part.kind, wordcraft_doc::PartKind::TextBox);
+    assert_eq!(part.body.anchor, wordcraft_doc::props::VAlign::Center);
+    assert_eq!(part.body.auto_color, Some(wordcraft_doc::props::Rgb::WHITE), "white on the dark fill");
+    let para = s.doc.para(StoryRef::Part(id), &wordcraft_doc::Path(vec![0])).unwrap();
+    assert_eq!(para.props.align, Some(wordcraft_doc::props::Align::Center));
+    // The caret is in the text: more typing goes on there.
+    assert_eq!(s.sel.focus.story, StoryRef::Part(id));
+    run(&mut s, "text.insert", json!({"text": "?"}));
+    assert_eq!(s.doc.plain_text(StoryRef::Part(id)).trim_end(), "Decide?");
+    assert_eq!(s.doc.parts.len(), 1, "one text, not one a letter");
+    // Undo takes the typing back, then the first letters with the text they made.
+    for _ in 0..4 {
+        if s.doc == before {
+            break;
+        }
+        run(&mut s, "edit.undo", json!({}));
+    }
+    assert_eq!(s.doc, before);
+}
+
+/// Add Text on a shape that has text puts the caret at its end and adds nothing; a light fill
+/// keeps automatic (black) text.
+#[test]
+fn add_text_enters_the_text_a_shape_has() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "fill": "FFF2CC"}));
+    let id = run(&mut s, "shape.addText", json!({}))["story"].as_u64().unwrap() as u32;
+    assert_eq!(s.doc.parts[&id].body.auto_color, None, "black on a light fill");
+    run(&mut s, "text.insert", json!({"text": "Start"}));
+    // Select the shape again, as a click on its edge does.
+    let anchor = s.doc.text_box_anchor(id).unwrap();
+    let start = wordcraft_doc::Pos { off: anchor.off - wordcraft_doc::para::OBJ.len_utf8(), ..anchor.clone() };
+    s.sel = crate::Selection { anchor: start, focus: anchor };
+    assert_eq!(run(&mut s, "shape.addText", json!({}))["story"].as_u64(), Some(u64::from(id)));
+    assert_eq!(s.doc.parts.len(), 1);
+    assert_eq!(s.sel, crate::Selection::caret(s.doc.end_of(StoryRef::Part(id))));
+    run(&mut s, "text.insert", json!({"text": " here"}));
+    assert_eq!(s.doc.plain_text(StoryRef::Part(id)).trim_end(), "Start here");
+}
+
+/// What holds no text is typed over as before: a line, a connector, a picture's place in the
+/// text. And a caret beside a shape types beside it, not in it.
+#[test]
+fn typing_goes_into_closed_shapes_only() {
+    for kind in ["line", "elbowConnector"] {
+        let mut s = s();
+        run(&mut s, "insert.shape", json!({"kind": kind}));
+        assert!(!cmd::objects::takes_typing(&s), "{kind}");
+        assert!(s.run("shape.addText", &json!({})).is_err(), "{kind}");
+        run(&mut s, "text.insert", json!({"text": "x"}));
+        assert!(s.doc.parts.is_empty(), "{kind}");
+        assert_eq!(s.doc.plain_text(StoryRef::Body).trim_end(), "x", "{kind}: typed over, as before");
+    }
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle"}));
+    // The caret after the shape (it is inline): typing is the paragraph's.
+    s.sel = crate::Selection::caret(s.sel.ordered().1);
+    assert!(!cmd::objects::takes_typing(&s));
+    run(&mut s, "text.insert", json!({"text": "beside"}));
+    assert!(s.doc.parts.is_empty());
+    assert!(s.doc.plain_text(StoryRef::Body).contains("beside"));
+}
+
 /// The same for the preset a DOCX file gave a shape: a hexagon WordCraft shows as a rectangle is
 /// saved as a hexagon, but made an oval it is an oval, and is saved as one.
 #[test]

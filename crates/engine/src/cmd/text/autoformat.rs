@@ -63,6 +63,10 @@ pub(super) fn typing_options(s: &mut Session, text: &str) {
 pub(super) fn insert(s: &mut Session, v: &Value) -> CmdResult {
     let text = p::req_str(v, "text")?;
     let raw = p::bool(v, "raw").unwrap_or(false);
+    // Typing with a shape selected types in the shape, as in Word: it does not replace it.
+    if crate::cmd::objects::takes_typing(s) {
+        crate::cmd::objects::enter_text(s)?;
+    }
     if p::bool(v, "paragraphs").unwrap_or(false) {
         return insert_paragraphs(s, text);
     }

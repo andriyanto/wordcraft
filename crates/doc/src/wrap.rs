@@ -122,6 +122,55 @@ pub fn shape_outline(kind: ShapeKind, w: f32, h: f32, corner: Option<u32>) -> Op
     Some(pts)
 }
 
+/// The room a `kind` shape gives its text: how far inside its `w` × `h` frame the text rectangle
+/// lies, as (left, top, right, bottom) in the frame's units, before the text's own internal
+/// margins. Zero on every side where the text fills the frame (rectangles, text boxes). The
+/// rectangles are those the outlines of [`shape_outline`] leave free: an ellipse's inscribed
+/// rectangle, the middle of a diamond, the lower half of a triangle, a block arrow's shaft.
+/// Without them a diamond's text ran from corner to corner of its frame, across its outline.
+pub fn text_insets(kind: ShapeKind, w: f32, h: f32, corner: Option<u32>) -> [f32; 4] {
+    use std::f32::consts::FRAC_1_SQRT_2;
+    let pos = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0e6) } else { 0.0 };
+    let (w, h) = (pos(w), pos(h));
+    // Shares of the width (left, right) and of the height (top, bottom).
+    let [l, t, r, b]: [f32; 4] = match kind {
+        ShapeKind::Rectangle
+        | ShapeKind::TextBox
+        | ShapeKind::Line
+        | ShapeKind::Freeform
+        | ShapeKind::StraightConnector
+        | ShapeKind::ElbowConnector
+        | ShapeKind::CurvedConnector => return [0.0; 4],
+        ShapeKind::RoundedRectangle => {
+            // Clear of the corner arcs: what a corner's radius cuts off at 45°.
+            let i = crate::connector::corner_radius(corner, w, h) * (1.0 - FRAC_1_SQRT_2);
+            return [i; 4];
+        }
+        ShapeKind::Ellipse | ShapeKind::FlowchartOr => [(1.0 - FRAC_1_SQRT_2) / 2.0; 4],
+        ShapeKind::Diamond => [0.25; 4],
+        ShapeKind::Triangle => [0.25, 0.5, 0.25, 0.0],
+        ShapeKind::RightTriangle => [1.0 / 12.0, 7.0 / 12.0, 5.0 / 12.0, 1.0 / 12.0],
+        ShapeKind::Arrow | ShapeKind::ArrowLeft | ShapeKind::ArrowUp | ShapeKind::ArrowDown => {
+            // The shaft (40% of the thickness, see `arrow_outline`), and into the head as far as
+            // the head is still as wide as the shaft.
+            let vertical = matches!(kind, ShapeKind::ArrowUp | ShapeKind::ArrowDown);
+            let (len, thick) = if vertical { (h, w) } else { (w, h) };
+            let head = if len > 0.0 { (0.5 * thick / len).min(1.0) } else { 0.5 };
+            let tip = 0.4 * head;
+            match kind {
+                ShapeKind::ArrowLeft => [tip, 0.3, 0.0, 0.3],
+                ShapeKind::ArrowUp => [0.3, tip, 0.3, 0.0],
+                ShapeKind::ArrowDown => [0.3, 0.0, 0.3, tip],
+                _ => [0.0, 0.3, tip, 0.3],
+            }
+        }
+        // Inside the star's inner pentagon, and the heart below its notch.
+        ShapeKind::Star => [0.38, 0.34, 0.38, 0.40],
+        ShapeKind::Heart => [0.18, 0.30, 0.18, 0.38],
+    };
+    [l * w, t * h, r * w, b * h]
+}
+
 /// A block arrow's outline in unit coordinates (0..1 across a `w` × `h` frame), pointing the way
 /// `kind` says (right for anything but the left, up and down arrows). The head is half the arrow's
 /// thickness long, the shaft 40% of the thickness thick.
@@ -220,6 +269,75 @@ fn simplify_convex(mut pts: Vec<(i32, i32)>, max: usize) -> Vec<(i32, i32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Whether unit point `p` is inside (or on) the polygon `poly`, with a little slack.
+    fn inside(poly: &[(f32, f32)], p: (f32, f32)) -> bool {
+        // Even-odd rule, and a point within 0.02 of a corner or an edge counts as on it.
+        let near = poly.iter().zip(poly.iter().cycle().skip(1)).any(|(a, b)| {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let len2 = dx * dx + dy * dy;
+            let t = if len2 > 0.0 { (((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len2).clamp(0.0, 1.0) } else { 0.0 };
+            let (qx, qy) = (a.0 + t * dx - p.0, a.1 + t * dy - p.1);
+            (qx * qx + qy * qy).sqrt() < 0.02
+        });
+        let mut odd = false;
+        for (a, b) in poly.iter().zip(poly.iter().cycle().skip(1)) {
+            if (a.1 > p.1) != (b.1 > p.1) && p.0 < a.0 + (p.1 - a.1) * (b.0 - a.0) / (b.1 - a.1) {
+                odd = !odd;
+            }
+        }
+        near || odd
+    }
+
+    /// A shape's text rectangle lies inside the outline drawn for it, at every proportion: the
+    /// text of a diamond or a triangle ran across its outline when it had the whole frame.
+    #[test]
+    fn a_shapes_text_rectangle_lies_inside_its_outline() {
+        let closed = [
+            ShapeKind::RoundedRectangle,
+            ShapeKind::Ellipse,
+            ShapeKind::FlowchartOr,
+            ShapeKind::Triangle,
+            ShapeKind::RightTriangle,
+            ShapeKind::Diamond,
+            ShapeKind::Arrow,
+            ShapeKind::ArrowLeft,
+            ShapeKind::ArrowUp,
+            ShapeKind::ArrowDown,
+            ShapeKind::Star,
+            ShapeKind::Heart,
+        ];
+        for kind in closed {
+            for (w, h) in [(100.0, 100.0), (200.0, 50.0), (40.0, 160.0), (300.0, 20.0)] {
+                let [l, t, r, b] = text_insets(kind, w, h, None);
+                assert!(l >= 0.0 && t >= 0.0 && r >= 0.0 && b >= 0.0, "{kind:?} {w}×{h}");
+                assert!(l + r < w && t + b < h, "{kind:?} {w}×{h} leaves room: {l} {t} {r} {b}");
+                assert!(l + t + r + b > 0.0, "{kind:?} {w}×{h}: the frame is not this shape's text rectangle");
+                let outline = shape_outline(kind, w, h, None).unwrap();
+                for (x, y) in [(l, t), (w - r, t), (w - r, h - b), (l, h - b)] {
+                    assert!(inside(&outline, (x / w, y / h)), "{kind:?} {w}×{h}: corner {x},{y} of the text rectangle is outside the shape");
+                }
+            }
+        }
+        // A rectangle's text has its frame, and so has a text box's.
+        for kind in [ShapeKind::Rectangle, ShapeKind::TextBox, ShapeKind::Freeform, ShapeKind::Line, ShapeKind::ElbowConnector] {
+            assert_eq!(text_insets(kind, 100.0, 50.0, None), [0.0; 4], "{kind:?}");
+        }
+        // A rounded rectangle's follows its corner.
+        let small = text_insets(ShapeKind::RoundedRectangle, 100.0, 100.0, Some(5_000))[0];
+        let large = text_insets(ShapeKind::RoundedRectangle, 100.0, 100.0, Some(50_000))[0];
+        assert!(small < large, "{small} {large}");
+    }
+
+    #[test]
+    fn text_insets_of_sizes_that_are_no_sizes_are_finite() {
+        for kind in [ShapeKind::Ellipse, ShapeKind::Arrow, ShapeKind::ArrowUp, ShapeKind::RoundedRectangle, ShapeKind::Star] {
+            for (w, h) in [(0.0, 0.0), (f32::NAN, 10.0), (10.0, f32::INFINITY), (-5.0, -5.0), (f32::MAX, f32::MAX), (1.0, 0.0)] {
+                let insets = text_insets(kind, w, h, Some(u32::MAX));
+                assert!(insets.iter().all(|v| v.is_finite() && *v >= 0.0), "{kind:?} {w}×{h}: {insets:?}");
+            }
+        }
+    }
 
     #[test]
     fn polygon_caps_and_clamps() {
