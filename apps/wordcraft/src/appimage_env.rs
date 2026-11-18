@@ -4,6 +4,8 @@
 //! it is mounted), `ARGV0` and `OWD`, and whatever that program starts inherits them. So an AppImage
 //! app that opens a document through `xdg-open` starts an installed WordCraft with *its* `APPIMAGE`,
 //! and the self-update, which trusts that variable, replaces the other app's file with WordCraft.
+//! (This copy no longer installs updates itself; the variables are dropped all the same, so
+//! nothing else takes another program's image for this one.)
 //!
 //! This copy is in the image only when its executable is under `APPDIR`. Otherwise the variables
 //! are another program's, and the process starts over without them, before anything reads them.
