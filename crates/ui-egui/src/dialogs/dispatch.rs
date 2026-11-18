@@ -1177,7 +1177,6 @@ fn about_dialog(ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.label(tl!("A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team."));
             ui.add_space(6.0);
             ui.hyperlink_to(tl!("getartcraft.com/apps/wordcraft"), "https://getartcraft.com/apps/wordcraft");
-            ui.hyperlink_to(tl!("Join us on Discord: discord.gg/artcraft"), "https://discord.gg/artcraft");
             ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
             // This copy is built from its own repository: where to get it and its source.
             ui.hyperlink_to(tl!("Get this build: github.com/andriyanto/wordcraft/releases"), "https://github.com/andriyanto/wordcraft/releases");
