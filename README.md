@@ -470,7 +470,7 @@ The maintainer of this repository receives no data from the app.
 
 ## Code signing policy
 
-**Status: the builds published so far (up to v1.0.1) are not code-signed.** Windows installers
+**Status: the builds published so far (up to v1.0.2) are not code-signed.** Windows installers
 and executables carry no signature, and the macOS builds carry an ad-hoc signature and are not
 notarized. Verify a download against `SHA256SUMS.txt` in the same release.
 
