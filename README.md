@@ -280,9 +280,11 @@ closer pagination fidelity, a stability sweep and native printing. Details and e
 
 These are this repository's own builds, and they are **not code-signed yet**
 ([Code signing policy](#code-signing-policy)). Until they are, Windows SmartScreen and macOS
-Gatekeeper warn before the first start, and the Windows and macOS apps tell you about a new
-release but do not install it themselves: download the new version here. The original project's
-signed builds are on [its own releases page](https://github.com/storytold/wordcraft/releases).
+Gatekeeper warn before the first start. The app tells you about a new release but never
+installs it itself, on any system: **Download** in that prompt, and **Help ▸ Download Latest…**
+at any time, open the release's page in your browser, and you download and run the new version
+yourself. The original project's signed builds are on
+[its own releases page](https://github.com/storytold/wordcraft/releases).
 
 ### Windows
 
@@ -342,7 +344,7 @@ adapter. The log file records the choice (lines starting with
 
 | Format | x86_64 | aarch64 (ARM64) | Notes |
 |---|---|---|---|
-| AppImage | `wordcraft-<ver>-linux-x86_64.AppImage` | `wordcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
+| AppImage | `wordcraft-<ver>-linux-x86_64.AppImage` | `wordcraft-<ver>-linux-aarch64.AppImage` | Runs anywhere; can be updated with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
 | Debian/Ubuntu | `wordcraft-<ver>-linux-x86_64.deb` | `wordcraft-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `wordcraft-<ver>-linux-x86_64.rpm` | `wordcraft-<ver>-linux-aarch64.rpm` | |
 | Tarball | `wordcraft-<ver>-linux-x86_64.tar.gz` | `wordcraft-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
@@ -451,8 +453,8 @@ The builds published from this repository connect to the network in these cases 
 
 | When | Where | What is sent |
 |---|---|---|
-| Each time the desktop app starts, and when you choose **Help ▸ Check for Updates** | GitHub (`api.github.com`, `github.com`): the releases of `andriyanto/wordcraft` | A request for the latest release, labelled `WordCraft/Update`. Nothing about you, your computer or your documents. Like any web request, it shows GitHub your IP address. |
-| When you accept an update the app offers (builds that can install updates) | GitHub: the release's files | The download request. |
+| Each time the desktop app starts, and when you choose **Help ▸ Check for Updates** | GitHub (`api.github.com`): the list of releases of `andriyanto/wordcraft` | One request for that list, labelled `WordCraft/Update`. Nothing about you, your computer or your documents. Like any web request, it shows GitHub your IP address. |
+| When you press **Download** in the update prompt, or choose **Help ▸ Download Latest…** | Your web browser opens the release's page on GitHub. The app downloads and installs nothing itself | Whatever your browser sends. |
 | When you click **Install** or **Add a language…** for a Language pack or font. Downloading is off until you do, and stays on afterwards, when the app may also fetch the list of packs once at start | GitHub (`github.com`, `raw.githubusercontent.com`) and jsDelivr (`cdn.jsdelivr.net`) | The download requests. |
 | When you click a link in a document or in Help | Your web browser opens the address | Whatever your browser sends. |
 

@@ -6,9 +6,8 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 /// The GitHub repository this WordCraft's releases come from: the only place it looks for a newer
-/// version, and the only place an update is downloaded from. This project is developed on its
-/// own, so that is its own repository, not the one craft-update lists for the Craft App Suite.
-#[cfg(not(target_arch = "wasm32"))]
+/// version, and the page Download opens. This project is developed on its own, so that is its own
+/// repository, not the one craft-update lists for the Craft App Suite.
 pub const UPDATE_REPO: &str = "andriyanto/wordcraft";
 
 /// WordCraft as craft-update knows it, with its 128 px icon and accent colour: the update

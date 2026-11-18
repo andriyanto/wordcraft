@@ -6832,7 +6832,6 @@ dependencies = [
  "clipboard-win",
  "craft-print",
  "craft-proof",
- "craft-update",
  "dispatch2",
  "eframe",
  "egui",

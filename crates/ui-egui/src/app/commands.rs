@@ -515,6 +515,10 @@ impl WordApp {
                 crate::updates_ui::check(self);
                 Value::Null
             }
+            "ui.downloadUpdate" | "help.downloadUpdate" => {
+                crate::updates_ui::download(self);
+                Value::Null
+            }
             "ui.tab" => {
                 let tab = s("tab").unwrap_or("Home").to_string();
                 if tab == "File" {
@@ -1124,6 +1128,7 @@ pub(crate) fn works_without_document(id: &str) -> bool {
             | "ui.displayServer"
             | "ui.statusCount"
             | "ui.checkForUpdates"
+            | "ui.downloadUpdate"
     ) || id.starts_with("help.")
 }
 
