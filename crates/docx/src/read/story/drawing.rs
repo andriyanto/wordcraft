@@ -573,6 +573,10 @@ impl Reader<'_> {
             kind = ShapeKind::Freeform;
             Arc::new(f)
         });
+        // The preset as the file names it, where the kind alone would save another shape.
+        if let Some(geom) = sppr.and_then(|s| s.child("a:prstGeom")) {
+            extra.preset = crate::read::shape_style::kept_preset(prst, preset_adjust(geom), kind);
+        }
         InlineObject::Shape { kind, w, h, fill, stroke, stroke_width, float, story, freeform, effects, extra }
     }
 
@@ -731,6 +735,19 @@ fn text_warp(e: &El) -> Option<TextWarp> {
 }
 
 /// A preset geometry's adjust value `name` (`a:avLst/a:gd` with `fmla="val N"`).
+/// A preset geometry's adjust values (`a:avLst/a:gd`: `name`, `fmla="val n"`), as written: those
+/// with a number that fits. Bounded by what [`wordcraft_doc::connector::PresetGeom`] keeps.
+fn preset_adjust(geom: &El) -> Vec<(String, i32)> {
+    let Some(list) = geom.child("a:avLst") else { return Vec::new() };
+    list.children("a:gd")
+        .filter_map(|gd| {
+            let value = gd.attr("fmla")?.trim().strip_prefix("val")?.trim().parse::<i32>().ok()?;
+            Some((gd.attr("name")?.to_string(), value))
+        })
+        .take(wordcraft_doc::connector::PresetGeom::MAX_ADJUST)
+        .collect()
+}
+
 fn preset_adj(geom: &El, name: &str) -> Option<i64> {
     let gd = geom.child("a:avLst")?.children("a:gd").find(|g| g.attr("name") == Some(name))?;
     gd.attr("fmla")?.trim().strip_prefix("val")?.trim().parse::<i64>().ok()

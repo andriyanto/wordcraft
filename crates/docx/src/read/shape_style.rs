@@ -51,14 +51,79 @@ pub(crate) fn preset_kind(prst: &str) -> ShapeKind {
     }
 }
 
+/// The DrawingML preset a shape of `kind` is saved as when nothing more is known about it (see
+/// [`kept_preset`]). A text box and a freeform are rectangles here: the one is told apart by
+/// `txBox`, the other is saved as its own custom geometry.
+pub(crate) fn kind_preset(kind: ShapeKind) -> &'static str {
+    match kind {
+        ShapeKind::Rectangle | ShapeKind::TextBox | ShapeKind::Freeform => "rect",
+        ShapeKind::RoundedRectangle => "roundRect",
+        ShapeKind::Ellipse => "ellipse",
+        ShapeKind::FlowchartOr => "flowChartOr",
+        ShapeKind::Triangle => "triangle",
+        ShapeKind::RightTriangle => "rtTriangle",
+        ShapeKind::Diamond => "diamond",
+        ShapeKind::Line => "line",
+        ShapeKind::StraightConnector => "straightConnector1",
+        ShapeKind::ElbowConnector => "bentConnector3",
+        ShapeKind::CurvedConnector => "curvedConnector3",
+        ShapeKind::Arrow => "rightArrow",
+        ShapeKind::ArrowLeft => "leftArrow",
+        ShapeKind::ArrowUp => "upArrow",
+        ShapeKind::ArrowDown => "downArrow",
+        ShapeKind::Star => "star5",
+        ShapeKind::Heart => "heart",
+    }
+}
+
+/// The preset geometry to keep with a shape read as `kind` from preset `prst` with the adjust
+/// values `adjust`, so that saving writes the file's own shape back: `None` when `kind` alone
+/// says it all (its own preset, no adjust values), for a rounded rectangle (its corner is the
+/// shape's own, and can be changed), for a freeform, and for a name that can't be written back.
+/// Without it a hexagon, shown as a rectangle, was saved as a rectangle.
+pub(crate) fn kept_preset(
+    prst: &str,
+    adjust: impl IntoIterator<Item = (String, i32)>,
+    kind: ShapeKind,
+) -> Option<Arc<wordcraft_doc::connector::PresetGeom>> {
+    if kind == ShapeKind::Freeform || (kind == ShapeKind::RoundedRectangle && prst == "roundRect") {
+        return None;
+    }
+    let geom = wordcraft_doc::connector::PresetGeom::new(prst, adjust)?;
+    (geom.name != kind_preset(kind) || !geom.adjust.is_empty()).then(|| Arc::new(geom))
+}
+
+/// Whether a shape of `kind` can be saved as the kept preset `geom`: the preset is one WordCraft
+/// draws as that kind (a text box takes any: it is a shape with text in it), and its names can
+/// stand in a file. A preset left on a shape that was since made another kind is not saved.
+pub(crate) fn preset_fits(geom: &wordcraft_doc::connector::PresetGeom, kind: ShapeKind) -> bool {
+    use wordcraft_doc::connector::PresetGeom;
+    PresetGeom::valid_name(&geom.name)
+        && geom.adjust.len() <= PresetGeom::MAX_ADJUST
+        && geom.adjust.iter().all(|(n, _)| PresetGeom::valid_name(n))
+        && kind != ShapeKind::Freeform
+        && (kind == ShapeKind::TextBox || preset_kind(&geom.name) == kind)
+}
+
 /// The shape kind drawn for a legacy VML preset shape type `spt` (`o:spt`, the MSOSPT numbers of
 /// [MS-ODRAW] §2.4.24): that of the DrawingML preset of the same shape, through [`preset_kind`],
 /// so a preset WordCraft has no shape for is drawn as the nearest one; None for shapes with no
 /// preset geometry (freeforms, WordArt text, picture frames) and numbers MSOSPT doesn't define.
 pub(crate) fn vml_preset_kind(spt: u32) -> Option<ShapeKind> {
+    // A text box's shapetype: a text box even without text, as DrawingML's `txBox`.
+    if spt == 202 {
+        return Some(ShapeKind::TextBox);
+    }
+    vml_preset(spt).map(preset_kind)
+}
+
+/// The DrawingML preset of the same shape as legacy VML shape type `spt`, where this table knows
+/// it; `rect` for the presets it doesn't name; None for a text box (202), shapes with no preset
+/// geometry and numbers MSOSPT doesn't define.
+pub(crate) fn vml_preset(spt: u32) -> Option<&'static str> {
     let prst = match spt {
-        // A text box's shapetype: a text box even without text, as DrawingML's `txBox`.
-        202 => return Some(ShapeKind::TextBox),
+        // A text box (see `vml_preset_kind`).
+        202 => return None,
         // Not primitive (freeform), WordArt text shapes, picture frame, host control.
         0 | 24..=31 | 75 | 136..=175 | 201 => return None,
         // Line and straight connector: corner to corner of the shape's box.
@@ -107,7 +172,7 @@ pub(crate) fn vml_preset_kind(spt: u32) -> Option<ShapeKind> {
         1..=201 => "rect",
         _ => return None,
     };
-    Some(preset_kind(prst))
+    Some(prst)
 }
 
 /// A shape's fill and outline.

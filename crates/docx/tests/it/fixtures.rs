@@ -2713,6 +2713,179 @@ fn rounded_rectangle_corners_are_read_and_saved() {
     assert_eq!(corners(&wordcraft_docx::read(&bytes).unwrap()), expected);
 }
 
+/// The shapes of a paragraph: kind and kept preset (name and adjust values).
+fn shape_presets(d: &Document) -> Vec<(ShapeKind, Option<(String, Vec<(String, i32)>)>)> {
+    paras(d)[0]
+        .objects
+        .iter()
+        .filter_map(|o| match o {
+            InlineObject::Shape { kind, extra, .. } => Some((*kind, extra.preset.as_deref().map(|p| (p.name.clone(), p.adjust.clone())))),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `word/document.xml` of a written package.
+fn written_document_xml(bytes: &[u8]) -> String {
+    let mut xml = String::new();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    std::io::Read::read_to_string(&mut zip.by_name("word/document.xml").unwrap(), &mut xml).unwrap();
+    xml
+}
+
+/// A preset WordCraft draws as another shape is saved as the file's own. A hexagon, shown as a
+/// rectangle, was saved as a rectangle: the shape was gone from the file, and the same went for
+/// every preset beyond the few WordCraft draws, and for every adjust value but a rounded
+/// rectangle's corner.
+#[test]
+fn presets_drawn_as_another_shape_are_saved_as_the_file_had_them() {
+    use ShapeKind::*;
+    let geom = |prst: &str, av: &str| {
+        format!(r#"<a:prstGeom prst="{prst}"><a:avLst>{av}</a:avLst></a:prstGeom><a:solidFill><a:srgbClr val="D9D9D9"/></a:solidFill>"#)
+    };
+    let gd = |name: &str, v: i64| format!(r#"<a:gd name="{name}" fmla="val {v}"/>"#);
+    let adj = |pairs: &[(&str, i32)]| pairs.iter().map(|(n, v)| gd(n, i64::from(*v))).collect::<String>();
+    // (preset, adjust values, the kind it is drawn as)
+    let cases: Vec<(&str, Vec<(&str, i32)>, ShapeKind)> = vec![
+        ("hexagon", vec![("adj", 25000), ("vf", 115470)], Rectangle),
+        ("parallelogram", vec![], Rectangle),
+        ("flowChartDocument", vec![], Rectangle),
+        ("flowChartDecision", vec![], Diamond),
+        ("leftRightArrow", vec![("adj1", 50000), ("adj2", 30000)], Arrow),
+        ("star8", vec![("adj", 37500)], Star),
+        ("wedgeEllipseCallout", vec![("adj1", -20833), ("adj2", 62500)], Ellipse),
+        ("round2SameRect", vec![("adj1", 16667), ("adj2", 0)], RoundedRectangle),
+        ("bentConnector2", vec![], ElbowConnector),
+        // WordCraft's own preset for the kind, with an adjust value it does not draw.
+        ("triangle", vec![("adj", 20000)], Triangle),
+        ("bentConnector3", vec![("adj1", 72000)], ElbowConnector),
+    ];
+    let body = cases
+        .iter()
+        .map(|(prst, av, kind)| {
+            let nv = if kind.is_connector() { "<wps:cNvCnPr/>" } else { "<wps:cNvSpPr/>" };
+            anchored_wsp("Preset", 2540000, 1270000, &geom(prst, &adj(av)), "", nv)
+        })
+        .collect::<String>();
+    let expected: Vec<_> = cases
+        .iter()
+        .map(|(prst, av, kind)| (*kind, Some((prst.to_string(), av.iter().map(|(n, v)| (n.to_string(), *v)).collect::<Vec<_>>()))))
+        .collect();
+    let d = read_body(&format!("<w:p>{body}</w:p>"));
+    assert_eq!(shape_presets(&d), expected);
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let xml = written_document_xml(&bytes);
+    for (prst, av, _) in &cases {
+        let list = if av.is_empty() { "<a:avLst/>".to_string() } else { format!("<a:avLst>{}</a:avLst>", adj(av)) };
+        let want = format!(r#"<a:prstGeom prst="{prst}">{list}</a:prstGeom>"#);
+        assert!(xml.contains(&want), "{want} is not in {xml}");
+    }
+    // And once more: what was written reads back the same.
+    assert_eq!(shape_presets(&wordcraft_docx::read(&bytes).unwrap()), expected);
+}
+
+/// What a kind says by itself is not kept twice, and a rounded rectangle keeps its corner as the
+/// shape's own (it can be changed), not as a kept preset.
+#[test]
+fn a_kinds_own_preset_is_not_kept() {
+    let geom = |prst: &str, av: &str| format!(r#"<a:prstGeom prst="{prst}"><a:avLst>{av}</a:avLst></a:prstGeom>"#);
+    let body = [
+        anchored_wsp("Rect", 2540000, 1270000, &geom("rect", ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Oval", 2540000, 1270000, &geom("ellipse", ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Rounded", 2540000, 1270000, &geom("roundRect", r#"<a:gd name="adj" fmla="val 3565"/>"#), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Elbow", 2540000, 1270000, &geom("bentConnector3", ""), "", "<wps:cNvCnPr/>"),
+    ]
+    .concat();
+    let d = read_body(&format!("<w:p>{body}</w:p>"));
+    assert_eq!(
+        shape_presets(&d),
+        [(ShapeKind::Rectangle, None), (ShapeKind::Ellipse, None), (ShapeKind::RoundedRectangle, None), (ShapeKind::ElbowConnector, None)]
+    );
+}
+
+/// A shape with text in a preset keeps the preset: a text box drawn in an oval or a hexagon was
+/// saved as a rectangle.
+#[test]
+fn a_text_box_keeps_the_preset_it_is_drawn_in() {
+    let text = r#"<wps:txbx><w:txbxContent><w:p><w:r><w:t>Start</w:t></w:r></w:p></w:txbxContent></wps:txbx>"#;
+    let body = [
+        anchored_wsp("Hex", 2540000, 1270000, r#"<a:prstGeom prst="hexagon"><a:avLst/></a:prstGeom>"#, "", &format!("<wps:cNvSpPr/>{text}")),
+        anchored_wsp(
+            "Oval",
+            2540000,
+            1270000,
+            r#"<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>"#,
+            "",
+            &format!(r#"<wps:cNvSpPr txBox="1"/>{text}"#),
+        ),
+    ]
+    .concat();
+    let d = read_body(&format!("<w:p>{body}</w:p>"));
+    let expected = [(ShapeKind::TextBox, Some(("hexagon".to_string(), vec![]))), (ShapeKind::TextBox, Some(("ellipse".to_string(), vec![])))];
+    assert_eq!(shape_presets(&d), expected);
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let xml = written_document_xml(&bytes);
+    assert!(
+        xml.contains(r#"<a:prstGeom prst="hexagon"><a:avLst/></a:prstGeom>"#)
+            && xml.contains(r#"<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>"#),
+        "{xml}"
+    );
+    assert_eq!(shape_presets(&wordcraft_docx::read(&bytes).unwrap()), expected);
+}
+
+/// Names and numbers from a file are kept only when they can be written back as they are: a
+/// name that is no plain word, a formula that is no number or a number that doesn't fit is left
+/// out, and no shape keeps more adjust values than a preset can have.
+#[test]
+fn a_kept_preset_takes_only_what_can_be_written_back() {
+    let geom = |prst: &str, av: &str| format!(r#"<a:prstGeom prst="{prst}"><a:avLst>{av}</a:avLst></a:prstGeom>"#);
+    let many = (0..200).map(|i| format!(r#"<a:gd name="adj{i}" fmla="val {i}"/>"#)).collect::<String>();
+    let odd = concat!(
+        r#"<a:gd name="adj" fmla="val 99999999999999999999"/>"#,
+        r#"<a:gd name="adj 2" fmla="val 5"/>"#,
+        r#"<a:gd name="&quot;&gt;&lt;x" fmla="val 5"/>"#,
+        r#"<a:gd name="adj3" fmla="*/ w 1 2"/>"#,
+        r#"<a:gd fmla="val 5"/>"#,
+        r#"<a:gd name="adj4" fmla="val -7"/>"#,
+    );
+    let long = "a".repeat(200);
+    let body = [
+        anchored_wsp("Many", 2540000, 1270000, &geom("hexagon", &many), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Odd", 2540000, 1270000, &geom("hexagon", odd), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Long", 2540000, 1270000, &geom(&long, ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Space", 2540000, 1270000, &geom("hex agon", ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Markup", 2540000, 1270000, &geom("&quot;/&gt;&lt;a:x", ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Digit", 2540000, 1270000, &geom("8star", ""), "", "<wps:cNvSpPr/>"),
+        anchored_wsp("Empty", 2540000, 1270000, &geom("", ""), "", "<wps:cNvSpPr/>"),
+    ]
+    .concat();
+    let d = read_body(&format!("<w:p>{body}</w:p>"));
+    let got = shape_presets(&d);
+    let kept = |i: usize| got[i].1.clone();
+    assert_eq!(kept(0).map(|(n, a)| (n, a.len())), Some(("hexagon".to_string(), 16)), "sixteen at most");
+    assert_eq!(kept(1), Some(("hexagon".to_string(), vec![("adj4".to_string(), -7)])));
+    for (i, shape) in got.iter().enumerate().skip(2) {
+        assert_eq!(*shape, (ShapeKind::Rectangle, None), "shape {i}");
+    }
+    assert_eq!(got.len(), 7);
+    // Saving writes nothing a reader would trip on: the file reads back the same.
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    assert_eq!(shape_presets(&wordcraft_docx::read(&bytes).unwrap()), got);
+    // A preset put on a shape by hand (a `.json` document) with names that can't stand in a
+    // file, or one for another kind, is not written: the shape is saved as its kind.
+    let mut d = d;
+    for (i, (name, adjust)) in [("hex\"agon", vec![]), ("hexagon", vec![("a b".to_string(), 1)]), ("ellipse", vec![])].into_iter().enumerate() {
+        let Some(wordcraft_doc::Block::Para(p)) = d.body.get_mut(0).map(std::sync::Arc::make_mut) else { panic!("a paragraph") };
+        let mut objects = p.objects.iter_mut().filter(|o| matches!(o, InlineObject::Shape { .. }));
+        if let Some(InlineObject::Shape { kind, extra, .. }) = objects.nth(i) {
+            *kind = ShapeKind::Rectangle;
+            extra.preset = Some(std::sync::Arc::new(wordcraft_doc::connector::PresetGeom { name: name.to_string(), adjust }));
+        }
+    }
+    let xml = written_document_xml(&wordcraft_docx::write(&d).unwrap());
+    assert!(!xml.contains("hex\"agon") && !xml.contains("a b") && !xml.contains(r#"prst="ellipse""#), "{xml}");
+}
+
 /// #611: legacy VML lines and rectangles (documents without DrawingML).
 #[test]
 fn vml_lines_and_rectangles() {
@@ -2939,6 +3112,26 @@ fn vml_nearest_preset_shape_survives_saving() {
         "{:?}",
         paras(&again)[0].objects
     );
+}
+
+/// A VML preset drawn as another shape (an eight-point star, `o:spt` 58, drawn with five points;
+/// a decision box, 110, drawn as a diamond) is saved as its own DrawingML preset, not as the
+/// shape WordCraft showed. A preset WordCraft draws as itself (a diamond, 4) keeps nothing.
+#[test]
+fn vml_presets_drawn_as_another_shape_are_saved_as_their_own() {
+    let shape =
+        |spt: u32| format!(r##"<w:r><w:pict><v:shape type="#_x0000_t{spt}" style="width:60pt;height:40pt" fillcolor="#ffa500"/></w:pict></w:r>"##);
+    let d = read_body(&format!("<w:p>{}{}{}</w:p>", shape(58), shape(110), shape(4)));
+    let expected = [
+        (ShapeKind::Star, Some(("star8".to_string(), vec![]))),
+        (ShapeKind::Diamond, Some(("flowChartDecision".to_string(), vec![]))),
+        (ShapeKind::Diamond, None),
+    ];
+    assert_eq!(shape_presets(&d), expected);
+    let saved = wordcraft_docx::write(&d).unwrap();
+    let xml = written_document_xml(&saved);
+    assert!(xml.contains(r#"prst="star8""#) && xml.contains(r#"prst="flowChartDecision""#) && xml.contains(r#"prst="diamond""#), "{xml}");
+    assert_eq!(shape_presets(&wordcraft_docx::read(&saved).unwrap()), expected);
 }
 
 /// #743: a cover page from Word: a group holding a rectangle filled through its style, a

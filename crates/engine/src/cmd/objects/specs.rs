@@ -329,6 +329,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     *k = kind;
                     // A geometry kept from a file is no longer this shape's.
                     extra.odf_geometry = None;
+                    extra.preset = None;
                 }
             })
         })
