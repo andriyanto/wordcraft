@@ -116,6 +116,31 @@ pub(super) fn copy_to(s: &mut Session, v: &Value) -> CmdResult {
     bounds(s, v)
 }
 
+/// Insert `obj` with its top-left at (x, y) on `page`, floating and selected: a shape drawn on the
+/// page with the mouse. It goes into the body (or the header or footer being edited) at the
+/// paragraph under that point, whatever the caret is in, and is then placed as a drag places it
+/// ([`move_object`]). Returns its position.
+pub(crate) fn insert_floating(s: &mut Session, obj: InlineObject, page: usize, x: f32, y: f32) -> Result<Pos, CmdError> {
+    let (x, y) = (wordcraft_geom::finite(x), wordcraft_geom::finite(y));
+    let story = if movable_story(s, s.sel.focus.story) { s.sel.focus.story } else { StoryRef::Body };
+    let (w, h) = obj_size(&obj);
+    let layout = s.layout();
+    if layout.pages.get(page).is_none() {
+        return Err(CmdError::Params(format!("no page {page}")));
+    }
+    let at = anchor_paragraph(&s.doc, &layout, page, (x + w / 2.0, y), story)
+        .map(|path| Pos { story, path, off: 0 })
+        .or_else(|| nearest_line(&layout, page, y, story))
+        .ok_or_else(|| CmdError::Params("no text on that page to anchor to".into()))?;
+    let at = s.doc.clamp(&at);
+    s.doc.insert_object(&at, obj, &wordcraft_doc::CharProps::default())?;
+    s.touch(); // lay it out before it is moved
+    s.page_hint = page;
+    let pos = move_object(s, at, u64::try_from(page).ok(), x, y, (w, h))?;
+    select_object(s, &pos);
+    Ok(pos)
+}
+
 /// Put the object at `pos` with its top-left at (x, y) on `page` (default: where it is), as a
 /// drag does in Word: it floats (an inline object gets Square wrapping) and anchors to the
 /// paragraph under its top edge, positioned relative to that paragraph's column and top. So the

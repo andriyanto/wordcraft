@@ -187,7 +187,7 @@ fn ensure_id(s: &mut Session, pos: &Pos) -> Result<u32, CmdError> {
 }
 
 /// `shape.connect`: glue, move or unglue the selected connector's ends.
-fn connect(s: &mut Session, v: &Value) -> CmdResult {
+pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
     let (pos, obj) = super::objects::selected(s).ok_or_else(|| CmdError::Disabled("select a connector first".into()))?;
     let InlineObject::Shape { kind, float, .. } = &obj else { return Err(CmdError::Disabled("select a connector first".into())) };
     if !kind.is_connector() {

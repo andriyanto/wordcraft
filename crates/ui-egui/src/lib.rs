@@ -77,6 +77,7 @@ pub mod ribbon_fit;
 pub mod rtl;
 pub mod ruler_tabs;
 pub mod scroll;
+pub mod shape_pen;
 pub mod system_clipboard;
 pub mod table_mouse;
 pub mod table_pen;
