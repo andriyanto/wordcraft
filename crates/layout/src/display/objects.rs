@@ -222,8 +222,12 @@ fn line_draws(
     extra: &wordcraft_doc::connector::ShapeExtra,
     out: &mut Vec<Draw>,
 ) {
-    use wordcraft_doc::connector::{connector_segs, end_direction};
-    match connector_segs(kind, rect.w, rect.h) {
+    use wordcraft_doc::connector::{connector_path, end_direction, path_direction};
+    let path = connector_path(kind, extra.preset.as_deref(), rect.w, rect.h);
+    // Where the arrowheads point: along a connector's first and last runs, along a line.
+    let heads =
+        [false, true].map(|at_end| path.as_deref().and_then(|p| path_direction(p, at_end)).unwrap_or_else(|| end_direction(rect.w, rect.h, at_end)));
+    match path {
         Some(segs) => {
             let segs = segs
                 .into_iter()
@@ -255,7 +259,7 @@ fn line_draws(
     let (start, end) = ((rect.x, rect.y), (rect.right(), rect.bottom()));
     for (on, tip, at_end, style) in [(extra.arrow_start, start, false, extra.start_style), (extra.arrow_end, end, true, extra.end_style)] {
         if on {
-            out.push(arrowhead(tip, end_direction(kind, rect.w, rect.h, at_end), stroke_width, style, color));
+            out.push(arrowhead(tip, heads[usize::from(at_end)], stroke_width, style, color));
         }
     }
 }

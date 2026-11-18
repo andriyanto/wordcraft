@@ -59,6 +59,9 @@ pub struct ObjectDrag {
     pending_behind: bool,
     /// Dragging a connector's end (false: its start, true: its end) to this page point.
     end: Option<(bool, (f32, f32))>,
+    /// Dragging one of a bent or curved connector's runs (its adjust value, 1–3) to this page
+    /// point.
+    bend: Option<(u8, (f32, f32))>,
     /// Ctrl/⌘ is held: dropping leaves the original and puts a copy at the new place.
     copy: bool,
     /// The alignment guides a move snapped to, shown while dragging ([`crate::guides`]).
@@ -75,14 +78,40 @@ const END_GRAB: f32 = 7.0;
 
 /// The selected connector's start and end on its page (points), and its layout.
 fn connector_ends(app: &WordApp, layout: &DocLayout) -> Option<(ObjectHit, (f32, f32), (f32, f32))> {
-    let (pos, InlineObject::Shape { kind, float, .. }) = selected(app)? else { return None };
+    let (pos, InlineObject::Shape { kind, .. }) = selected(app)? else { return None };
     if !kind.is_connector() {
         return None;
     }
-    let (flip_h, flip_v) = (float.flip_h, float.flip_v);
     let o = layout.object(&pos, app.session.page_hint)?;
-    let (a, b) = wordcraft_doc::connector::ends(o.rect.x, o.rect.y, o.rect.w, o.rect.h, flip_h, flip_v);
+    // The frame may be turned a quarter (a connector that leaves upwards or downwards).
+    let (a, b) = wordcraft_doc::connector::ends_spun([o.rect.x, o.rect.y, o.rect.w, o.rect.h], o.spin);
     Some((o, a, b))
+}
+
+/// A point of the connector `o`'s own frame, on its page.
+fn frame_point_on_page(o: &ObjectHit, (x, y): (f32, f32)) -> (f32, f32) {
+    let r = o.rect;
+    o.spin.apply(r.x + r.w / 2.0, r.y + r.h / 2.0, r.x + x, r.y + y)
+}
+
+/// The selected bent or curved connector's runs that can be moved: each one's adjust value and
+/// the middle of the run on its page, where its handle is; and the connector.
+fn connector_bends(app: &WordApp, layout: &DocLayout) -> Option<(ObjectHit, Vec<(u8, (f32, f32))>)> {
+    let (pos, InlineObject::Shape { kind, extra, .. }) = selected(app)? else { return None };
+    if !kind.is_connector() {
+        return None;
+    }
+    let o = layout.object(&pos, app.session.page_hint)?;
+    let handles = wordcraft_doc::connector::bend_handles(*kind, extra.preset.as_deref(), o.rect.w, o.rect.h);
+    let on_page = handles.into_iter().map(|b| (b.adjust, frame_point_on_page(&o, b.at))).collect();
+    Some((o, on_page))
+}
+
+/// The selected connector's run handle under `at` (screen): its adjust value, and the connector.
+fn connector_bend_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Pos2) -> Option<(ObjectHit, u8)> {
+    let (o, handles) = connector_bends(app, layout)?;
+    let hit = handles.into_iter().find(|(_, p)| point_on_screen(pages, scale, o.page, *p).is_some_and(|s| s.distance(at) <= END_GRAB))?;
+    Some((o, hit.0))
 }
 
 fn point_on_screen(pages: &[Rect], scale: f32, page: usize, (x, y): (f32, f32)) -> Option<Pos2> {
@@ -99,6 +128,53 @@ fn connector_end_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f3
         Some((o, false))
     } else {
         None
+    }
+}
+
+/// A press on the selected connector's end or on one of its runs' handles starts dragging it.
+fn press_connector_handle(app: &mut WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Pos2) -> bool {
+    let (object, end, bend) = if let Some((object, which)) = connector_end_at(app, layout, pages, scale, at) {
+        (object, Some((which, (0.0, 0.0))), None)
+    } else if let Some((object, run)) = connector_bend_at(app, layout, pages, scale, at) {
+        (object, None, Some((run, (0.0, 0.0))))
+    } else {
+        return false;
+    };
+    let drag = Drag::new(Grab::Move, object.page, object.rect, 0.0, at);
+    app.canvas.obj_drag = Some(ObjectDrag {
+        drag,
+        press_origin: pages.get(object.page).map_or(at, |p| p.min),
+        object,
+        min: 0.0,
+        picture: false,
+        pending_behind: false,
+        end,
+        bend,
+        guides: Vec::new(),
+        preview: None,
+        copy: false,
+        drop_at: None,
+    });
+    true
+}
+
+/// A connector's end or run being dragged: follow the pointer on the connector's page, and on
+/// release glue the end there (`shape.connect`) or move the run there (`shape.bend`).
+fn drag_connector_handle(app: &mut WordApp, ui: &Ui, pages: &[Rect], layout: &DocLayout, scale: f32, at: Pos2, mut d: ObjectDrag) {
+    if ui.input(|i| i.pointer.primary_down()) {
+        if let Some((_, x, y)) = crate::canvas::page_at(pages, layout, scale, at).filter(|(p, ..)| *p == d.object.page) {
+            d.end = d.end.map(|(which, _)| (which, (x, y)));
+            d.bend = d.bend.map(|(run, _)| (run, (x, y)));
+            d.drag.moved = true;
+        }
+        app.canvas.obj_drag = Some(d);
+    } else if d.drag.moved {
+        if let Some((which, (x, y))) = d.end {
+            let key = if which { "end" } else { "start" };
+            let _ = app.run("shape.connect", json!({key: {"x": x, "y": y, "page": d.object.page}}));
+        } else if let Some((run, (x, y))) = d.bend {
+            let _ = app.run("shape.bend", json!({"handle": run, "x": x, "y": y}));
+        }
     }
 }
 
@@ -274,19 +350,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             app.canvas.cancel_text_drag();
             d.pending_behind = false;
         }
-        if let Some((which, _)) = d.end {
-            if ui.input(|i| i.pointer.primary_down()) {
-                if let Some((_, x, y)) = crate::canvas::page_at(pages, layout, scale, at).filter(|(p, ..)| *p == d.object.page) {
-                    d.end = Some((which, (x, y)));
-                    d.drag.moved = true;
-                }
-                app.canvas.obj_drag = Some(d);
-            } else if d.drag.moved
-                && let Some((_, (x, y))) = d.end
-            {
-                let key = if which { "end" } else { "start" };
-                let _ = app.run("shape.connect", json!({key: {"x": x, "y": y, "page": d.object.page}}));
-            }
+        if d.end.is_some() || d.bend.is_some() {
+            drag_connector_handle(app, ui, pages, layout, scale, at, d);
             return true;
         }
         if ui.input(|i| i.pointer.primary_down()) {
@@ -341,22 +406,8 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
     if !(pressed || multi) {
         return false;
     }
-    // A selected connector's end: drag it to glue it.
-    if pressed && let Some((object, which)) = connector_end_at(app, layout, pages, scale, at) {
-        let drag = Drag::new(Grab::Move, object.page, object.rect, 0.0, at);
-        app.canvas.obj_drag = Some(ObjectDrag {
-            drag,
-            press_origin: pages.get(object.page).map_or(at, |p| p.min),
-            object,
-            min: 0.0,
-            picture: false,
-            pending_behind: false,
-            end: Some((which, (0.0, 0.0))),
-            guides: Vec::new(),
-            preview: None,
-            copy: false,
-            drop_at: None,
-        });
+    // A selected connector's end (drag it to glue it) or one of its runs (to move the bend).
+    if pressed && press_connector_handle(app, layout, pages, scale, at) {
         return true;
     }
     let front = grab_at(app, layout, pages, scale, at);
@@ -425,6 +476,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             picture,
             pending_behind: true,
             end: None,
+            bend: None,
             guides: Vec::new(),
             preview: None,
             copy: false,
@@ -452,6 +504,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
                 picture,
                 pending_behind: false,
                 end: None,
+                bend: None,
                 guides: Vec::new(),
                 preview: None,
                 copy,
@@ -495,6 +548,7 @@ fn press_member(app: &mut WordApp, layout: &DocLayout, pages: &[Rect], scale: f3
         picture,
         pending_behind: false,
         end: None,
+        bend: None,
         guides: Vec::new(),
         preview: None,
         copy: false,
@@ -510,7 +564,7 @@ fn press_member(app: &mut WordApp, layout: &DocLayout, pages: &[Rect], scale: f3
 /// drawing canvas: its position is the canvas's, and the canvas stays.
 pub(crate) fn dragged_off_page(drag: Option<&ObjectDrag>) -> Option<(usize, Pos)> {
     let d = drag?;
-    if !d.drag.moved || d.end.is_some() || d.drag.grab != Grab::Move || d.object.member.is_some() {
+    if !d.drag.moved || d.end.is_some() || d.bend.is_some() || d.drag.grab != Grab::Move || d.object.member.is_some() {
         return None;
     }
     Some((d.object.page, d.object.pos()))
@@ -804,7 +858,17 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
         paint_end_drag(app, d, painter, t, layout, pages, scale);
         return;
     }
+    if let Some(d) = app.canvas.obj_drag.as_ref().filter(|d| d.bend.is_some()) {
+        paint_bend_drag(app, d, painter, t, pages, scale);
+        return;
+    }
     if let Some((o, a, b)) = connector_ends(app, layout) {
+        // Its runs that can be moved: a diamond in the middle of each.
+        for (_, p) in connector_bends(app, layout).map(|b| b.1).unwrap_or_default() {
+            if let Some(c) = point_on_screen(pages, scale, o.page, p) {
+                paint_bend_handle(painter, t, c);
+            }
+        }
         // A connector: a handle at each end (filled when glued).
         let glued = match selected(app) {
             Some((_, InlineObject::Shape { extra, .. })) => (extra.start.is_some(), extra.end.is_some()),
@@ -885,6 +949,53 @@ fn paint_drop_caret(d: &ObjectDrag, painter: &Painter, layout: &DocLayout, pages
     painter.line_segment([r.left_top(), r.left_bottom()], egui::Stroke::new(3.0, *color));
 }
 
+/// The handle of a connector's run: a small diamond (the ends' handles are round).
+fn paint_bend_handle(painter: &Painter, t: &Tokens, c: Pos2) {
+    let r = 4.5;
+    let pts = vec![egui::pos2(c.x, c.y - r), egui::pos2(c.x + r, c.y), egui::pos2(c.x, c.y + r), egui::pos2(c.x - r, c.y)];
+    painter.add(egui::Shape::convex_polygon(pts, Color32::WHITE, egui::Stroke::new(1.2, t.accent)));
+}
+
+/// A connector's run being dragged: the connector as it would then be, and the handle there.
+fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, pages: &[Rect], scale: f32) {
+    use wordcraft_doc::graphic::PathSeg;
+    let Some((run, at)) = d.bend.filter(|_| d.drag.moved) else { return };
+    let Some((_, InlineObject::Shape { kind, extra, .. })) = selected(app) else { return };
+    let o = &d.object;
+    let r = o.rect;
+    let own = o.spin.unapply(r.x + r.w / 2.0, r.y + r.h / 2.0, at.0, at.1);
+    let Some(bent) = wordcraft_doc::connector::bend_to(*kind, extra.preset.as_deref(), r.w, r.h, run, (own.0 - r.x, own.1 - r.y)) else { return };
+    let Some(segs) = wordcraft_doc::connector::connector_path(*kind, bent.as_ref(), r.w, r.h) else { return };
+    let on_screen = |x: f32, y: f32| point_on_screen(pages, scale, o.page, frame_point_on_page(o, (x, y)));
+    let stroke = egui::Stroke::new(1.5, t.accent);
+    let mut last: Option<Pos2> = None;
+    for seg in segs {
+        let to = match seg {
+            PathSeg::Move(x, y) => on_screen(x, y),
+            PathSeg::Line(x, y) => {
+                let to = on_screen(x, y);
+                if let (Some(a), Some(b)) = (last, to) {
+                    painter.line_segment([a, b], stroke);
+                }
+                to
+            }
+            PathSeg::Cubic(a, b, c, e, x, y) => {
+                let to = on_screen(x, y);
+                if let (Some(p0), Some(p1), Some(p2), Some(p3)) = (last, on_screen(a, b), on_screen(c, e), to) {
+                    painter.add(egui::epaint::CubicBezierShape::from_points_stroke([p0, p1, p2, p3], false, Color32::TRANSPARENT, stroke));
+                }
+                to
+            }
+            PathSeg::Close => last,
+        };
+        last = to;
+    }
+    let handle = wordcraft_doc::connector::bend_handles(*kind, bent.as_ref(), r.w, r.h).into_iter().find(|b| b.adjust == run);
+    if let Some(c) = handle.and_then(|b| on_screen(b.at.0, b.at.1)) {
+        paint_bend_handle(painter, t, c);
+    }
+}
+
 /// A connector's end being dragged: a line from its other end to the pointer, and the connection
 /// sites of the shapes near the pointer (the one it would glue to, filled).
 fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, layout: &DocLayout, pages: &[Rect], scale: f32) {
@@ -931,7 +1042,9 @@ pub fn cursor(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at:
         return Some(c);
     }
     if let Some(d) = &app.canvas.obj_drag {
-        return Some(if d.end.is_some() {
+        return Some(if d.bend.is_some() {
+            egui::CursorIcon::Grabbing
+        } else if d.end.is_some() {
             egui::CursorIcon::Crosshair
         } else if d.copy && d.drag.moved {
             egui::CursorIcon::Copy
@@ -941,6 +1054,9 @@ pub fn cursor(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at:
     }
     if connector_end_at(app, layout, pages, scale, at).is_some() {
         return Some(egui::CursorIcon::Crosshair);
+    }
+    if connector_bend_at(app, layout, pages, scale, at).is_some() {
+        return Some(egui::CursorIcon::Grab);
     }
     let in_member_text = |o: &ObjectHit| {
         crate::canvas::page_at(pages, layout, scale, at).is_some_and(|(_, x, y)| o.member.is_some() && in_text(o, x, y, EDGE / scale.max(0.01)))

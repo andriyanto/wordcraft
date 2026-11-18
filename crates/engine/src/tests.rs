@@ -7570,6 +7570,123 @@ fn a_connector_drawn_between_two_shapes_is_glued_to_both() {
     assert!(r.w.abs() < 0.5 && (r.h - 80.0).abs() < 0.5 && (r.y - 520.0).abs() < 0.5, "{r:?}");
 }
 
+/// The body's drawings in document order: where each is, and the object.
+fn drawings(s: &Session) -> Vec<(Pos, wordcraft_doc::InlineObject)> {
+    let mut out = Vec::new();
+    for path in s.doc.para_paths(StoryRef::Body) {
+        let Some(para) = s.doc.para(StoryRef::Body, &path) else { continue };
+        for (off, obj) in para.objects_with_offsets() {
+            out.push((Pos { story: StoryRef::Body, path: path.clone(), off }, obj.clone()));
+        }
+    }
+    out
+}
+
+/// The corners of the selected connector's path on its page, to the nearest point.
+fn connector_corners(s: &mut Session) -> Vec<(i32, i32)> {
+    use wordcraft_doc::graphic::PathSeg;
+    let (pos, obj) = cmd::objects::selected(s).expect("a connector is selected");
+    let wordcraft_doc::InlineObject::Shape { kind, extra, .. } = obj else { panic!("{obj:?}") };
+    let hit = s.layout().object(&pos, 0).unwrap();
+    let r = hit.rect;
+    let on_page = |x: f32, y: f32| {
+        let (px, py) = hit.spin.apply(r.x + r.w / 2.0, r.y + r.h / 2.0, r.x + x, r.y + y);
+        (px.round() as i32, py.round() as i32)
+    };
+    wordcraft_doc::connector::connector_path(kind, extra.preset.as_deref(), r.w, r.h)
+        .unwrap()
+        .into_iter()
+        .filter_map(|seg| match seg {
+            PathSeg::Move(x, y) | PathSeg::Line(x, y) => Some(on_page(x, y)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Select the body's first connector (`at`: None), or its shape covering page point `at`.
+fn select_drawing(s: &mut Session, at: Option<(f32, f32)>) -> Pos {
+    let layout = s.layout();
+    let found = drawings(s).into_iter().find(|(pos, obj)| {
+        let wordcraft_doc::InlineObject::Shape { kind, .. } = obj else { return false };
+        match at {
+            None => kind.is_connector(),
+            Some((x, y)) => !kind.is_connector() && layout.object(pos, 0).is_some_and(|h| h.rect.contains(wordcraft_geom::Point { x, y })),
+        }
+    });
+    let pos = found.expect("a drawing there").0;
+    let end = Pos { off: pos.off + '\u{FFFC}'.len_utf8(), ..pos.clone() };
+    run(s, "select.range", json!({"anchor": pos, "focus": end}));
+    pos
+}
+
+/// A bent connector leaves each shape it is glued to away from the side it is glued to. It
+/// always left sideways before: from a shape's bottom to the top of the one below, it ran along
+/// both shapes' sides. It keeps doing so when a shape moves, and goes around when a shape ends
+/// up facing away.
+#[test]
+fn a_bent_connector_leaves_its_shapes_away_from_their_sides() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 240, "y": 300, "page": 0, "width": 100, "height": 60}));
+    // From the first one's bottom (150, 160) to the second one's top (290, 300).
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "arrow": "end", "x": 150, "y": 162, "x1": 290, "y1": 298, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(150, 160), (150, 230), (290, 230), (290, 300)], "down, across, down");
+    // The second shape moves left of the first: still down, across, down.
+    select_drawing(&mut s, Some((290.0, 330.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": -200, "dy": 0}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(150, 160), (150, 230), (90, 230), (90, 300)]);
+    // It moves above the first: out of the bottom, around, and into the top from above.
+    select_drawing(&mut s, Some((90.0, 330.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": 300, "dy": -290}));
+    select_drawing(&mut s, None);
+    let stub = wordcraft_doc::connector::STUB.round() as i32;
+    assert_eq!(connector_corners(&mut s), vec![(150, 160), (150, 160 + stub), (270, 160 + stub), (270, 10 - stub), (390, 10 - stub), (390, 10)]);
+    // Nothing is left to settle, and one undo takes the move and the new route back.
+    assert!(!cmd::connectors::reroute(&mut s));
+    run(&mut s, "edit.undo", json!({}));
+    let first = select_drawing(&mut s, Some((150.0, 130.0)));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(150, 160), (150, 230), (90, 230), (90, 300)]);
+    // Glued from a side to a top: one corner.
+    run(&mut s, "shape.connect", json!({"start": {"path": first.path.0, "off": first.off, "site": 1}}));
+    assert_eq!(connector_corners(&mut s), vec![(100, 130), (90, 130), (90, 300)]);
+}
+
+/// A run of a bent connector can be moved (`shape.bend`, the diamond handle), and stays where it
+/// was put when the connector is routed again. A connector whose ends are where they belong is
+/// left as it is by edits elsewhere: a file's own route is not replaced by ours.
+#[test]
+fn a_moved_connector_run_stays_where_it_was_put() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 200, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 202, "y": 130, "x1": 398, "y1": 230, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 230), (400, 230)]);
+    // Moved to a page point: the upright run goes there.
+    run(&mut s, "shape.bend", json!({"x": 250, "y": 400}));
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (250, 130), (250, 230), (400, 230)]);
+    // An edit elsewhere leaves it alone.
+    select_drawing(&mut s, Some((150.0, 130.0)));
+    run(&mut s, "shape.fill", json!({"color": "FF0000"}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (250, 130), (250, 230), (400, 230)]);
+    // The far shape moves: the run is still a quarter of the way.
+    select_drawing(&mut s, Some((450.0, 230.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": 200, "dy": 0}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 230), (600, 230)]);
+    // By its adjust value; back in the middle it is the plain elbow again.
+    run(&mut s, "shape.bend", json!({"value": 50000}));
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    assert!(matches!(&obj, wordcraft_doc::InlineObject::Shape { extra, .. } if extra.preset.is_none()), "{obj:?}");
+    // A run it doesn't have, and a straight connector, are refused.
+    assert!(s.run("shape.bend", &json!({"handle": 2, "value": 10})).is_err());
+    assert!(s.run("shape.bend", &json!({})).is_err());
+    run(&mut s, "insert.shape", json!({"kind": "straightConnector", "x": 100, "y": 500, "x1": 200, "y1": 560, "page": 0}));
+    assert!(s.run("shape.bend", &json!({"value": 10})).is_err());
+}
+
 /// Typing with a shape selected types in the shape, as in Word: it replaced the shape with the
 /// letters before. The shape gets a text of its own: centred, in the middle of the shape, white
 /// on the dark fill a new shape has. One undo step takes the text and the typing back.
