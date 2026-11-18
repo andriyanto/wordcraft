@@ -3114,6 +3114,38 @@ fn vml_nearest_preset_shape_survives_saving() {
     );
 }
 
+/// The colour a shape's style gives its text survives saving: white text on a dark shape was
+/// saved as automatic text and came back black. A shape that is no text box (a diamond here)
+/// keeps its kind, its text and where the text sits.
+#[test]
+fn a_shapes_text_and_its_style_colour_survive_saving() {
+    let style = r#"<wps:style><a:lnRef idx="2"><a:srgbClr val="000000"/></a:lnRef><a:fillRef idx="1"><a:srgbClr val="203040"/></a:fillRef><a:effectRef idx="0"><a:srgbClr val="000000"/></a:effectRef><a:fontRef idx="minor"><a:srgbClr val="FFFFFF"/></a:fontRef></wps:style>"#;
+    let text = r#"<wps:cNvSpPr/><wps:txbx><w:txbxContent><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Decide</w:t></w:r></w:p></w:txbxContent></wps:txbx>"#;
+    let sppr = r#"<a:prstGeom prst="diamond"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="203040"/></a:solidFill><a:ln w="12700"><a:solidFill><a:srgbClr val="102030"/></a:solidFill></a:ln>"#;
+    let d = read_body(&format!("<w:p>{}</w:p>", anchored_wsp("Decision", 2540000, 1270000, sppr, style, text)));
+    let look = |d: &Document| {
+        let InlineObject::Shape { kind, story: Some(id), fill, stroke, stroke_width, .. } = &paras(d)[0].objects[0] else {
+            panic!("{:?}", paras(d)[0].objects)
+        };
+        let part = &d.parts[id];
+        let para = part.blocks.first().and_then(|b| b.as_para()).map(|p| (p.text.to_string(), p.props.align));
+        (*kind, part.body.auto_color, fill.clone(), *stroke, *stroke_width, para)
+    };
+    let first = look(&d);
+    assert_eq!(first.0, ShapeKind::Diamond);
+    assert_eq!(first.1, Some(Rgb(0xFF, 0xFF, 0xFF)));
+    assert_eq!(first.5, Some(("Decide".to_string(), Some(wordcraft_doc::props::Align::Center))));
+    let saved = wordcraft_docx::write(&d).unwrap();
+    let xml = written_document_xml(&saved);
+    assert!(xml.contains(r#"<a:fontRef idx="minor"><a:srgbClr val="FFFFFF"/></a:fontRef>"#), "{xml}");
+    let again = wordcraft_docx::read(&saved).unwrap();
+    assert_eq!(look(&again), first, "the same after a save");
+    assert_eq!(look(&wordcraft_docx::read(&wordcraft_docx::write(&again).unwrap()).unwrap()), first, "and after another");
+    // A shape whose text has no colour of its own gets no style.
+    let plain = read_body(&format!("<w:p>{}</w:p>", anchored_wsp("Plain", 2540000, 1270000, sppr, "", text)));
+    assert!(!written_document_xml(&wordcraft_docx::write(&plain).unwrap()).contains("wps:style"));
+}
+
 /// A VML preset drawn as another shape (an eight-point star, `o:spt` 58, drawn with five points;
 /// a decision box, 110, drawn as a diamond) is saved as its own DrawingML preset, not as the
 /// shape WordCraft showed. A preset WordCraft draws as itself (a diamond, 4) keeps nothing.

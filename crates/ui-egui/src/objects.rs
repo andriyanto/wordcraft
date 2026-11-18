@@ -324,6 +324,11 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             app.canvas.obj_drag = Some(d);
         } else {
             drop(app, &d);
+            // A double-click on a shape (not a drag, not a handle) types in it: the caret goes
+            // into its text, which a shape without any gets first. Other objects refuse.
+            if resp.double_clicked() && !d.drag.moved && d.drag.grab == Grab::Move && d.end.is_none() {
+                let _ = app.run("shape.addText", json!({}));
+            }
         }
         return true;
     }

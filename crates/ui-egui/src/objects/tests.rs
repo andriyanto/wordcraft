@@ -1104,3 +1104,48 @@ fn clicking_and_dragging_inside_a_canvas_works_on_its_members() {
     let is_box = matches!(story, StoryRef::Part(id) if h.state().session.doc.parts.get(&id).is_some_and(|p| p.kind == PartKind::TextBox));
     assert!(is_box, "the caret is in the text box's text: {story:?}");
 }
+
+/// A double-click on a shape types in it: the caret goes into the shape's text (one is made for
+/// a shape that has none) and the letters land there. A single click still only selects it, and
+/// typing then goes into the shape too, where it replaced the shape before.
+#[test]
+fn double_clicking_a_shape_types_in_it() {
+    use egui::{Event, PointerButton};
+    let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+    app.run("view.commentsPane", json!({"value": false})).unwrap();
+    app.run("insert.shape", json!({"kind": "diamond", "width": 120, "height": 80})).unwrap();
+    app.run("arrange.bounds", json!({"page": 0, "x": 200, "y": 300})).unwrap();
+    app.run("select.all", json!({})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 1100.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    let at = crate::canvas::page_to_screen(h.state_mut(), 0, 260.0, 340.0).unwrap();
+    let click = |h: &mut egui_kittest::Harness<'_, WordApp>| {
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.step();
+    };
+    let story =
+        |h: &egui_kittest::Harness<'_, WordApp>| match h.state().session.doc.body.first().and_then(|b| b.as_para()).and_then(|p| p.objects.first()) {
+            Some(InlineObject::Shape { kind: ShapeKind::Diamond, story, .. }) => *story,
+            o => panic!("the diamond is gone: {o:?}"),
+        };
+    h.event(Event::PointerMoved(at));
+    click(&mut h);
+    assert!(selected(h.state()).is_some(), "one click selects the shape");
+    assert_eq!(story(&h), None, "and gives it no text");
+    click(&mut h);
+    let id = story(&h).expect("the second click of a double-click gives the shape its text");
+    assert_eq!(h.state().session.sel.focus.story, wordcraft_doc::StoryRef::Part(id), "the caret is in it");
+    h.event(Event::Text("Decide".into()));
+    h.run_steps(3);
+    assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Part(id)).trim_end(), "Decide");
+    assert_eq!(story(&h), Some(id), "the shape is still there");
+}

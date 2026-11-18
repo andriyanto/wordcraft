@@ -105,19 +105,7 @@ impl Writer<'_> {
         let kept = extra.preset.as_deref().filter(|p| crate::read::shape_style::preset_fits(p, *kind));
         match (geom, kept) {
             (Some(f), _) => cust_geom(w, f, *sw, *sh),
-            (None, Some(p)) => {
-                w.open("a:prstGeom", &[("prst", &p.name)]);
-                if p.adjust.is_empty() {
-                    w.empty("a:avLst", &[]);
-                } else {
-                    w.open("a:avLst", &[]);
-                    for (name, value) in &p.adjust {
-                        w.empty("a:gd", &[("name", name), ("fmla", &format!("val {value}"))]);
-                    }
-                    w.close("a:avLst");
-                }
-                w.close("a:prstGeom");
-            }
+            (None, Some(p)) => kept_preset_geom(w, p),
             (None, None) => {
                 w.open("a:prstGeom", &[("prst", prst)]);
                 match extra.corner.filter(|_| *kind == ShapeKind::RoundedRectangle) {
@@ -174,6 +162,15 @@ impl Writer<'_> {
         }
         effect_list(w, effects);
         w.close("wps:spPr");
+        // The colour automatic text has in this shape (read from its style's `a:fontRef`): written
+        // as a style that names nothing else (index 0: no theme line, fill or effect; the outline
+        // and fill above are the shape's own). Without it white text on a dark shape was saved
+        // as automatic, and came back black.
+        let font =
+            (*story).and_then(|id| self.doc.parts.get(&id)).filter(|p| p.kind == wordcraft_doc::PartKind::TextBox).and_then(|p| p.body.auto_color);
+        if let Some(color) = font {
+            font_style(w, color);
+        }
         // Its text, within the same bounds layout shows boxes inside boxes with. A box linked
         // from another (Create Link) shows the rest of that box's text: it names the chain and
         // its place in it instead.
@@ -339,6 +336,34 @@ pub(super) fn shape_name(kind: ShapeKind, freeform: Option<&wordcraft_doc::freef
         (Some(tool), None) => format!("Ink {} {id}", ink_name(tool)),
         (None, _) => format!("Shape {id}"),
     }
+}
+
+/// A shape style (`wps:style`) that gives the shape's text its automatic colour and nothing else:
+/// the line, fill and effect references are index 0, which names no theme style.
+fn font_style(w: &mut W, color: wordcraft_doc::props::Rgb) {
+    w.open("wps:style", &[]);
+    for tag in ["a:lnRef", "a:fillRef", "a:effectRef"] {
+        w.empty(tag, &[("idx", "0")]);
+    }
+    w.open("a:fontRef", &[("idx", "minor")]);
+    w.empty("a:srgbClr", &[("val", &color.hex())]);
+    w.close("a:fontRef");
+    w.close("wps:style");
+}
+
+/// The preset geometry a file gave a shape, written back as it was: its name and adjust values.
+fn kept_preset_geom(w: &mut W, p: &wordcraft_doc::connector::PresetGeom) {
+    w.open("a:prstGeom", &[("prst", &p.name)]);
+    if p.adjust.is_empty() {
+        w.empty("a:avLst", &[]);
+    } else {
+        w.open("a:avLst", &[]);
+        for (name, value) in &p.adjust {
+            w.empty("a:gd", &[("name", name), ("fmla", &format!("val {value}"))]);
+        }
+        w.close("a:avLst");
+    }
+    w.close("a:prstGeom");
 }
 
 /// A freeform's geometry as DrawingML custom geometry (`a:custGeom`): each path in EMUs of its

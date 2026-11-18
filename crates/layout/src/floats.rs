@@ -805,10 +805,10 @@ pub(crate) fn place_objects(ctx: &mut Ctx, req: &ObjectPlacement) -> (Vec<Placed
                     .filter_map(|(r, c)| {
                         c.text_box()
                             .filter(|id| ctx.doc.parts.get(id).is_some_and(|p| p.kind == wordcraft_doc::PartKind::TextBox))
-                            .map(|id| (id, carried(r, float.spin(), centre)))
+                            .map(|id| (id, carried(text_rect(c, r), float.spin(), centre)))
                     })
                     .collect(),
-                _ => text_box.map(|id| (id, rect)).into_iter().collect(),
+                _ => text_box.map(|id| (id, text_rect(obj, rect))).into_iter().collect(),
             };
             for (id, rect) in boxes {
                 let items = textbox::box_items(ctx, id, rect, depth);
@@ -863,4 +863,16 @@ pub(crate) fn continued_exclusions(rel: &[para::Exclusion], excl: &[WrapArea], x
 /// Is an object floating (not laid out inline)?
 pub fn is_floating(o: &InlineObject) -> bool {
     o.is_floating()
+}
+
+/// The rectangle a shape's text is laid out in, from its frame `rect`: the room its outline
+/// leaves ([`wordcraft_doc::wrap::text_insets`]), never thinner than a line of text needs.
+fn text_rect(obj: &InlineObject, rect: Rect) -> Rect {
+    let InlineObject::Shape { kind, extra, .. } = obj else { return rect };
+    let [l, t, r, b] = wordcraft_doc::wrap::text_insets(*kind, rect.w, rect.h, extra.corner);
+    let (w, h) = (rect.w - l - r, rect.h - t - b);
+    if !(w.is_finite() && h.is_finite()) || w < 1.0 || h < 1.0 {
+        return rect;
+    }
+    Rect { x: rect.x + l, y: rect.y + t, w, h }
 }

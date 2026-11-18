@@ -151,6 +151,12 @@ pub(super) fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         item(ui, app, "Size and Crop…", "ui.tab", json!({"tab": "Picture Format"}));
         item(ui, app, "Crop", "ui.crop", json!({}));
     }
+    if crate::widgets::enabled(app, "shape.addText") {
+        // A shape takes text: the caret goes into it (what typing and a double-click do too).
+        let has_text =
+            matches!(wordcraft_engine::cmd::objects::selected(&app.session), Some((_, wordcraft_doc::InlineObject::Shape { story: Some(_), .. })));
+        item(ui, app, if has_text { "Edit Text" } else { "Add Text" }, "shape.addText", json!({}));
+    }
     if picture || object {
         // A numbered caption under (or over) the picture, shape, text box or chart (#1230).
         item(ui, app, "Insert Caption…", "references.caption", json!({}));

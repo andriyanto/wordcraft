@@ -28,6 +28,66 @@ pub fn text_box_target(s: &Session) -> Option<(Pos, u32)> {
     Some((Pos { off, ..after }, id))
 }
 
+pub(super) const NO_TEXT_SHAPE: &str = "select a shape that can hold text first";
+
+/// The shape typing goes into: the one selected by itself (as an object, or as a member of its
+/// drawing canvas), when it is a closed shape. Lines, connectors and freeforms (ink among them)
+/// hold no text, and neither do pictures. A caret beside a shape is not a selected shape.
+fn text_shape(s: &Session) -> Option<(Pos, Option<u32>, Option<Rgb>)> {
+    let (pos, obj) = match crate::cmd::canvas::selected_member(s) {
+        Some((pos, _, member)) => (pos, member.clone()),
+        None => super::select::object_selection(s).map(|(pos, o)| (pos, o.clone()))?,
+    };
+    let InlineObject::Shape { kind, story, fill, .. } = obj else { return None };
+    if kind.is_open() || kind == wordcraft_doc::para::ShapeKind::Freeform {
+        return None;
+    }
+    Some((pos, story.filter(|id| is_text_box(s, *id)), fill.map(|f| f.main_color())))
+}
+
+pub(super) fn has_text_shape(s: &Session) -> Option<&'static str> {
+    if text_shape(s).is_some() { None } else { Some(NO_TEXT_SHAPE) }
+}
+
+/// Whether typing now goes into the selected shape instead of replacing it ([`enter_text`]).
+pub fn takes_typing(s: &Session) -> bool {
+    text_shape(s).is_some()
+}
+
+/// Put the caret at the end of the selected shape's text, as a double-click or the first typed
+/// letter does in Word. A shape with no text gets an empty one first: centred, in the middle of
+/// the shape, white on a dark fill. The story's id, or `None` when no such shape is selected.
+pub fn enter_text(s: &mut Session) -> Result<Option<u32>, CmdError> {
+    let Some((pos, story, fill)) = text_shape(s) else { return Ok(None) };
+    let id = match story {
+        Some(id) => id,
+        None => {
+            let mut para = wordcraft_doc::Paragraph::new();
+            para.props.align = Some(wordcraft_doc::props::Align::Center);
+            let id = s.doc.try_add_part(wordcraft_doc::PartKind::TextBox, vec![wordcraft_doc::para_block(para)])?;
+            if let Some(part) = s.doc.parts.get_mut(&id) {
+                part.body.anchor = wordcraft_doc::props::VAlign::Center;
+                // Automatic text is black: on a dark fill it could not be read.
+                part.body.auto_color = fill.filter(|c| c.luma() < 128.0).map(|_| Rgb::WHITE);
+            }
+            edit_obj(s, &pos, |o| {
+                if let InlineObject::Shape { story, .. } = o {
+                    *story = Some(id);
+                }
+            })?;
+            id
+        }
+    };
+    s.sel = crate::Selection::caret(s.doc.end_of(StoryRef::Part(id)));
+    Ok(Some(id))
+}
+
+/// `shape.addText`: Add Text / Edit Text for the selected shape.
+pub(super) fn add_text(s: &mut Session, _: &Value) -> CmdResult {
+    let id = enter_text(s)?.ok_or_else(|| CmdError::Disabled(NO_TEXT_SHAPE.into()))?;
+    Ok(json!({"story": id}))
+}
+
 /// Change the target text box's text direction, alignment or link.
 pub(crate) fn set_text_body(s: &mut Session, f: impl Fn(&mut TextBody)) -> CmdResult {
     let (pos, id) = text_box_target(s).ok_or_else(|| CmdError::Disabled(NO_TEXT_BOX.into()))?;
