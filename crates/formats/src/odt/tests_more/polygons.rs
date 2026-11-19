@@ -158,7 +158,7 @@ fn a_preset_shape_is_saved_as_the_outline_it_has() {
         extra: ShapeExtra { preset: PresetGeom::new(name, []).map(std::sync::Arc::new), ..Default::default() },
     };
     let mut p = wordcraft_doc::Paragraph::new();
-    for name in ["hexagon", "cube", "cloud"] {
+    for name in ["hexagon", "cube", "sun"] {
         p.insert_object(p.len(), shape(name), &Default::default()).unwrap();
     }
     let mut d = Document::new();

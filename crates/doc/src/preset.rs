@@ -94,6 +94,13 @@ pub const LIBRARY: &[GalleryShape] = &[
     g("frame", "Frame", ShapeGroup::Basic),
     g("donut", "Ring", ShapeGroup::Basic),
     g("corner", "L-Shape", ShapeGroup::Basic),
+    g("cloud", "Cloud", ShapeGroup::Basic),
+    g("bracketPair", "Double Bracket", ShapeGroup::Basic),
+    g("bracePair", "Double Brace", ShapeGroup::Basic),
+    g("leftBracket", "Left Bracket", ShapeGroup::Basic),
+    g("rightBracket", "Right Bracket", ShapeGroup::Basic),
+    g("leftBrace", "Left Brace", ShapeGroup::Basic),
+    g("rightBrace", "Right Brace", ShapeGroup::Basic),
     g("diagStripe", "Diagonal Stripe", ShapeGroup::Basic),
     g("can", "Cylinder", ShapeGroup::Basic),
     g("cube", "Cube", ShapeGroup::Basic),
@@ -107,6 +114,10 @@ pub const LIBRARY: &[GalleryShape] = &[
     g("upDownArrow", "Up-Down Arrow", ShapeGroup::Arrows),
     g("homePlate", "Pentagon Arrow", ShapeGroup::Arrows),
     g("chevron", "Chevron", ShapeGroup::Arrows),
+    g("curvedRightArrow", "Curved Right Arrow", ShapeGroup::Arrows),
+    g("curvedLeftArrow", "Curved Left Arrow", ShapeGroup::Arrows),
+    g("curvedUpArrow", "Curved Up Arrow", ShapeGroup::Arrows),
+    g("curvedDownArrow", "Curved Down Arrow", ShapeGroup::Arrows),
     g("flowChartProcess", "Process", ShapeGroup::Flowchart),
     g("flowChartAlternateProcess", "Alternate Process", ShapeGroup::Flowchart),
     g("flowChartDecision", "Decision", ShapeGroup::Flowchart),
@@ -140,6 +151,8 @@ pub const LIBRARY: &[GalleryShape] = &[
     g("star16", "16-Point Star", ShapeGroup::Stars),
     g("star24", "24-Point Star", ShapeGroup::Stars),
     g("star32", "32-Point Star", ShapeGroup::Stars),
+    g("ribbon2", "Up Ribbon", ShapeGroup::Stars),
+    g("ribbon", "Down Ribbon", ShapeGroup::Stars),
     g("wedgeRectCallout", "Rectangular Callout", ShapeGroup::Callouts),
     g("wedgeRoundRectCallout", "Rounded Rectangular Callout", ShapeGroup::Callouts),
     g("wedgeEllipseCallout", "Oval Callout", ShapeGroup::Callouts),
@@ -217,6 +230,22 @@ impl Pen {
             a = b;
         }
         self
+    }
+    /// [`Pen::arc`] with its angles as DrawingML gives them for an ellipse that isn't a circle:
+    /// the directions of the arc's ends as seen from the ellipse's middle, not positions round
+    /// a circle that was then stretched. The two agree at every quarter turn, and nowhere else.
+    fn arc_seen(&mut self, rx: f32, ry: f32, start: f32, sweep: f32) -> &mut Pen {
+        let round = |seen: f32| {
+            if rx <= 0.0 || ry <= 0.0 {
+                return seen;
+            }
+            let a = seen.to_radians();
+            let turn = ((rx * a.sin()).atan2(ry * a.cos()) - a.sin().atan2(a.cos())).to_degrees();
+            // The correction is never more than a quarter turn either way.
+            seen + (turn + 180.0).rem_euclid(360.0) - 180.0
+        };
+        let from = round(start);
+        self.arc(rx, ry, from, round(start + sweep) - from)
     }
     /// A whole ellipse in the box (`x`, `y`, `w`, `h`), clockwise or not.
     fn ellipse(&mut self, x: f32, y: f32, w: f32, h: f32, clockwise: bool) -> &mut Pen {
@@ -308,6 +337,96 @@ fn tail(preset: &PresetGeom, w: f32, h: f32) -> Tail {
     Tail { tip, edge, far: if upright { dx > 0.0 } else { dy > 0.0 } }
 }
 
+/// The path mirrored: left to right across a frame `across` wide, top to bottom down one `down`
+/// tall.
+fn mirror(segs: &mut [PathSeg], across: Option<f32>, down: Option<f32>) {
+    let fx = |x: f32| across.map_or(x, |w| w - x);
+    let fy = |y: f32| down.map_or(y, |h| h - y);
+    for seg in segs {
+        *seg = match *seg {
+            PathSeg::Move(x, y) => PathSeg::Move(fx(x), fy(y)),
+            PathSeg::Line(x, y) => PathSeg::Line(fx(x), fy(y)),
+            PathSeg::Cubic(a, b, c, d, x, y) => PathSeg::Cubic(fx(a), fy(b), fx(c), fy(d), fx(x), fy(y)),
+            PathSeg::Close => PathSeg::Close,
+        };
+    }
+}
+
+/// DrawingML's cloud: eleven arcs around, and the short arcs drawn on it. The standard gives it
+/// on a 43200 × 43200 grid, with angles in 60000ths of a degree.
+fn cloud(p: &mut Pen, w: f32, h: f32) {
+    const AROUND: [(f32, f32, f32, f32); 11] = [
+        (6753.0, 9190.0, -11_429_249.0, 7_426_832.0),
+        (5333.0, 7267.0, -8_646_143.0, 5_396_714.0),
+        (4365.0, 5945.0, -8_748_475.0, 5_983_381.0),
+        (4857.0, 6595.0, -7_859_164.0, 7_034_504.0),
+        (5333.0, 7273.0, -4_722_533.0, 6_541_615.0),
+        (6775.0, 9220.0, -2_776_035.0, 7_816_140.0),
+        (5785.0, 7867.0, 37_501.0, 6_842_000.0),
+        (6752.0, 9215.0, 1_347_096.0, 6_910_353.0),
+        (7720.0, 10_543.0, 3_974_558.0, 4_542_661.0),
+        (4360.0, 5918.0, -16_496_525.0, 8_804_134.0),
+        (4345.0, 5945.0, -14_809_710.0, 9_151_131.0),
+    ];
+    // Where each starts, then its arc.
+    const ON_IT: [((f32, f32), (f32, f32, f32, f32)); 11] = [
+        ((4693.0, 26_177.0), (4345.0, 5945.0, 5_204_520.0, 1_585_770.0)),
+        ((6928.0, 34_899.0), (4360.0, 5918.0, 4_416_628.0, 686_848.0)),
+        ((16_478.0, 39_090.0), (6752.0, 9215.0, 8_257_449.0, 844_866.0)),
+        ((28_827.0, 34_751.0), (6752.0, 9215.0, 387_196.0, 959_901.0)),
+        ((34_129.0, 22_954.0), (5785.0, 7867.0, -4_217_541.0, 4_255_042.0)),
+        ((41_798.0, 15_354.0), (5333.0, 7273.0, 1_819_082.0, 1_665_090.0)),
+        ((38_324.0, 5426.0), (4857.0, 6595.0, -824_660.0, 891_534.0)),
+        ((29_078.0, 3952.0), (4857.0, 6595.0, -8_950_887.0, 1_091_722.0)),
+        ((22_141.0, 4720.0), (4365.0, 5945.0, -9_809_656.0, 1_061_181.0)),
+        ((14_000.0, 5192.0), (6753.0, 9190.0, -4_002_417.0, 739_161.0)),
+        ((4127.0, 15_789.0), (6753.0, 9190.0, 9_459_261.0, 711_490.0)),
+    ];
+    // Drawn on the standard's grid, where its angles are meant, then stretched to the frame.
+    let mut grid = Pen::new();
+    grid.m(3900.0, 14_370.0);
+    for (rx, ry, start, sweep) in AROUND {
+        grid.arc_seen(rx, ry, start / 60_000.0, sweep / 60_000.0);
+    }
+    // The last arc ends a hair from where the first began: the closing line is that hair.
+    grid.z();
+    for ((x, y), (rx, ry, start, sweep)) in ON_IT {
+        // There and back along the same arc: drawn, and enclosing nothing.
+        let (start, sweep) = (start / 60_000.0, sweep / 60_000.0);
+        grid.m(x, y).arc_seen(rx, ry, start, sweep).arc_seen(rx, ry, start + sweep, -sweep);
+    }
+    let (sx, sy) = (w / 43_200.0, h / 43_200.0);
+    p.segs.extend(grid.segs.into_iter().map(|seg| match seg {
+        PathSeg::Move(x, y) => PathSeg::Move(x * sx, y * sy),
+        PathSeg::Line(x, y) => PathSeg::Line(x * sx, y * sy),
+        PathSeg::Cubic(a, b, c, d, x, y) => PathSeg::Cubic(a * sx, b * sy, c * sx, d * sy, x * sx, y * sy),
+        PathSeg::Close => PathSeg::Close,
+    }));
+}
+
+/// DrawingML's `curvedRightArrow` in a `w` × `h` frame: a band that sweeps round the left of the
+/// frame from its top right, ending in an arrowhead that points right at the bottom. First the
+/// band's front with the head, then the part of the band seen from behind.
+fn curved_arrow(p: &mut Pen, preset: &PresetGeom, w: f32, h: f32) {
+    let ss = w.min(h);
+    // The head's width, the band's width (no wider than the head), the head's length.
+    let a2 = share(preset, "adj2", 50_000.0, 50_000.0 * h / ss);
+    let a1 = share(preset, "adj1", 25_000.0, a2 * FULL);
+    let (th, aw) = (ss * a1, ss * a2);
+    // The arcs' upright radius: both are quarters of ellipses as wide as the frame.
+    let hr = (h / 2.0 - (th + aw) / 4.0).max(h * 0.01);
+    let idx = ((hr * 2.0).powi(2) - th * th).max(0.0).sqrt() * w / (hr * 2.0);
+    let ah = ss * share(preset, "adj3", 25_000.0, FULL * idx / ss);
+    let y3 = hr + th;
+    let dy = (w * w - ah * ah).max(0.0).sqrt() * hr / w;
+    let (y5, y7, dh) = (hr + dy, y3 + dy, (aw - th) / 2.0);
+    let x1 = w - ah;
+    let sweep = dy.atan2(ah).to_degrees();
+    let behind = (th / 2.0).atan2(idx).to_degrees();
+    p.m(0.0, hr).arc_seen(w, hr, 180.0, -sweep).l(x1, y5 - dh).l(w, h - aw / 2.0).l(x1, y7 + dh).l(x1, y7).arc_seen(w, hr, 180.0 - sweep, sweep).z();
+    p.m(w, th).arc_seen(w, hr, 270.0, behind - 90.0).arc_seen(w, hr, 180.0 - behind, 90.0 + behind).z();
+}
+
 /// The adjust value `name` of `preset`, or `default`.
 fn value(preset: &PresetGeom, name: &str, default: f32) -> f32 {
     preset.adjust.iter().find(|(n, _)| n == name).map_or(default, |(_, v)| *v as f32)
@@ -321,7 +440,8 @@ fn share(preset: &PresetGeom, name: &str, default: f32, max: f32) -> f32 {
 
 /// The path `preset` draws in a `w` × `h` frame at the origin: closed outlines first (filled and
 /// stroked), then any lines drawn on the shape, each a subpath of its own that encloses nothing
-/// outside the outline. `None` for a preset this library has no outline for (the shape is then
+/// outside the outline. Brackets and braces are open curves instead: a fill joins their ends,
+/// the outline doesn't. `None` for a preset this library has no outline for (the shape is then
 /// drawn as its kind), and for a frame with no area.
 pub fn outline(preset: &PresetGeom, w: f32, h: f32) -> Option<Vec<PathSeg>> {
     let ok = |v: f32| v.is_finite() && v > 0.0;
@@ -480,6 +600,92 @@ pub fn outline(preset: &PresetGeom, w: f32, h: f32) -> Option<Vec<PathSeg>> {
         }
         "flowChartDelay" => {
             p.m(0.0, 0.0).l(hc, 0.0).arc(hc, vc, 270.0, 180.0).l(0.0, h).z();
+        }
+        "cloud" => cloud(&mut p, w, h),
+        "leftBracket" | "rightBracket" => {
+            // One open curve: its two ends are joined only by the fill.
+            let y1 = ss * adj("adj", 8_333.0, 50_000.0 * h / ss);
+            p.m(w, h).arc(w, y1, 90.0, 90.0).l(0.0, y1).arc(w, y1, 180.0, 90.0);
+            if preset.name == "rightBracket" {
+                mirror(&mut p.segs, Some(w), None);
+            }
+        }
+        "leftBrace" | "rightBrace" => {
+            // Where the point is, down the brace; the curls are no taller than half of the
+            // shorter stretch beside it.
+            let a2 = adj("adj2", 50_000.0, FULL);
+            let y1 = ss * adj("adj1", 8_333.0, (1.0 - a2).min(a2) / 2.0 * FULL * h / ss);
+            let y3 = h * a2;
+            p.m(w, h).arc(hc, y1, 90.0, 90.0).l(hc, y3 + y1).arc(hc, y1, 0.0, -90.0).arc(hc, y1, 90.0, -90.0).l(hc, y1).arc(hc, y1, 180.0, 90.0);
+            if preset.name == "rightBrace" {
+                mirror(&mut p.segs, Some(w), None);
+            }
+        }
+        "bracketPair" => {
+            let x1 = ss * adj("adj", 16_667.0, 50_000.0);
+            p.m(x1, h).arc(x1, x1, 90.0, 90.0).l(0.0, x1).arc(x1, x1, 180.0, 90.0);
+            p.m(w - x1, 0.0).arc(x1, x1, 270.0, 90.0).l(w, h - x1).arc(x1, x1, 0.0, 90.0);
+        }
+        "bracePair" => {
+            let x1 = ss * adj("adj", 8_333.0, 25_000.0);
+            p.m(x1 * 2.0, h)
+                .arc(x1, x1, 90.0, 90.0)
+                .l(x1, vc + x1)
+                .arc(x1, x1, 0.0, -90.0)
+                .arc(x1, x1, 90.0, -90.0)
+                .l(x1, x1)
+                .arc(x1, x1, 180.0, 90.0);
+            let x4 = w - x1;
+            p.m(w - x1 * 2.0, 0.0)
+                .arc(x1, x1, 270.0, 90.0)
+                .l(x4, vc - x1)
+                .arc(x1, x1, 180.0, -90.0)
+                .arc(x1, x1, 270.0, -90.0)
+                .l(x4, h - x1)
+                .arc(x1, x1, 0.0, 90.0);
+        }
+        "curvedRightArrow" | "curvedLeftArrow" => {
+            curved_arrow(&mut p, preset, w, h);
+            // The left one is the right one seen in a mirror.
+            if preset.name == "curvedLeftArrow" {
+                mirror(&mut p.segs, Some(w), None);
+            }
+        }
+        "curvedDownArrow" | "curvedUpArrow" => {
+            // Drawn as the arrow that curves right, in a frame lying on its side.
+            curved_arrow(&mut p, preset, h, w);
+            for seg in &mut p.segs {
+                *seg = match *seg {
+                    PathSeg::Move(x, y) => PathSeg::Move(y, x),
+                    PathSeg::Line(x, y) => PathSeg::Line(y, x),
+                    PathSeg::Cubic(a, b, c, d, x, y) => PathSeg::Cubic(b, a, d, c, y, x),
+                    PathSeg::Close => PathSeg::Close,
+                };
+            }
+            if preset.name == "curvedUpArrow" {
+                mirror(&mut p.segs, None, Some(h));
+            }
+        }
+        "ribbon" | "ribbon2" => {
+            let a1 = adj("adj1", 16_667.0, 33_333.0);
+            let a2 = value(preset, "adj2", 50_000.0).clamp(25_000.0, 75_000.0) / FULL;
+            let (e, s) = (w / 8.0, w / 32.0);
+            let (x2, x9) = (hc - w * a2 / 2.0, hc + w * a2 / 2.0);
+            let (x3, x8, x5, x6) = (x2 + s, x9 - s, x2 + e, x9 - e);
+            let (y1, y2, r) = (h * a1 / 2.0, h * a1, h * a1 / 4.0);
+            let y4 = h - y2;
+            p.m(0.0, 0.0).l(x5 - s, 0.0).arc(s, r, 270.0, 180.0).l(x3, y1).arc(s, r, 270.0, -180.0).l(x8, y2).arc(s, r, 90.0, -180.0);
+            p.l(x6 + s, y1).arc(s, r, 90.0, 180.0).l(w, 0.0).l(w - e, y4 / 2.0).l(w, y4).l(x9, y4).l(x9, h - r).arc(s, r, 0.0, 90.0);
+            p.l(x3, h).arc(s, r, 90.0, 90.0).l(x2, y4).l(0.0, y4).l(e, y4 / 2.0).z();
+            // The back of each roll, seen between the tail and the front panel.
+            p.m(x5, r).arc(s, r, 0.0, 90.0).l(x3, y1).arc(s, r, 270.0, -180.0).l(x5, y2).z();
+            p.m(x6, r).arc(s, r, 180.0, -90.0).l(x8, y1).arc(s, r, 270.0, 180.0).l(x6, y2).z();
+            // The folds behind the panel.
+            p.line((x2, y4), (x2, y2 - r)).line((x9, y2 - r), (x9, y4));
+            // The other ribbon is this one upside down.
+            if preset.name == "ribbon2" {
+                mirror(&mut p.segs, None, Some(h));
+            }
         }
         "flowChartDisplay" => {
             let rx = w / 6.0;
@@ -739,6 +945,19 @@ pub fn text_insets(preset: &PresetGeom, w: f32, h: f32) -> Option<[f32; 4]> {
         // The text lies across the opening, the waist, the stripe.
         "frame" | "donut" | "diagStripe" => Some([0.0; 4]),
         "flowChartCollate" => Some([0.25; 4]),
+        // The standard's text rectangle for the cloud.
+        "cloud" => Some([2977.0 / 21_600.0, 3262.0 / 21_600.0, 1.0 - 17_087.0 / 21_600.0, 1.0 - 17_337.0 / 21_600.0]),
+        // Between the brackets, beside the brace, across the arrow.
+        "bracketPair" | "bracePair" | "leftBracket" | "rightBracket" | "leftBrace" | "rightBrace" => Some([0.0; 4]),
+        "curvedRightArrow" | "curvedLeftArrow" | "curvedUpArrow" | "curvedDownArrow" => Some([0.0; 4]),
+        // The ribbon's front panel.
+        "ribbon" | "ribbon2" => {
+            let fold = share(preset, "adj1", 16_667.0, 33_333.0);
+            let side = 0.5 - value(preset, "adj2", 50_000.0).clamp(25_000.0, 75_000.0) / FULL / 2.0;
+            // Clear of the panel's rounded corners.
+            let side = side + 1.0 / 32.0;
+            Some(if preset.name == "ribbon" { [side, fold, side, 0.0] } else { [side, 0.0, side, fold] })
+        }
         _ => None,
     };
     if let Some([l, t, r, b]) = shares {
@@ -1007,6 +1226,12 @@ pub fn move_handle(kind: ShapeKind, preset: Option<&PresetGeom>, (w, h): (f32, f
     Some(Adjusted::Preset(geom))
 }
 
+/// Whether `preset` is drawn as open curves, not as a closed outline: the brackets and braces. A
+/// new one gets no fill.
+pub fn is_open_curve(preset: &PresetGeom) -> bool {
+    matches!(preset.name.as_str(), "leftBracket" | "rightBracket" | "leftBrace" | "rightBrace" | "bracketPair" | "bracePair")
+}
+
 /// The kind a gallery name stands for when it is a [`ShapeKind`]'s own name.
 pub fn kind_of_name(name: &str) -> Option<ShapeKind> {
     serde_json::from_value(serde_json::Value::String(name.to_string())).ok()
@@ -1067,7 +1292,9 @@ mod tests {
             for (w, h) in [(120.0, 80.0), (40.0, 200.0), (300.0, 20.0), (1.0, 1.0)] {
                 let segs = outline(&geom, w, h).unwrap_or_else(|| panic!("{name} has no outline"));
                 assert!(matches!(segs.first(), Some(PathSeg::Move(..))), "{name}");
-                assert!(segs.contains(&PathSeg::Close), "{name} is closed");
+                // Brackets and braces are open curves: filled between their ends, not outlined there.
+                let open = matches!(name, "leftBracket" | "rightBracket" | "leftBrace" | "rightBrace" | "bracketPair" | "bracePair");
+                assert_eq!(segs.contains(&PathSeg::Close), !open, "{name} is closed, unless it is a bracket");
                 // A callout's tail is the one thing drawn outside the frame.
                 if name.starts_with("wedge") {
                     continue;
@@ -1085,7 +1312,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(outline(&preset("cloud"), 10.0, 10.0), None, "a preset with no outline here is left to its kind");
+        assert_eq!(outline(&preset("sun"), 10.0, 10.0), None, "a preset with no outline here is left to its kind");
     }
 
     #[test]
@@ -1236,6 +1463,104 @@ mod tests {
         assert!(matches!(wild, Some(Adjusted::Preset(p)) if p.adjust.iter().all(|(_, v)| (0..=250_000).contains(v))));
     }
 
+    /// The cloud, the brackets and braces, the curved arrows and the ribbons are drawn as
+    /// themselves, from the standard's definitions: they were an oval or a rectangle before.
+    #[test]
+    fn clouds_brackets_curved_arrows_and_ribbons_have_their_own_outlines() {
+        let near = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 0.05 && (a.1 - b.1).abs() < 0.05;
+        // Every point a path goes through, its curves' ends too.
+        let ends = |segs: &[PathSeg]| -> Vec<(f32, f32)> {
+            segs.iter()
+                .filter_map(|s| match *s {
+                    PathSeg::Move(x, y) | PathSeg::Line(x, y) | PathSeg::Cubic(_, _, _, _, x, y) => Some((x, y)),
+                    PathSeg::Close => None,
+                })
+                .collect()
+        };
+        let closes = |segs: &[PathSeg]| segs.iter().filter(|s| matches!(s, PathSeg::Close)).count();
+        let moves = |segs: &[PathSeg]| segs.iter().filter(|s| matches!(s, PathSeg::Move(..))).count();
+        // A left bracket 40 × 120: from the bottom right, round to the left side, up it, round
+        // to the top right. Open: nothing closes it. The right one is its mirror image.
+        let left = outline(&preset("leftBracket"), 40.0, 120.0).unwrap();
+        let at = ends(&left);
+        let y1 = 40.0 * 0.08333;
+        assert!(near(at[0], (40.0, 120.0)) && near(at[1], (0.0, 120.0 - y1)) && near(at[2], (0.0, y1)) && near(at[3], (40.0, 0.0)), "{at:?}");
+        assert_eq!((closes(&left), moves(&left)), (0, 1));
+        let right = ends(&outline(&preset("rightBracket"), 40.0, 120.0).unwrap());
+        assert!(right.iter().zip(&at).all(|(r, l)| near(*r, (40.0 - l.0, l.1))), "{right:?}");
+        // A left brace: its point is on the left side, halfway down by default, and where
+        // `adj2` puts it.
+        let brace = ends(&outline(&preset("leftBrace"), 40.0, 120.0).unwrap());
+        assert!(
+            brace.iter().any(|p| near(*p, (0.0, 60.0))) && near(brace[0], (40.0, 120.0)) && near(*brace.last().unwrap(), (40.0, 0.0)),
+            "{brace:?}"
+        );
+        let low = ends(&outline(&with("leftBrace", &[("adj2", 75_000)]), 40.0, 120.0).unwrap());
+        assert!(low.iter().any(|p| near(*p, (0.0, 90.0))), "{low:?}");
+        let rb = ends(&outline(&preset("rightBrace"), 40.0, 120.0).unwrap());
+        assert!(rb.iter().any(|p| near(*p, (40.0, 60.0))) && near(rb[0], (0.0, 120.0)), "{rb:?}");
+        // The pairs: two open curves, one at each side.
+        for (name, edge) in [("bracketPair", 0.0), ("bracePair", 0.0)] {
+            let pair = outline(&preset(name), 200.0, 90.0).unwrap();
+            assert_eq!((closes(&pair), moves(&pair)), (0, 2), "{name}");
+            let at = ends(&pair);
+            let (xs_min, xs_max) = at.iter().fold((f32::MAX, f32::MIN), |(lo, hi), p| (lo.min(p.0), hi.max(p.0)));
+            assert!(near((xs_min, 0.0), (edge, 0.0)) && near((xs_max, 0.0), (200.0, 0.0)), "{name}: {at:?}");
+        }
+        // The cloud: one closed outline that reaches all four sides of its frame (to within the
+        // standard's own slack), and eleven short arcs on it that enclose nothing.
+        let cloud = outline(&preset("cloud"), 216.0, 216.0).unwrap();
+        assert_eq!((closes(&cloud), moves(&cloud)), (1, 12));
+        let poly = first_polygon(&cloud);
+        let (mut x0, mut x1, mut y0, mut y1) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for &(x, y) in &poly {
+            (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+        }
+        assert!(x0.abs() < 2.0 && (x1 - 216.0).abs() < 2.0 && y0.abs() < 2.0 && (y1 - 216.0).abs() < 2.0, "{x0} {x1} {y0} {y1}");
+        let first = cloud.iter().position(|s| matches!(s, PathSeg::Close)).unwrap();
+        let (began, ended) = (ends(&cloud)[0], *ends(&cloud[..first]).last().unwrap());
+        assert!((began.0 - ended.0).abs() < 1.0 && (began.1 - ended.1).abs() < 1.0, "the arcs around meet where they began: {began:?} {ended:?}");
+        // The second arc starts where the standard starts one of the short arcs drawn on it.
+        assert!(ends(&cloud).iter().take(4).any(|p| (p.0 - 70.0).abs() < 0.3 && (p.1 - 25.96).abs() < 0.3), "{:?}", &ends(&cloud)[..4]);
+        // The arrow that curves right, 100 × 100: its tip is on the right side, three quarters
+        // down (half the head's width from the bottom); the band starts at the left, a quarter
+        // down. Left is its mirror image; down is it on its side, tip on the bottom; up, on top.
+        let tip = |name: &str, at: (f32, f32)| {
+            let segs = outline(&preset(name), 100.0, 100.0).unwrap();
+            assert_eq!((closes(&segs), moves(&segs)), (2, 2), "{name}");
+            assert!(ends(&segs).iter().any(|p| near(*p, at)), "{name}: no corner at {at:?} in {:?}", ends(&segs));
+            for (x, y) in ends(&segs) {
+                assert!((-0.05..=100.05).contains(&x) && (-0.05..=100.05).contains(&y), "{name}: ({x}, {y}) is outside the frame");
+            }
+        };
+        tip("curvedRightArrow", (100.0, 75.0));
+        tip("curvedRightArrow", (0.0, 31.25));
+        tip("curvedLeftArrow", (0.0, 75.0));
+        tip("curvedDownArrow", (75.0, 100.0));
+        tip("curvedUpArrow", (75.0, 0.0));
+        // A ribbon 320 × 60: its ends are notched an eighth of the width in, its front panel is
+        // the middle half, and it hangs a sixth below the ends' top. The other is upside down.
+        let ribbon = outline(&preset("ribbon"), 320.0, 60.0).unwrap();
+        assert_eq!((closes(&ribbon), moves(&ribbon)), (3, 5), "the outline, the backs of its two rolls, and two folds");
+        let at = ends(&ribbon);
+        for want in [(0.0, 0.0), (40.0, 25.0), (0.0, 50.0), (320.0, 0.0), (280.0, 25.0), (320.0, 50.0), (80.0, 50.0), (240.0, 50.0)] {
+            assert!(at.iter().any(|p| near(*p, want)), "no corner at {want:?} in {at:?}");
+        }
+        let up = ends(&outline(&preset("ribbon2"), 320.0, 60.0).unwrap());
+        assert!(up.iter().zip(&at).all(|(u, d)| near(*u, (d.0, 60.0 - d.1))));
+        assert_eq!(text_insets(&preset("ribbon"), 320.0, 60.0), Some([90.0, 60.0 * 0.16667, 90.0, 0.0]));
+        // Values out of range, and frames too thin for the shape, still draw finite paths.
+        for name in ["cloud", "leftBracket", "rightBrace", "bracePair", "bracketPair", "curvedRightArrow", "curvedUpArrow", "ribbon", "ribbon2"] {
+            for adjust in [i32::MIN, -1, 0, 1, 99_999, i32::MAX] {
+                let geom = with(name, &[("adj", adjust), ("adj1", adjust), ("adj2", adjust), ("adj3", adjust)]);
+                for (w, h) in [(1.0, 1000.0), (1000.0, 1.0), (0.01, 0.01), (50.0, 50.0)] {
+                    let segs = outline(&geom, w, h).unwrap();
+                    assert!(ends(&segs).iter().all(|p| p.0.is_finite() && p.1.is_finite()), "{name} {adjust} {w}×{h}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_presets_outline_is_also_a_freeforms_paths() {
         let f = freeform(&preset("cube"), 100.0, 80.0).unwrap();
@@ -1246,7 +1571,7 @@ mod tests {
         let oval = freeform(&preset("donut"), 100.0, 80.0).unwrap();
         assert_eq!(oval.paths.len(), 2);
         assert!(oval.paths[0].pts.len() > 30 && oval.paths.iter().all(|p| p.closed));
-        assert_eq!(freeform(&preset("cloud"), 100.0, 80.0), None);
+        assert_eq!(freeform(&preset("sun"), 100.0, 80.0), None);
     }
 
     #[test]
@@ -1310,7 +1635,7 @@ mod tests {
         // A hexagon's text keeps clear of its slanted sides; a plain box's fills it.
         let [l, t, ..] = text_insets(&preset("hexagon"), 120.0, 80.0).unwrap();
         assert!(l > 5.0 && t > 5.0, "{l} {t}");
-        assert_eq!(text_insets(&preset("cloud"), 80.0, 40.0), None);
+        assert_eq!(text_insets(&preset("sun"), 80.0, 40.0), None);
     }
 
     #[test]
@@ -1321,7 +1646,7 @@ mod tests {
         // A chevron's left site is in its notch; a merge triangle's sides are halfway in.
         assert_eq!(side_sites(&preset("chevron"), 200.0, 80.0).unwrap()[1], (40.0, 40.0));
         assert_eq!(side_sites(&preset("flowChartMerge"), 100.0, 80.0).unwrap(), vec![(50.0, 0.0), (25.0, 40.0), (50.0, 80.0), (75.0, 40.0)]);
-        assert_eq!(side_sites(&preset("cloud"), 100.0, 80.0), None);
+        assert_eq!(side_sites(&preset("sun"), 100.0, 80.0), None);
         // And text wraps around the outline.
         let unit = unit_outline(&preset("parallelogram"), 120.0, 80.0).unwrap();
         assert_eq!(unit, vec![(0.0, 1.0), (1.0 / 6.0, 0.0), (1.0, 0.0), (5.0 / 6.0, 1.0)]);

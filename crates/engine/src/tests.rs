@@ -8064,6 +8064,59 @@ fn changing_a_shape_to_a_gallery_preset_keeps_it_and_moves_its_connectors() {
     assert!(s.run("shape.change", &json!({"kind": "noSuchShape"})).is_err());
 }
 
+/// The cloud, brackets, braces, curved arrows and ribbons of the gallery: each is kept as its
+/// preset and saved as itself; a bracket or brace is a curve, so a new one has an outline and no
+/// fill.
+#[test]
+fn clouds_brackets_curved_arrows_and_ribbons_are_inserted_and_saved_as_themselves() {
+    use wordcraft_doc::InlineObject::Shape;
+    let names = [
+        "cloud",
+        "bracketPair",
+        "bracePair",
+        "leftBracket",
+        "rightBracket",
+        "leftBrace",
+        "rightBrace",
+        "curvedRightArrow",
+        "curvedLeftArrow",
+        "curvedUpArrow",
+        "curvedDownArrow",
+        "ribbon",
+        "ribbon2",
+    ];
+    let mut s = s();
+    for (i, name) in names.iter().enumerate() {
+        run(&mut s, "insert.shape", json!({"kind": name, "x": 60 + (i % 4) * 120, "y": 60 + (i / 4) * 110, "page": 0, "width": 90, "height": 70}));
+    }
+    let shapes = |s: &Session| -> Vec<(String, bool, bool)> {
+        let mut out: Vec<_> = drawings(s)
+            .into_iter()
+            .filter_map(|(_, obj)| match obj {
+                Shape { extra, fill, stroke, .. } => extra.preset.as_deref().map(|p| (p.name.clone(), fill.is_some(), stroke.is_some())),
+                _ => None,
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let made = shapes(&s);
+    assert_eq!(made.len(), names.len(), "{made:?}");
+    for (name, filled, outlined) in &made {
+        assert!(wordcraft_doc::preset::gallery_shape(name).is_some(), "{name} is in the gallery");
+        assert!(
+            wordcraft_doc::preset::outline(&wordcraft_doc::connector::PresetGeom::new(name, []).unwrap(), 90.0, 70.0).is_some(),
+            "{name} is drawn"
+        );
+        assert_eq!(*filled, !name.to_lowercase().contains("brac"), "{name}");
+        assert!(outlined, "{name}");
+    }
+    let back = Session::new(wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap());
+    assert_eq!(shapes(&back), made, "saved and opened again");
+    // The page draws without a hitch, and so does a PDF of it.
+    assert_eq!(s.layout().pages.len(), 1);
+}
+
 /// A shape's handles change its proportions: a parallelogram's lean (the connector on its slanted
 /// side follows), a block arrow's head and shaft, a callout's tip, a rounded corner. The shape
 /// keeps the result as its preset's adjust values, so a DOCX file saves it; one undo step takes
