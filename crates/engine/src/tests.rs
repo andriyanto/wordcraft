@@ -7687,6 +7687,67 @@ fn a_moved_connector_run_stays_where_it_was_put() {
     assert!(s.run("shape.bend", &json!({"value": 10})).is_err());
 }
 
+/// Several drawings are selected together by a box drawn around them, and then move, line up,
+/// space out and are deleted together. Only the first of them did before: the others were
+/// selected for grouping alone.
+#[test]
+fn drawings_selected_together_move_align_space_and_go_together() {
+    let mut s = s();
+    for (x, y, w, h) in [(100, 100, 80, 40), (220, 160, 60, 60), (400, 120, 100, 30), (100, 400, 80, 40)] {
+        run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": x, "y": y, "page": 0, "width": w, "height": h}));
+    }
+    // Every drawing's frame on the page, left to right then top to bottom.
+    let frames = |s: &mut Session| -> Vec<[i32; 4]> {
+        let layout = s.layout();
+        let mut out: Vec<[i32; 4]> = drawings(s)
+            .iter()
+            .filter_map(|(pos, _)| layout.object(pos, 0))
+            .map(|h| [h.rect.x, h.rect.y, h.rect.w, h.rect.h].map(|v| v.round() as i32))
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(frames(&mut s), vec![[100, 100, 80, 40], [100, 400, 80, 40], [220, 160, 60, 60], [400, 120, 100, 30]]);
+    // A box around the upper three; one it only touches is left out.
+    let r = run(&mut s, "select.objects", json!({"page": 0, "x": 90, "y": 90, "width": 420, "height": 140}));
+    assert_eq!(r["selected"].as_array().unwrap().len(), 3, "{r}");
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3);
+    let none = run(&mut s, "select.objects", json!({"page": 0, "x": 95, "y": 380, "width": 50, "height": 100}));
+    assert_eq!((none["selected"].as_array().unwrap().len(), cmd::objects::picked_objects(&s).len()), (0, 3), "an empty box leaves the selection");
+    // Nudged: all three move, and stay selected.
+    run(&mut s, "arrange.nudge", json!({"dx": 10, "dy": 5}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40], [110, 105, 80, 40], [230, 165, 60, 60], [410, 125, 100, 30]]);
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3);
+    // Lined up by their tops (the highest stays), then by their middles.
+    run(&mut s, "arrange.align", json!({"value": "top"}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40], [110, 105, 80, 40], [230, 105, 60, 60], [410, 105, 100, 30]]);
+    run(&mut s, "arrange.align", json!({"value": "middle"}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40], [110, 115, 80, 40], [230, 105, 60, 60], [410, 120, 100, 30]]);
+    // Spaced evenly: the outer two stay, the gaps (40 and 120) become 80 each.
+    run(&mut s, "arrange.distribute", json!({"value": "horizontal"}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40], [110, 115, 80, 40], [270, 105, 60, 60], [410, 120, 100, 30]]);
+    // One undo takes the spacing back.
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(frames(&mut s)[2], [230, 105, 60, 60]);
+    // By their left sides.
+    run(&mut s, "select.objects", json!({"page": 0, "x": 90, "y": 90, "width": 450, "height": 140}));
+    run(&mut s, "arrange.align", json!({"value": "left"}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40], [110, 105, 60, 60], [110, 115, 80, 40], [110, 120, 100, 30]]);
+    // Two are not spaced, an unknown side is refused, and Delete takes all three.
+    assert!(s.run("arrange.align", &json!({"value": "sideways"})).is_err());
+    run(&mut s, "text.delete", json!({}));
+    assert_eq!(frames(&mut s), vec![[100, 400, 80, 40]]);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(frames(&mut s).len(), 4, "one undo brings them back");
+    select_drawing(&mut s, Some((140.0, 420.0)));
+    assert!(s.run("arrange.distribute", &json!({"value": "horizontal"})).is_err(), "one selected");
+    // One selected: between the margins, as before, now up and down too.
+    run(&mut s, "arrange.align", json!({"value": "top"}));
+    let layout = s.layout();
+    let (pos, _) = cmd::objects::selected(&s).unwrap();
+    assert!((layout.object(&pos, 0).unwrap().rect.y - cmd::page::sect(&s).margin_top).abs() < 0.5);
+}
+
 /// A connector stays glued to a shape that is grouped with another: it follows the shape when
 /// the group moves. It was left behind, its end where the shape had been: the glue named a
 /// shape the body no longer had on its own.

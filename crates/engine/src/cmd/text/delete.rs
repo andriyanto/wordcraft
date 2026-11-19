@@ -32,6 +32,10 @@ fn remove_number(s: &mut Session, f: &Pos, n: NumRef) -> CmdResult {
 fn backspace_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
+    // Several pictures or shapes selected: all of them, not only the first.
+    if crate::cmd::objects::delete_picked(s)? {
+        return sel_result(s);
+    }
     if !s.sel.is_collapsed() {
         let effect = delete_selection_effect(s)?;
         s.set_ime_edit_outcome(crate::ImeEditOutcome {
@@ -144,6 +148,10 @@ pub(super) fn delete(s: &mut Session, v: &Value) -> CmdResult {
 fn delete_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
+    // Several pictures or shapes selected: all of them, not only the first.
+    if crate::cmd::objects::delete_picked(s)? {
+        return sel_result(s);
+    }
     if !s.sel.is_collapsed() {
         let effect = delete_selection_effect(s)?;
         s.set_ime_edit_outcome(crate::ImeEditOutcome {

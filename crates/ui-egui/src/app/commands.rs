@@ -516,6 +516,7 @@ impl WordApp {
                 Value::Null
             }
             "ui.drawShape" => crate::shape_pen::pick(self, p),
+            "ui.selectObjects" => crate::shape_pen::pick_select(self, p),
             "ui.downloadUpdate" | "help.downloadUpdate" => {
                 crate::updates_ui::download(self);
                 Value::Null

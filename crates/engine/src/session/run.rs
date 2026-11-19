@@ -391,7 +391,18 @@ impl Session {
         crate::cmd::outline::after_command(self, sel_before, self.rev != rev_before);
         // Extra selected objects last until something else is edited or selected; formatting
         // them keeps them selected, as in Word.
-        if !matches!(id, "select.addObject" | "arrange.ungroup" | "shape.fill" | "shape.effects") && (spec.mutates || self.sel != *sel_before) {
+        if !matches!(
+            id,
+            "select.addObject"
+                | "select.objects"
+                | "arrange.ungroup"
+                | "arrange.nudge"
+                | "arrange.align"
+                | "arrange.distribute"
+                | "shape.fill"
+                | "shape.effects"
+        ) && (spec.mutates || self.sel != *sel_before)
+        {
             self.also_selected.clear();
         }
         // A canvas member stays picked while its canvas does and nothing else is selected.
