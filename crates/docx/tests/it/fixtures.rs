@@ -2784,6 +2784,41 @@ fn presets_drawn_as_another_shape_are_saved_as_the_file_had_them() {
     assert_eq!(shape_presets(&wordcraft_docx::read(&bytes).unwrap()), expected);
 }
 
+/// A bent connector that leaves its shape upwards or downwards is a quarter-turned frame, and
+/// one that goes around a shape has runs outside its frame (adjust values below 0 and above
+/// 100000). Both are what routing a connector between shapes makes: they are saved and read back
+/// as they are, turn, flip, preset and values.
+#[test]
+fn a_turned_connector_with_runs_outside_its_frame_survives_saving() {
+    let sppr = concat!(
+        r#"<a:prstGeom prst="bentConnector5"><a:avLst><a:gd name="adj1" fmla="val -9000"/><a:gd name="adj2" fmla="val 50000"/>"#,
+        r#"<a:gd name="adj3" fmla="val 109000"/></a:avLst></a:prstGeom><a:ln w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:ln>"#
+    );
+    let wsp = anchored_wsp("Elbow", 2540000, 1270000, sppr, "", "<wps:cNvCnPr/>").replace("<a:xfrm>", r#"<a:xfrm rot="5400000" flipH="1">"#);
+    let d = read_body(&format!("<w:p>{wsp}</w:p>"));
+    let look = |d: &Document| match &paras(d)[0].objects[0] {
+        InlineObject::Shape { kind, float, extra, w, h, .. } => {
+            (*kind, float.rot, float.flip_h, float.flip_v, (*w, *h), extra.preset.as_deref().map(|p| (p.name.clone(), p.adjust.clone())))
+        }
+        o => panic!("{o:?}"),
+    };
+    let adjust = vec![("adj1".to_string(), -9000), ("adj2".to_string(), 50000), ("adj3".to_string(), 109000)];
+    let expected = (ShapeKind::ElbowConnector, 90.0, true, false, (200.0, 100.0), Some(("bentConnector5".to_string(), adjust)));
+    assert_eq!(look(&d), expected);
+    let bytes = wordcraft_docx::write(&d).unwrap();
+    let xml = written_document_xml(&bytes);
+    for want in [
+        r#"rot="5400000""#,
+        r#"flipH="1""#,
+        r#"<a:prstGeom prst="bentConnector5">"#,
+        r#"<a:gd name="adj1" fmla="val -9000"/>"#,
+        r#"<a:gd name="adj3" fmla="val 109000"/>"#,
+    ] {
+        assert!(xml.contains(want), "{want} is not in {xml}");
+    }
+    assert_eq!(look(&wordcraft_docx::read(&bytes).unwrap()), expected);
+}
+
 /// What a kind says by itself is not kept twice, and a rounded rectangle keeps its corner as the
 /// shape's own (it can be changed), not as a kept preset.
 #[test]

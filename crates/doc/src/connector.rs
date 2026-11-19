@@ -1,17 +1,21 @@
 //! Connectors and the shape properties beyond fill and outline: a shape's drawing id, its text
 //! warp, a rounded rectangle's corner, and a connector's ends.
 //!
-//! A connector (DrawingML `straightConnector1`, `bentConnector3`, `curvedConnector3`) is a line
-//! from its frame's top-left to its bottom-right corner (flips swap the corners). Each end may be
-//! glued to a connection site of another shape (`a:stCxn` / `a:endCxn`, ECMA-376 §20.1.2.2.36 and
-//! §20.1.2.2.13: the shape's drawing id and a site index). When a glued shape moves, [`route`]
-//! gives the connector's new frame from its ends.
+//! A connector (DrawingML `straightConnector1`, `bentConnector2`–`5`, `curvedConnector2`–`5`) is
+//! a line from its frame's top-left to its bottom-right corner (flips swap the corners, a turn
+//! turns the frame about its centre). Each end may be glued to a connection site of another shape
+//! (`a:stCxn` / `a:endCxn`, ECMA-376 §20.1.2.2.36 and §20.1.2.2.13: the shape's drawing id and a
+//! site index). When a glued shape moves, [`route_connector`] gives the connector's new frame,
+//! turn and preset from its ends and the sides they are glued to ([`route`]: the frame of a
+//! straight one).
 
 use serde::{Deserialize, Serialize};
 
-use crate::graphic::PathSeg;
 use crate::para::{InlineObject, ShapeKind};
 use crate::wordart::TextWarp;
+
+mod bent;
+pub use bent::{BendHandle, RouteEnd, Routed, STUB, Was, axis_direction, bend_handles, bend_to, connector_path, path_direction, route_connector};
 
 /// DrawingML outline ends (ST_LineCap); missing and unknown values use flat ends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -378,6 +382,16 @@ pub fn nearest_site(kind: ShapeKind, rect: [f32; 4], spin: wordcraft_geom::Spin,
         .min_by(|a, b| a.2.total_cmp(&b.2))
 }
 
+/// The way out of a `kind` shape (frame `rect`, `spin`) at its site `site`: the direction from
+/// the shape's middle to the site, as a unit vector along the page's x or y axis (the nearer
+/// one). A connector glued there leaves the shape that way. `None` for a site the shape doesn't
+/// have, or one in its middle.
+pub fn site_way_out(kind: ShapeKind, rect: [f32; 4], spin: wordcraft_geom::Spin, site: u32) -> Option<(f32, f32)> {
+    let (px, py) = site_point(kind, rect, spin, site)?;
+    let [x, y, w, h] = rect;
+    axis_direction((px - (x + w / 2.0), py - (y + h / 2.0)))
+}
+
 /// A connector's frame: top-left corner, size and flips.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Frame {
@@ -403,35 +417,27 @@ pub fn ends(x: f32, y: f32, w: f32, h: f32, flip_h: bool, flip_v: bool) -> ((f32
     ((xa, ya), (xb, yb))
 }
 
-/// The path of a connector `kind` in a `w` × `h` frame at the origin, from its top-left to its
-/// bottom-right corner (flips are the frame's turn): straight, an elbow through the middle (out
-/// horizontally, across, in horizontally), or an S-curve. `None` for other kinds.
-pub fn connector_segs(kind: ShapeKind, w: f32, h: f32) -> Option<Vec<PathSeg>> {
-    let (w, h) = (wordcraft_geom::finite(w), wordcraft_geom::finite(h));
-    let mx = w / 2.0;
-    Some(match kind {
-        ShapeKind::StraightConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(w, h)],
-        ShapeKind::ElbowConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Line(mx, 0.0), PathSeg::Line(mx, h), PathSeg::Line(w, h)],
-        ShapeKind::CurvedConnector => vec![PathSeg::Move(0.0, 0.0), PathSeg::Cubic(mx, 0.0, mx, h, w, h)],
-        _ => return None,
-    })
+/// Whether a frame turned `rot` degrees has its x axis along the page's y: a bent or curved
+/// connector in it leaves upwards or downwards.
+pub fn leaves_upright(rot: f32) -> bool {
+    let r = wordcraft_geom::normalize_degrees(rot);
+    (45.0..135.0).contains(&r) || (225.0..315.0).contains(&r)
 }
 
-/// The direction (unit vector) a line or connector `kind` arrives at its end (`at_end`) or
-/// leaves its start, in its unflipped `w` × `h` frame: where an arrowhead points.
-pub fn end_direction(kind: ShapeKind, w: f32, h: f32, at_end: bool) -> (f32, f32) {
-    let (dx, dy) = match kind {
-        ShapeKind::ElbowConnector | ShapeKind::CurvedConnector => {
-            if w.abs() > 0.01 || h.abs() < 0.01 {
-                (1.0, 0.0)
-            } else {
-                (0.0, 1.0)
-            }
-        }
-        _ => (w, h),
-    };
-    let len = (dx * dx + dy * dy).sqrt();
-    let (ux, uy) = if len > 1e-6 && len.is_finite() { (dx / len, dy / len) } else { (1.0, 0.0) };
+/// A connector's start and end on the page from its frame `rect` (x, y, w, h) turned and flipped
+/// by `spin` about its centre: [`ends`] for a frame that may be turned.
+pub fn ends_spun(rect: [f32; 4], spin: wordcraft_geom::Spin) -> ((f32, f32), (f32, f32)) {
+    let [x, y, w, h] = rect.map(wordcraft_geom::finite);
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    (spin.apply(cx, cy, x, y), spin.apply(cx, cy, x + w, y + h))
+}
+
+/// The direction (unit vector) a line `w` × `h` arrives at its end (`at_end`) or points back out
+/// of its start, in its unflipped frame: where an arrowhead points. Connectors take theirs from
+/// their path ([`path_direction`]).
+pub fn end_direction(w: f32, h: f32, at_end: bool) -> (f32, f32) {
+    let len = (w * w + h * h).sqrt();
+    let (ux, uy) = if len > 1e-6 && len.is_finite() { (w / len, h / len) } else { (1.0, 0.0) };
     if at_end { (ux, uy) } else { (-ux, -uy) }
 }
 
@@ -458,8 +464,9 @@ pub fn reroute_group(group: &mut InlineObject) -> bool {
     let find = |e: Option<ConnEnd>| {
         let e = e?;
         let (_, kind, rect, spin) = shapes.iter().find(|s| s.0 == e.id)?;
-        site_point(*kind, *rect, *spin, e.site)
+        Some(RouteEnd { at: site_point(*kind, *rect, *spin, e.site)?, out: site_way_out(*kind, *rect, *spin, e.site) })
     };
+    let scaled = sx.is_finite() && sy.is_finite() && sx > 0.0 && sy > 0.0;
     let mut moved = false;
     for c in children.iter_mut() {
         let InlineObject::Shape { kind, w, h, float, extra, .. } = &mut c.obj else { continue };
@@ -467,9 +474,35 @@ pub fn reroute_group(group: &mut InlineObject) -> bool {
             continue;
         }
         let (s, e, fallback) = match (find(extra.start), find(extra.end)) {
-            (Some(s), Some(e)) => (s, e, false),
+            // A bent or curved connector between two shapes leaves each away from it. It is
+            // routed as it is shown (the group's scale applied), where a quarter-turned frame's
+            // sides are the page's.
+            (Some(s), Some(e)) if scaled && *kind != ShapeKind::StraightConnector => {
+                let shown = |p: (f32, f32)| (p.0 * sx, p.1 * sy);
+                let (start, end) = (RouteEnd { at: shown(s.at), out: s.out }, RouteEnd { at: shown(e.at), out: e.out });
+                let rect = [fin(c.x) * sx, fin(c.y) * sy, fin(*w) * sx, fin(*h) * sy];
+                let (s0, e0) = ends_spun(rect, float.spin());
+                let near = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < 0.05 && (a.1 - b.1).abs() < 0.05;
+                // Ends at their sites: the connector stays as a file or the user made it.
+                if near(s0, start.at) && near(e0, end.at) {
+                    continue;
+                }
+                let was = Was { preset: extra.preset.as_deref(), w: rect[2], h: rect[3], upright: leaves_upright(float.rot) };
+                let to = route_connector(*kind, start, end, was);
+                let f = to.frame;
+                if ![f.x, f.y, f.w, f.h].into_iter().all(f32::is_finite) || f.w > 4000.0 || f.h > 4000.0 {
+                    continue;
+                }
+                (c.x, c.y, *w, *h) = (f.x / sx, f.y / sy, f.w / sx, f.h / sy);
+                (float.rot, float.flip_h, float.flip_v) = (to.rot, f.flip_h, f.flip_v);
+                extra.preset = to.preset.map(std::sync::Arc::new);
+                moved = true;
+                continue;
+            }
+            (Some(s), Some(e)) => (s.at, e.at, false),
             (s, e) => {
-                if !sx.is_finite() || !sy.is_finite() || sx <= 0.0 || sy <= 0.0 {
+                let (s, e) = (s.map(|p| p.at), e.map(|p| p.at));
+                if !scaled {
                     continue;
                 }
                 // Rendering scales the rectangle before spinning it. Undo only the group scale

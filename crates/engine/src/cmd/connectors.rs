@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
-use wordcraft_doc::connector::{ConnEnd, Frame, ends, nearest_site, route, site_point};
+use wordcraft_doc::connector::{ConnEnd, RouteEnd, Routed, Was, ends_spun, leaves_upright, nearest_site, route_connector, site_point, site_way_out};
 use wordcraft_doc::para::{Anchor, InlineObject, Wrap};
 use wordcraft_doc::{Pos, StoryRef};
 
@@ -32,6 +32,11 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("shape.connect", "Connect Shapes", "Shape Format › Insert Shapes", connect)
             .params(
                 r#"{"start"?: end, "end"?: end}  end: {"path": [..], "off": n, "site"?: n} (glue to that body shape's connection site; nearest one when omitted) | {"x": pt, "y": pt, "page"?: n} (drag the end there: it glues to a shape's site within 12 pt, else stays free there) | null (unglue)"#,
+            )
+            .when(has_connector),
+        CommandSpec::new("shape.bend", "Move Connector Bend", "Shape Format › Insert Shapes", bend)
+            .params(
+                r#"{"handle"?: 1-3 (which run between the first and the last; 1), "x": pt, "y": pt} (move that run of the selected bent or curved connector to this point of its page) | {"handle"?: n, "value": n} (the run's adjust value: 100000ths of the frame's width or height, outside 0-100000 for a run outside the frame)"#,
             )
             .when(has_connector),
     ]
@@ -73,6 +78,15 @@ fn scan(s: &Session) -> (HashMap<u32, Pos>, Vec<Pos>, Vec<Pos>) {
 
 /// Re-route every glued connector to the shapes it joins. Returns whether anything moved.
 pub fn reroute(s: &mut Session) -> bool {
+    reroute_with(s, None)
+}
+
+/// How far (points) a glued end may be from its site and still be where it belongs.
+const AT_SITE: f32 = 0.05;
+
+/// [`reroute`], routing the connector at `fresh` anew even when its ends are where they belong
+/// (its glue was just changed: the way it leaves its shapes may have).
+fn reroute_with(s: &mut Session, fresh: Option<&Pos>) -> bool {
     let (ids, conns, groups) = scan(s);
     let mut moved = false;
     for pos in groups {
@@ -92,7 +106,8 @@ pub fn reroute(s: &mut Session) -> bool {
     }
     let layout = s.layout();
     let objects = layout.object_index();
-    let site = |e: Option<ConnEnd>, page: usize| -> Option<(f32, f32)> {
+    // A glued end: its site on the page, and the way out of its shape there.
+    let site = |e: Option<ConnEnd>, page: usize| -> Option<RouteEnd> {
         let e = e?;
         let target = ids.get(&e.id)?;
         let hit = objects.object(target, page)?;
@@ -100,16 +115,27 @@ pub fn reroute(s: &mut Session) -> bool {
             InlineObject::Shape { kind, .. } => *kind,
             _ => return None,
         };
-        (hit.page == page).then(|| site_point(kind, [hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h], hit.spin, e.site))?
+        if hit.page != page {
+            return None;
+        }
+        let rect = [hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h];
+        Some(RouteEnd { at: site_point(kind, rect, hit.spin, e.site)?, out: site_way_out(kind, rect, hit.spin, e.site) })
     };
     let mut plans = Vec::new();
     for pos in conns {
         let Some(hit) = objects.object(&pos, s.page_hint) else { continue };
-        let Some(InlineObject::Shape { extra, float, .. }) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
+        let Some(InlineObject::Shape { kind, extra, float, w, h, .. }) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
         let r = hit.rect;
-        let (s0, e0) = ends(r.x, r.y, r.w, r.h, float.flip_h, float.flip_v);
-        let to = route(site(extra.start, hit.page).unwrap_or(s0), site(extra.end, hit.page).unwrap_or(e0));
-        plans.push((pos, to, (r.x, r.y), (hit.origin.x, hit.origin.y)));
+        let (s0, e0) = ends_spun([r.x, r.y, r.w, r.h], hit.spin);
+        let (start, end) = (site(extra.start, hit.page).unwrap_or(RouteEnd::free(s0)), site(extra.end, hit.page).unwrap_or(RouteEnd::free(e0)));
+        // A connector whose ends are at their sites stays as it is, as a file or the user made
+        // it: only one that a moved shape left behind is routed again.
+        let near = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < AT_SITE && (a.1 - b.1).abs() < AT_SITE;
+        if fresh != Some(&pos) && near(start.at, s0) && near(end.at, e0) {
+            continue;
+        }
+        let was = Was { preset: extra.preset.as_deref(), w: *w, h: *h, upright: leaves_upright(float.rot) };
+        plans.push((pos, route_connector(*kind, start, end, was), (r.x, r.y), (hit.origin.x, hit.origin.y)));
     }
     for (pos, to, at, origin) in plans {
         moved |= place(s, &pos, to, at, origin);
@@ -118,18 +144,22 @@ pub fn reroute(s: &mut Session) -> bool {
 }
 
 /// Put the floating connector at `pos` (now with its frame's top-left at page point `at`, its
-/// anchor's origin at `origin`) in frame `to`. Returns whether it changed.
-fn place(s: &mut Session, pos: &Pos, to: Frame, at: (f32, f32), origin: (f32, f32)) -> bool {
+/// anchor's origin at `origin`) where `to` routes it. Returns whether it changed.
+fn place(s: &mut Session, pos: &Pos, to: Routed, at: (f32, f32), origin: (f32, f32)) -> bool {
     let Ok(para) = s.doc.para_mut(pos.story, &pos.path) else { return false };
-    let Some(InlineObject::Shape { w, h, float, .. }) = para.object_at_mut(pos.off) else { return false };
+    let Some(InlineObject::Shape { kind, w, h, float, extra, .. }) = para.object_at_mut(pos.off) else { return false };
     let near = |a: f32, b: f32| (a - b).abs() < 0.01;
+    let Routed { frame: to, rot, preset } = to;
+    // Only bent and curved connectors are drawn from their preset: a straight one keeps its own.
+    let preset = if *kind == wordcraft_doc::para::ShapeKind::StraightConnector { extra.preset.clone() } else { preset.map(std::sync::Arc::new) };
     if near(to.x, at.0)
         && near(to.y, at.1)
         && near(to.w, *w)
         && near(to.h, *h)
         && to.flip_h == float.flip_h
         && to.flip_v == float.flip_v
-        && float.rot == 0.0
+        && float.rot == rot
+        && extra.preset == preset
     {
         return false;
     }
@@ -149,9 +179,10 @@ fn place(s: &mut Session, pos: &Pos, to: Frame, at: (f32, f32), origin: (f32, f3
     }
     *w = to.w.clamp(0.0, MAX_OFFSET);
     *h = to.h.clamp(0.0, MAX_OFFSET);
-    float.rot = 0.0;
+    float.rot = rot;
     float.flip_h = to.flip_h;
     float.flip_v = to.flip_v;
+    extra.preset = preset;
     para.touch();
     true
 }
@@ -196,11 +227,11 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
     if pos.story != StoryRef::Body || float.wrap == Wrap::Inline {
         return Err(CmdError::Disabled("only floating connectors in the body text can be glued".into()));
     }
-    let (fh, fv) = (float.flip_h, float.flip_v);
+    let (kind, upright) = (*kind, leaves_upright(float.rot));
     let layout = s.layout();
     let hit = layout.object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the connector isn't laid out".into()))?;
     let r = hit.rect;
-    let (mut p0, mut p1) = ends(r.x, r.y, r.w, r.h, fh, fv);
+    let (mut p0, mut p1) = ends_spun([r.x, r.y, r.w, r.h], hit.spin);
     let mut glue: [Option<Option<ConnEnd>>; 2] = [None, None];
     for (i, key) in ["start", "end"].into_iter().enumerate() {
         let Some(e) = v.get(key) else { continue };
@@ -285,9 +316,56 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
         }
         para.touch();
     }
-    place(s, &pos, route(p0, p1), (r.x, r.y), (hit.origin.x, hit.origin.y));
+    // The ends where they were dragged, in the direction the connector had; then the glued
+    // ones go to their sites, and the connector leaves its shapes away from them.
+    let was_preset = match &obj {
+        InlineObject::Shape { extra, .. } => extra.preset.clone(),
+        _ => None,
+    };
+    let was = Was { preset: was_preset.as_deref(), w: r.w, h: r.h, upright };
+    place(s, &pos, route_connector(kind, RouteEnd::free(p0), RouteEnd::free(p1), was), (r.x, r.y), (hit.origin.x, hit.origin.y));
     s.touch();
-    reroute(s);
+    reroute_with(s, Some(&pos));
+    let o = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned();
+    Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
+}
+
+/// `shape.bend`: move one of the selected bent or curved connector's runs.
+fn bend(s: &mut Session, v: &Value) -> CmdResult {
+    let (pos, obj) = super::objects::selected(s).ok_or_else(|| CmdError::Disabled("select a connector first".into()))?;
+    let InlineObject::Shape { kind, extra, w, h, .. } = &obj else { return Err(CmdError::Disabled("select a connector first".into())) };
+    let (kind, preset) = (*kind, extra.preset.clone());
+    let run = p::u64(v, "handle").map_or(Some(1), |n| u8::try_from(n).ok()).ok_or_else(|| CmdError::Params("`handle`: 1 to 3".into()))?;
+    let handle = wordcraft_doc::connector::bend_handles(kind, preset.as_deref(), *w, *h)
+        .into_iter()
+        .find(|b| b.adjust == run)
+        .ok_or_else(|| CmdError::Params("this connector has no such run to move".into()))?;
+    // Where the run goes, in the connector's own frame.
+    let (size, to) = match (p::f32(v, "value"), p::f32(v, "x"), p::f32(v, "y")) {
+        (Some(value), ..) => {
+            let share = wordcraft_geom::finite(value) / 100_000.0;
+            ((*w, *h), (share * *w, share * *h))
+        }
+        (None, x, y) if x.is_some() || y.is_some() => {
+            let layout = s.layout();
+            let hit = layout.object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the connector isn't laid out".into()))?;
+            let r = hit.rect;
+            let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+            // A missing coordinate leaves the run where it is that way.
+            let now = hit.spin.apply(cx, cy, r.x + handle.at.0, r.y + handle.at.1);
+            let own = hit.spin.unapply(cx, cy, wordcraft_geom::finite(x.unwrap_or(now.0)), wordcraft_geom::finite(y.unwrap_or(now.1)));
+            ((r.w, r.h), (own.0 - r.x, own.1 - r.y))
+        }
+        _ => return Err(CmdError::Params("a point (`x`, `y`) or a `value`".into())),
+    };
+    let bent = wordcraft_doc::connector::bend_to(kind, preset.as_deref(), size.0, size.1, run, to)
+        .ok_or_else(|| CmdError::Params("this connector has no such run to move".into()))?;
+    let para = s.doc.para_mut(pos.story, &pos.path)?;
+    if let Some(InlineObject::Shape { extra, .. }) = para.object_at_mut(pos.off) {
+        extra.preset = bent.map(std::sync::Arc::new);
+        para.touch();
+    }
+    s.touch();
     let o = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned();
     Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
 }
@@ -295,7 +373,7 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wordcraft_doc::connector::ShapeExtra;
+    use wordcraft_doc::connector::{ShapeExtra, ends};
     use wordcraft_doc::para::{Float, GroupChild, ShapeKind};
 
     fn shape(kind: ShapeKind, extra: ShapeExtra, float: Float) -> InlineObject {

@@ -1149,3 +1149,57 @@ fn double_clicking_a_shape_types_in_it() {
     assert_eq!(h.state().session.doc.plain_text(wordcraft_doc::StoryRef::Part(id)).trim_end(), "Decide");
     assert_eq!(story(&h), Some(id), "the shape is still there");
 }
+
+/// A selected bent connector has a handle in the middle of each run between its first and last:
+/// dragging it moves the run, and the connector stays glued. The handles of a connector that
+/// leaves downwards (a quarter-turned frame) are where its runs and ends are on the page: they
+/// were worked out as if the frame were unturned.
+#[test]
+fn dragging_a_connectors_run_handle_moves_the_run() {
+    use egui::{Event, PointerButton};
+    let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+    app.run("view.commentsPane", json!({"value": false})).unwrap();
+    app.run("insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60})).unwrap();
+    app.run("insert.shape", json!({"kind": "rectangle", "x": 240, "y": 300, "page": 0, "width": 100, "height": 60})).unwrap();
+    // From the first one's bottom (150, 160) to the second one's top (290, 300): down to 230,
+    // across, down.
+    app.run("insert.shape", json!({"kind": "elbowConnector", "x": 150, "y": 162, "x1": 290, "y1": 298, "page": 0})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 1100.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    let layout = h.state_mut().session.layout();
+    let (o, a, b) = connector_ends(h.state(), &layout).expect("the connector is selected");
+    let near = |p: (f32, f32), q: (f32, f32)| (p.0 - q.0).abs() < 0.5 && (p.1 - q.1).abs() < 0.5;
+    assert!(o.spin.deg == 90.0 && near(a, (150.0, 160.0)) && near(b, (290.0, 300.0)), "{:?} {a:?} {b:?}", o.spin);
+    let (_, bends) = connector_bends(h.state(), &layout).unwrap();
+    assert!(matches!(bends.as_slice(), [(1, p)] if near(*p, (220.0, 230.0))), "the handle is in the middle of the level run: {bends:?}");
+    // Drag it up to y = 190.
+    let from = crate::canvas::page_to_screen(h.state_mut(), 0, 220.0, 230.0).unwrap();
+    let to = crate::canvas::page_to_screen(h.state_mut(), 0, 260.0, 190.0).unwrap();
+    h.event(Event::PointerMoved(from));
+    h.step();
+    h.event(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    h.step();
+    for i in 1..=4 {
+        h.event(Event::PointerMoved(from + (to - from) * (i as f32 / 4.0)));
+        h.step();
+    }
+    h.event(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.run_steps(3);
+    let layout = h.state_mut().session.layout();
+    let (_, bends) = connector_bends(h.state(), &layout).unwrap();
+    assert!(matches!(bends.as_slice(), [(1, p)] if near(*p, (220.0, 190.0))), "the run moved with the handle: {bends:?}");
+    let (_, a, b) = connector_ends(h.state(), &layout).unwrap();
+    assert!(near(a, (150.0, 160.0)) && near(b, (290.0, 300.0)), "its ends stay on the shapes: {a:?} {b:?}");
+    let glued = match selected(h.state()) {
+        Some((_, InlineObject::Shape { extra, .. })) => extra.start.is_some() && extra.end.is_some(),
+        _ => false,
+    };
+    assert!(glued, "and it is still glued to both");
+}

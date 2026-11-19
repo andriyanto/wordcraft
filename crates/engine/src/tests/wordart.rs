@@ -1,7 +1,7 @@
 //! WordArt and connectors through the commands.
 
 use serde_json::json;
-use wordcraft_doc::connector::{ConnEnd, ShapeExtra, ends};
+use wordcraft_doc::connector::{ConnEnd, ShapeExtra};
 use wordcraft_doc::para::{Anchor, Float, InlineObject, ShapeKind, Wrap};
 use wordcraft_doc::props::CharProps;
 use wordcraft_doc::{Document, Paragraph, Pos, StoryRef, para_block};
@@ -53,9 +53,9 @@ fn select(s: &mut Session, off: usize) {
 fn connector_ends(s: &mut Session) -> ((f32, f32), (f32, f32)) {
     let pos = Pos::body(0, 11);
     let hit = s.layout().object(&pos, 0).unwrap();
-    let Some(InlineObject::Shape { float, .. }) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { panic!() };
     let r = hit.rect;
-    let (a, b) = ends(r.x, r.y, r.w, r.h, float.flip_h, float.flip_v);
+    // The frame may be turned a quarter: a connector that leaves upwards or downwards.
+    let (a, b) = wordcraft_doc::connector::ends_spun([r.x, r.y, r.w, r.h], hit.spin);
     let round = |p: (f32, f32)| ((p.0 * 100.0).round() / 100.0, (p.1 * 100.0).round() / 100.0);
     (round(a), round(b))
 }

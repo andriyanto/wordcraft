@@ -81,3 +81,33 @@ fn other_path_alpha_defaults() {
         |item| matches!(item, Draw::Path { fill, .. } if fill.as_ref().is_none_or(|paint| matches!(paint, Paint::Solid(_, alpha) if *alpha == 1.0)))
     ));
 }
+
+/// A connector is drawn as the preset it keeps, and its arrowheads point along its first and
+/// last runs. Every bent connector was the three-run one before, its heads level: a one-corner
+/// elbow from a file was drawn with a run it doesn't have, and a head that arrives downwards
+/// pointed sideways.
+#[test]
+fn a_connector_is_drawn_as_its_preset_with_heads_along_its_runs() {
+    use wordcraft_doc::connector::PresetGeom;
+    let rect = Rect::new(10.0, 20.0, 100.0, 40.0);
+    let draws = |preset: Option<PresetGeom>| {
+        let extra = ShapeExtra { arrow_end: true, preset: preset.map(std::sync::Arc::new), ..Default::default() };
+        let mut out = Vec::new();
+        line_draws(rect, ShapeKind::ElbowConnector, Some(Rgb::BLACK), 1.0, Default::default(), &extra, &mut out);
+        let [Draw::Path { segs: line, .. }, Draw::Path { segs: head, .. }] = out.as_slice() else { panic!("{out:?}") };
+        (line.clone(), head.clone())
+    };
+    use PathSeg::{Line, Move};
+    // The plain elbow: out, down the middle, in; the head points right.
+    let (line, head) = draws(None);
+    assert_eq!(line, vec![Move(10.0, 20.0), Line(60.0, 20.0), Line(60.0, 60.0), Line(110.0, 60.0)]);
+    assert!(matches!(head.as_slice(), [Move(x, y), Line(bx, _), ..] if (*x, *y) == (110.0, 60.0) && *bx < 110.0), "{head:?}");
+    // One corner: the head points down.
+    let (line, head) = draws(PresetGeom::new("bentConnector2", []));
+    assert_eq!(line, vec![Move(10.0, 20.0), Line(110.0, 20.0), Line(110.0, 60.0)]);
+    assert!(matches!(head.as_slice(), [Move(x, y), Line(_, by), ..] if (*x, *y) == (110.0, 60.0) && *by < 60.0), "{head:?}");
+    // A run past the end: the connector comes back to it, and the head points back.
+    let (line, head) = draws(PresetGeom::new("bentConnector3", [("adj1".to_string(), 120_000)]));
+    assert_eq!(line, vec![Move(10.0, 20.0), Line(130.0, 20.0), Line(130.0, 60.0), Line(110.0, 60.0)]);
+    assert!(matches!(head.as_slice(), [Move(x, y), Line(bx, _), ..] if (*x, *y) == (110.0, 60.0) && *bx > 110.0), "{head:?}");
+}
