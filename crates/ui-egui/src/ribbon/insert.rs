@@ -35,7 +35,8 @@ pub(super) fn shape_gallery(ui: &mut Ui, app: &mut WordApp) {
                     crate::widgets::bg(ui, r, &resp, false, &t);
                     icons::paint(ui.painter(), Rect::from_center_size(r.center(), vec2(24.0, 24.0)), &format!("shape.{kind}"), t.icon, t.accent);
                     if resp.on_hover_text(name).clicked() {
-                        crate::widgets::run_from_ribbon(app, "insert.shape", json!({"kind": kind}));
+                        // Picked up: the next drag on the page draws it (`shape_pen`).
+                        crate::widgets::run_from_ribbon(app, "ui.drawShape", json!({"kind": kind}));
                         ui.close();
                     }
                 }
@@ -92,7 +93,7 @@ pub(super) fn insert(app: &mut WordApp, ui: &mut Ui) {
                 ("Curved Arrow Connector", "curvedConnector", "end"),
             ] {
                 let icon = if arrow == "end" { k.replace("Connector", "ArrowConnector") } else { k.to_string() };
-                mi_icon(ui, app, &format!("shape.{icon}"), l, "insert.shape", json!({"kind": k, "arrow": arrow}));
+                mi_icon(ui, app, &format!("shape.{icon}"), l, "ui.drawShape", json!({"kind": k, "arrow": arrow}));
             }
         });
         stack(ui, |ui| {

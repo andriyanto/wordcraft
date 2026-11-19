@@ -202,9 +202,23 @@ pub(super) fn icon(s: &mut Session, v: &Value) -> CmdResult {
 pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
     let kind: ShapeKind =
         serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
-    let w = p::f32(v, "width").unwrap_or(108.0).clamp(4.0, 2000.0);
-    let h =
-        p::f32(v, "height").unwrap_or(if kind == ShapeKind::Line { 1.0 } else { 72.0 }).clamp(if kind.is_connector() { 0.0 } else { 1.0 }, 2000.0);
+    let pair = |a: &str, b: &str| match (p::f32(v, a), p::f32(v, b)) {
+        (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok(Some((x, y))),
+        (None, None) => Ok(None),
+        _ => Err(CmdError::Params(format!("`{a}` and `{b}` go together, as numbers"))),
+    };
+    // Drawn on the page: its top-left there, or a line's or connector's two ends.
+    let place = pair("x", "y")?;
+    let end = pair("x1", "y1")?;
+    if end.is_some() && (place.is_none() || !kind.is_open()) {
+        return Err(CmdError::Params("`x1` and `y1` are the far end of a line or connector that starts at `x`, `y`".into()));
+    }
+    let drawn = place.zip(end).map(|(a, b)| wordcraft_doc::connector::route(a, b));
+    let w = drawn.map_or_else(|| p::f32(v, "width").unwrap_or(108.0).clamp(4.0, 2000.0), |f| f.w.clamp(0.0, 2000.0));
+    let h = drawn.map_or_else(
+        || p::f32(v, "height").unwrap_or(if kind == ShapeKind::Line { 1.0 } else { 72.0 }).clamp(if kind.is_connector() { 0.0 } else { 1.0 }, 2000.0),
+        |f| f.h.clamp(0.0, 2000.0),
+    );
     let fill = match p::str(v, "fill") {
         Some(c) => Rgb::parse(c),
         None if kind.is_open() => None,
@@ -219,9 +233,10 @@ pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
         Some(x) => return Err(CmdError::Params(format!("`arrow`: none, start, end or both, not `{x}`"))),
     };
     let extra = wordcraft_doc::connector::ShapeExtra { arrow_start, arrow_end, ..Default::default() };
-    // Connectors float in front of the text, so they can be glued to floating shapes.
-    let float = if kind.is_connector() {
-        Float { wrap: Wrap::InFrontOfText, ..Default::default() }
+    // Connectors float in front of the text, so they can be glued to floating shapes; so does a
+    // shape drawn at a place on the page.
+    let float = if kind.is_connector() || place.is_some() {
+        Float { wrap: Wrap::InFrontOfText, flip_h: drawn.is_some_and(|f| f.flip_h), flip_v: drawn.is_some_and(|f| f.flip_v), ..Default::default() }
     } else {
         Float { wrap: Wrap::Inline, ..Default::default() }
     };
@@ -241,6 +256,20 @@ pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
     };
     // A selected Drawing Canvas takes it in (and stays selected for the next one).
     if crate::cmd::canvas::add_member(s, obj.clone())?.is_some() {
+        return sel_result(s);
+    }
+    if let Some(start) = place {
+        let page = p::u64(v, "page").map_or(s.page_hint, |n| usize::try_from(n).unwrap_or(usize::MAX));
+        let (x, y) = drawn.map_or(start, |f| (f.x, f.y));
+        crate::cmd::objects::insert_floating(s, obj, page, x, y)?;
+        // A connector drawn from one shape to another is glued to both, as when its ends are
+        // dragged there.
+        if let (true, Some((x1, y1))) = (kind.is_connector(), end) {
+            crate::cmd::connectors::connect(
+                s,
+                &json!({"start": {"x": start.0, "y": start.1, "page": page}, "end": {"x": x1, "y": y1, "page": page}}),
+            )?;
+        }
         return sel_result(s);
     }
     // Word draws a new shape beside what is selected and never deletes it: the shape just

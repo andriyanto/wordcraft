@@ -21,7 +21,7 @@ mod shape;
 mod specs;
 
 pub use arrange::moves_with_text;
-pub(crate) use arrange::{anchor_paragraph, nearest_line};
+pub(crate) use arrange::{anchor_paragraph, insert_floating, nearest_line};
 #[cfg(test)]
 use group::ungroup;
 pub use picture::{OriginalSize, PictureLook, cropped_original_size, fit_size, original_size};

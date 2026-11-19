@@ -7501,6 +7501,75 @@ fn changing_a_shape_drops_the_geometry_kept_from_a_file() {
     assert_eq!(geometry(&s), None);
 }
 
+/// A shape drawn on the page (`insert.shape` with `x`, `y`): it floats in front of the text with
+/// its top-left there and is selected, wherever the caret was (in a text box here); one undo
+/// takes it away. Without a place it goes in line at the caret, as before.
+#[test]
+fn a_shape_drawn_on_the_page_floats_where_it_was_drawn() {
+    use wordcraft_doc::para::{ShapeKind, Wrap};
+    let mut s = s();
+    run(&mut s, "text.insert", json!({"text": "Some body text"}));
+    run(&mut s, "insert.textBox", json!({"text": "in a box"}));
+    assert!(matches!(s.sel.focus.story, StoryRef::Part(_)), "the caret is in the text box");
+    let before = s.doc.clone();
+    run(&mut s, "insert.shape", json!({"kind": "diamond", "x": 220, "y": 310, "page": 0, "width": 90, "height": 50}));
+    let (pos, obj) = cmd::objects::selected(&s).expect("the drawn shape is selected");
+    let wordcraft_doc::InlineObject::Shape { kind, w, h, float, .. } = obj else { panic!("{obj:?}") };
+    assert_eq!((kind, w, h, float.wrap), (ShapeKind::Diamond, 90.0, 50.0, Wrap::InFrontOfText));
+    assert_eq!(pos.story, StoryRef::Body, "in the body, not in the text box the caret was in");
+    let hit = s.layout().object(&pos, 0).unwrap();
+    assert!((hit.rect.x - 220.0).abs() < 0.5 && (hit.rect.y - 310.0).abs() < 0.5, "{:?}", hit.rect);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!(s.doc, before);
+    // No place: in line at the caret.
+    let mut s = self::s();
+    run(&mut s, "insert.shape", json!({"kind": "diamond"}));
+    assert!(matches!(cmd::objects::selected(&s), Some((_, wordcraft_doc::InlineObject::Shape { float, .. })) if float.wrap == Wrap::Inline));
+    // Half a place, a far end without a start, a far end for a closed shape, a page that isn't.
+    for bad in [
+        json!({"kind": "diamond", "x": 10}),
+        json!({"kind": "line", "x1": 10, "y1": 10}),
+        json!({"kind": "diamond", "x": 10, "y": 10, "x1": 50, "y1": 50}),
+        json!({"kind": "diamond", "x": 10, "y": 10, "page": 999}),
+        json!({"kind": "diamond", "x": "a", "y": 10}),
+    ] {
+        assert!(s.run("insert.shape", &bad).is_err(), "{bad}");
+    }
+}
+
+/// A line or connector drawn from one point to another runs between them whichever way it was
+/// drawn, and a connector drawn from one shape to another is glued to both.
+#[test]
+fn a_connector_drawn_between_two_shapes_is_glued_to_both() {
+    use wordcraft_doc::para::ShapeKind;
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 150, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 340, "y": 300, "page": 0, "width": 100, "height": 60}));
+    // From the rectangle's right side to the ellipse's top, a few points off each.
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "arrow": "end", "x": 203, "y": 182, "x1": 388, "y1": 297, "page": 0}));
+    let (pos, obj) = cmd::objects::selected(&s).expect("the connector is selected");
+    let wordcraft_doc::InlineObject::Shape { kind, extra, .. } = obj else { panic!("{obj:?}") };
+    assert_eq!(kind, ShapeKind::ElbowConnector);
+    assert!(extra.arrow_end);
+    let (start, end) = (extra.start.expect("glued to the rectangle"), extra.end.expect("glued to the ellipse"));
+    assert_ne!(start.id, end.id);
+    // It runs from the rectangle's right side (200, 180) to the ellipse's top (390, 300).
+    let r = s.layout().object(&pos, 0).unwrap().rect;
+    assert!((r.x - 200.0).abs() < 0.5 && (r.y - 180.0).abs() < 0.5 && (r.w - 190.0).abs() < 0.5 && (r.h - 120.0).abs() < 0.5, "{r:?}");
+    // A line drawn up and to the left: its box, flipped both ways.
+    run(&mut s, "insert.shape", json!({"kind": "line", "x": 300, "y": 500, "x1": 180, "y1": 440, "page": 0}));
+    let (pos, obj) = cmd::objects::selected(&s).expect("the line is selected");
+    let wordcraft_doc::InlineObject::Shape { kind, float, .. } = obj else { panic!("{obj:?}") };
+    assert_eq!((kind, float.flip_h, float.flip_v), (ShapeKind::Line, true, true));
+    let r = s.layout().object(&pos, 0).unwrap().rect;
+    assert!((r.x - 180.0).abs() < 0.5 && (r.y - 440.0).abs() < 0.5 && (r.w - 120.0).abs() < 0.5 && (r.h - 60.0).abs() < 0.5, "{r:?}");
+    // Straight up: a line with no width is still a line.
+    run(&mut s, "insert.shape", json!({"kind": "straightConnector", "x": 450, "y": 600, "x1": 450, "y1": 520, "page": 0}));
+    let (pos, _) = cmd::objects::selected(&s).unwrap();
+    let r = s.layout().object(&pos, 0).unwrap().rect;
+    assert!(r.w.abs() < 0.5 && (r.h - 80.0).abs() < 0.5 && (r.y - 520.0).abs() < 0.5, "{r:?}");
+}
+
 /// Typing with a shape selected types in the shape, as in Word: it replaced the shape with the
 /// letters before. The shape gets a text of its own: centred, in the middle of the shape, white
 /// on the dark fill a new shape has. One undo step takes the text and the typing back.

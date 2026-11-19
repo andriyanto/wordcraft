@@ -257,6 +257,10 @@ pub struct CanvasState {
     pub table_tool: Option<crate::table_pen::TableTool>,
     /// The Draw Table stroke (or eraser press) in progress.
     pub(crate) table_stroke: Option<crate::table_pen::PenStroke>,
+    /// A shape picked up in Insert › Shapes (`shape_pen`): the next drag on the page draws it.
+    pub shape_tool: Option<crate::shape_pen::ShapeTool>,
+    /// The drag drawing it.
+    pub(crate) shape_stroke: Option<crate::shape_pen::ShapeStroke>,
     /// A table border or the table's resize handle being dragged (`table_resize`).
     pub(crate) table_resize: Option<crate::table_resize::ResizeDrag>,
     /// The last key ran an Alt shortcut: the text its key sends (it may arrive a frame later)
@@ -463,6 +467,8 @@ impl Default for CanvasState {
             balloon_rects: Vec::new(),
             table_tool: None,
             table_stroke: None,
+            shape_tool: None,
+            shape_stroke: None,
             table_resize: None,
             link_from: None,
             a11y: Default::default(),
@@ -1262,7 +1268,10 @@ fn handle_primary_pointer(
         let _ = app.run("view.hideWhiteSpace", json!({"value": !app.session.view.hide_white_space}));
     } else
     // Draw Table / Eraser own the mouse while on (no caret moves); else the usual editing.
-    if !middle_gesture && !crate::table_pen::pointer(app, ui, resp, rects, layout, geo.scale) {
+    if !middle_gesture
+        && !crate::table_pen::pointer(app, ui, resp, rects, layout, geo.scale)
+        && !crate::shape_pen::pointer(app, ui, resp, rects, layout, geo.scale)
+    {
         mouse(app, ui, resp, rects, layout, geo.scale);
     }
 }
@@ -1429,6 +1438,7 @@ fn finish_canvas_frame(finish: CanvasFinish<'_>, out: egui::scroll_area::ScrollA
     crate::table_resize::cursor(app, ui, &resp, layout, &rects, geo.scale);
     crate::table_mouse::cursor(app, ui, &resp, layout, &rects, geo.scale);
     crate::table_pen::cursor(app, ui, &resp);
+    crate::shape_pen::cursor(app, ui, &resp);
     // Windows' I-beam is lost on white paper there: draw one that shows (#1746).
     if app.canvas.drawn_ibeam
         && (resp.hovered() || resp.dragged())
@@ -1824,6 +1834,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         crate::dialogs_smart_art::frame_button(app, ui.ctx(), &layout, &rects, geo.scale, ui.clip_rect());
         crate::ink::paint(app, &painter, &rects, &layout, geo.scale);
         crate::table_pen::paint(app, &painter, &t, &layout, &rects, geo.scale);
+        crate::shape_pen::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::table_resize::paint(app, &painter, &t, &layout, &rects, geo.scale);
         crate::table_mouse::paint(app, &painter, &t, &layout, &rects, geo.scale);
         (resp, rects)

@@ -18,7 +18,8 @@ fn drop_cap_menu_keeps_the_options() {
 }
 
 /// #4349: Insert › Shapes offers the basic shapes as a grid of drawn tiles, each named for
-/// screen readers and by its tooltip; a click inserts that shape.
+/// screen readers and by its tooltip; a click picks that shape up, to be drawn on the page
+/// (`shape_pen`), and inserts nothing yet.
 #[test]
 fn the_shapes_menu_offers_its_basic_shapes_as_a_grid_of_tiles() {
     use egui_kittest::kittest::Queryable;
@@ -34,15 +35,13 @@ fn the_shapes_menu_offers_its_basic_shapes_as_a_grid_of_tiles() {
     let rows = rects.iter().map(|r| r.top().round() as i32).collect::<std::collections::BTreeSet<_>>().len();
     assert!(rows >= 2 && rows < super::insert::SHAPE_TILES.len(), "{rows} rows for {} shapes", super::insert::SHAPE_TILES.len());
     assert!(rects.iter().all(|r| r.width() >= 24.0 && r.height() >= 24.0), "tiles are big enough to read and hit");
-    // Every tile inserts its own shape.
+    // Every tile picks its own shape up; the document is as it was until the shape is drawn.
+    let before = h.state().session.undo_depth();
     for (label, kind) in super::insert::SHAPE_TILES {
-        let before = h.state().session.undo_depth();
         h.get_by_label(label).click();
         h.run_steps(2);
-        assert_eq!(h.state().session.undo_depth(), before + 1, "{label} inserts a shape");
-        let doc = serde_json::to_string(&h.state().session.doc).unwrap();
-        assert!(doc.contains(&format!("\"{kind}\"")), "{label} inserts a {kind}");
-        assert!(h.state_mut().session.undo());
+        assert_eq!(h.state().canvas.shape_tool.as_ref().map(|t| t.kind.as_str()), Some(kind), "{label} picks a {kind} up");
+        assert_eq!(h.state().session.undo_depth(), before, "{label} inserts nothing yet");
     }
 }
 

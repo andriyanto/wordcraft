@@ -424,6 +424,9 @@ fn key_press(app: &mut WordApp, ctx: &egui::Context, key: Key, modifiers: Modifi
     if key == Key::Escape && crate::table_pen::stop(app) {
         return;
     }
+    if key == Key::Escape && crate::shape_pen::stop(app) {
+        return;
+    }
     // File › Options › Advanced: the Insert key switches overtype only when asked to.
     if key == Key::Insert && modifiers.is_none() {
         if app.session.prefs.insert_key_overtype {
