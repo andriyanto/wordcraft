@@ -437,6 +437,8 @@ impl<'a> Builder<'a> {
                     part.body.inset = look.inset.map(|i| i.map(emu));
                     part.body.auto_fit = look.auto_fit;
                     part.body.vert = look.vert;
+                    part.body.anchor = look.anchor;
+                    part.body.auto_color = look.text_color;
                 }
                 let (stroke, stroke_width) = match look.line {
                     Some((c, w)) if w.is_finite() && w > 0.0 => (Some(c), w.min(12.0)),
@@ -467,6 +469,8 @@ impl<'a> Builder<'a> {
                         id: look.conn.as_ref().map_or(0, |c| c.id),
                         start: look.conn.as_ref().and_then(|c| c.start).filter(|e| e.site <= wordcraft_doc::connector::MAX_SITE),
                         end: look.conn.as_ref().and_then(|c| c.end).filter(|e| e.site <= wordcraft_doc::connector::MAX_SITE),
+                        // A connector's label names its connector.
+                        label_of: look.conn.as_ref().map(|c| c.label_of).filter(|id| *id != 0 && story.is_some()),
                         odf_geometry: look.geometry.clone().filter(|_| {
                             (*kind == wordcraft_doc::para::ShapeKind::Freeform && path.is_some())
                                 || *kind == wordcraft_doc::para::ShapeKind::Rectangle

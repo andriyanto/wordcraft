@@ -28,6 +28,7 @@ pub(in crate::odt) fn box_look_attrs(look: &model::BoxLook, defs: &mut crate::od
         wordcraft_doc::props::TextVert::Vert270 => " loext:writing-mode=\"bt-lr\"",
         _ => "",
     });
+    a.push_str(&text_area_attrs(look));
     a
 }
 
@@ -145,6 +146,8 @@ pub(in crate::odt) fn placement(place: Place<'_>, w: f32, h: f32) -> (String, St
 /// `svg:stroke-color`, `svg:stroke-width`), fill (§20.118 `draw:fill`, `draw:fill-color`),
 /// whether it grows to its text (§20.105 `draw:auto-grow-height`) and the padding around its
 /// text.
+///
+/// Where its text sits and the colour the shape gives it follow ([`text_area_attrs`]).
 pub(in crate::odt) fn shape_look_attrs(look: &model::BoxLook, defs: &mut crate::odt::strokes::DrawDefs, prefix: &str) -> String {
     let hex = |c: Rgb| format!("#{}", c.hex().to_ascii_lowercase());
     let mut a = match look.line {
@@ -179,6 +182,39 @@ pub(in crate::odt) fn shape_look_attrs(look: &model::BoxLook, defs: &mut crate::
             pt(r),
             pt(b)
         ));
+    }
+    a.push_str(&text_area_attrs(look));
+    a
+}
+
+/// Ends a graphic style's properties (in `Writer::graphic_styles`) with the colour the shape
+/// gives its text: written as the style's `style:text-properties` (`fo:color`), which follow
+/// its graphic properties (see `Writer::automatic_styles`).
+pub(in crate::odt) const TEXT_COLOR: char = '\u{1}';
+
+/// A graphic style's properties apart from the colour that ends them ([`TEXT_COLOR`]), and that
+/// colour as the style's text properties (§16.27.28 `style:text-properties`), empty without one.
+pub(in crate::odt) fn text_properties_of(props: &str) -> (String, String) {
+    let Some((before, rest)) = props.split_once(TEXT_COLOR) else { return (props.to_string(), String::new()) };
+    let hex: String = rest.chars().take(6).filter(char::is_ascii_hexdigit).collect();
+    let after: String = rest.chars().skip(6).collect();
+    let text = if hex.len() == 6 { format!("<style:text-properties fo:color=\"#{hex}\"/>") } else { String::new() };
+    (format!("{before}{after}"), text)
+}
+
+/// Where a shape's or text box's text sits between its top and bottom (§20.133
+/// `draw:textarea-vertical-align`; the top is the default and goes unsaid), and, last, the
+/// colour the shape gives text that states none ([`TEXT_COLOR`]).
+fn text_area_attrs(look: &model::BoxLook) -> String {
+    let mut a = String::new();
+    a.push_str(match look.anchor {
+        wordcraft_doc::props::VAlign::Top => "",
+        wordcraft_doc::props::VAlign::Center => " draw:textarea-vertical-align=\"middle\"",
+        wordcraft_doc::props::VAlign::Bottom => " draw:textarea-vertical-align=\"bottom\"",
+    });
+    if let Some(c) = look.text_color {
+        a.push(TEXT_COLOR);
+        a.push_str(&c.hex().to_ascii_lowercase());
     }
     a
 }
@@ -413,6 +449,12 @@ impl Writer {
         // Its name (its story's, which a linked box names), and the box its text continues in
         // (§19.112 `draw:chain-next-name`).
         let name = look.chain.as_deref().map_or_else(|| format!("{}Frame{}", self.prefix, self.boxes), |c| format!("{}{}", self.prefix, c.name));
+        // A connector's label is named after its connector (ODF has no text on a connector that
+        // is a box of its own): the connector's `xml:id` follows the words.
+        let name = match look.conn.as_deref().map(|c| c.label_of).filter(|id| *id != 0) {
+            Some(id) => format!("{}{}shape{id}", crate::odt::LABEL_NAME, self.prefix),
+            None => name,
+        };
         let next = look
             .chain
             .as_deref()

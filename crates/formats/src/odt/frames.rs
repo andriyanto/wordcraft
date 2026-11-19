@@ -74,6 +74,9 @@ pub(super) struct Graphic {
     /// Which way a text box's text runs (§20.404 `style:writing-mode`; LibreOffice's upward
     /// `bt-lr` is its own `loext:writing-mode`).
     vert: Option<wordcraft_doc::props::TextVert>,
+    /// Where a shape's or text box's text sits between its top and bottom (§20.133
+    /// `draw:textarea-vertical-align`: top, middle, bottom; `justify` is top here).
+    valign: Option<wordcraft_doc::props::VAlign>,
     /// The anchor and position a style gives frames that state none (§20.299 `text:anchor-type`,
     /// `svg:x`, `svg:y` in `style:graphic-properties`: LibreOffice's label and Graphics styles).
     anchor: Option<String>,
@@ -160,6 +163,12 @@ impl Graphic {
             stroke: s("draw:stroke"),
             stroke_color: get(a, "svg:stroke-color").and_then(parse_color),
             grow: get(a, "draw:auto-grow-height").map(|v| v.trim() == "true"),
+            valign: get(a, "draw:textarea-vertical-align").and_then(|v| match v.trim() {
+                "top" | "justify" => Some(wordcraft_doc::props::VAlign::Top),
+                "middle" => Some(wordcraft_doc::props::VAlign::Center),
+                "bottom" => Some(wordcraft_doc::props::VAlign::Bottom),
+                _ => None,
+            }),
             dash: s("draw:stroke-dash"),
             gradient: s("draw:fill-gradient-name"),
             markers: [s("draw:marker-start"), s("draw:marker-end")],
@@ -221,6 +230,7 @@ impl Graphic {
         fill(&mut self.x, &parent.x);
         fill(&mut self.y, &parent.y);
         self.grow = self.grow.or(parent.grow);
+        self.valign = self.valign.or(parent.valign);
         fill(&mut self.dash, &parent.dash);
         fill(&mut self.gradient, &parent.gradient);
         for (m, p) in self.markers.iter_mut().zip(&parent.markers) {
@@ -283,6 +293,8 @@ impl Graphic {
             chain: None,
             vert: Default::default(),
             geometry: None,
+            anchor: self.valign.unwrap_or_default(),
+            text_color: None,
         }
     }
 
@@ -311,6 +323,8 @@ impl Graphic {
             chain: None,
             vert: self.vert.unwrap_or_default(),
             geometry: None,
+            anchor: self.valign.unwrap_or_default(),
+            text_color: None,
         }
     }
 }

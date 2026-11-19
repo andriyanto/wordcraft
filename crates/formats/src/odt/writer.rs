@@ -1214,8 +1214,9 @@ impl Writer {
             // Laid out where WordCraft places it, not held in the text's area: said, as the
             // standard gives no default (§20.267) and a file's default style may say otherwise.
             let flow = if props.contains("style:flow-with-text") { "" } else { " style:flow-with-text=\"false\"" };
+            let (props, text) = drawing::text_properties_of(props);
             s.push_str(&format!(
-                "<style:style style:name=\"{}fr{}\" style:family=\"graphic\"{parent}><style:graphic-properties{props}{flow}/></style:style>",
+                "<style:style style:name=\"{}fr{}\" style:family=\"graphic\"{parent}><style:graphic-properties{props}{flow}/>{text}</style:style>",
                 self.prefix,
                 i + 1
             ));
