@@ -406,6 +406,8 @@ impl Session {
                 | "arrange.nudge"
                 | "arrange.align"
                 | "arrange.distribute"
+                | "arrange.rotate"
+                | "arrange.rotation"
                 | "shape.fill"
                 | "shape.effects"
         ) && (spec.mutates || self.sel != *sel_before)

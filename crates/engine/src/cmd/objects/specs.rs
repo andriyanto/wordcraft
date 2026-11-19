@@ -186,13 +186,23 @@ pub fn specs() -> Vec<CommandSpec> {
                 "right" => Spin::new(90.0, false, false),
                 other => return Err(CmdError::Params(format!("unknown direction `{other}`"))),
             };
+            // Several selected: each turns or flips where it is, about its own middle.
+            if super::multi::several(s) {
+                return super::multi::each_float(s, |f| f.set_spin(f.spin().within(by)));
+            }
             with_float(s, |f| f.set_spin(f.spin().within(by)))
         })
-        .params(r#"{"direction": "right|left|flipVertical|flipHorizontal"}  (turns 90° or mirrors the selected picture, shape or text box; its pixels are kept)"#)
+        .params(r#"{"direction": "right|left|flipVertical|flipHorizontal"}  (turns 90° or mirrors the selected picture, shape or text box; its pixels are kept. Several selected: each one, about its own middle)"#)
         .when(has_movable),
         CommandSpec::new("arrange.rotation", "Rotation", "Layout › Arrange", |s, v| {
             let deg = p::req_f32(v, "degrees")?;
             let (fh, fv) = (p::bool(v, "flipH"), p::bool(v, "flipV"));
+            if super::multi::several(s) {
+                return super::multi::each_float(s, |f| {
+                    let cur = f.spin();
+                    f.set_spin(Spin::new(deg, fh.unwrap_or(cur.flip_h), fv.unwrap_or(cur.flip_v)));
+                });
+            }
             with_float(s, |f| {
                 let cur = f.spin();
                 f.set_spin(Spin::new(deg, fh.unwrap_or(cur.flip_h), fv.unwrap_or(cur.flip_v)));
@@ -244,6 +254,10 @@ pub fn specs() -> Vec<CommandSpec> {
             if !matches!(h.as_str(), "left" | "center" | "right" | "top" | "middle" | "bottom") {
                 return Err(CmdError::Params("`value`: left, center, right, top, middle or bottom".into()));
             }
+            // To the page or its margins: each one selected, by itself.
+            if let Some(to) = p::str(v, "to").filter(|to| *to != "selection") {
+                return super::multi::align_to(s, &h, to);
+            }
             // Several selected: with each other.
             if super::multi::several(s) {
                 return super::multi::align_all(s, &h);
@@ -280,7 +294,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 };
             })
         })
-        .params(r#"{"value": "left|center|right|top|middle|bottom"}  (one picture or shape: between the page's margins; several selected: with each other, on that side of the box around them all)"#)
+        .params(r#"{"value": "left|center|right|top|middle|bottom", "to"?: "page|margin|selection"}  (one picture or shape: between the page's margins; several selected: with each other, on that side of the box around them all. to: every floating one selected lines up with that side of the page, or of the area inside its margins, keeping its place the other way)"#)
         .when(has_placeable),
         CommandSpec::new("arrange.distribute", "Distribute", "Layout › Arrange", super::multi::distribute)
             .params(r#"{"value": "horizontal|vertical"}  (three or more floating pictures or shapes selected: spaced evenly between the two outermost)"#)
