@@ -19,11 +19,33 @@ pub struct ShapeTool {
     pub arrow: Option<String>,
 }
 
+/// The kind of the tool that selects what is inside the box it draws, instead of drawing a shape
+/// (Home › Select › Select Objects).
+const SELECT: &str = "selectObjects";
+
 impl ShapeTool {
     /// Drawn from one end to the other, not corner to corner.
     fn open(&self) -> bool {
         self.kind == "line" || self.kind.ends_with("Connector")
     }
+    /// The box selects the pictures and shapes inside it.
+    fn selects(&self) -> bool {
+        self.kind == SELECT
+    }
+}
+
+/// `ui.selectObjects`: pick the selecting box up (`{}`), or put it down (`{"off": true}`). The
+/// next drag on the page selects the floating pictures and shapes wholly inside the box drawn
+/// (`select.objects`); they then move, align and are deleted together.
+pub fn pick_select(app: &mut WordApp, p: &Value) -> Value {
+    let on = p.get("off").and_then(Value::as_bool) != Some(true);
+    app.canvas.shape_stroke = None;
+    app.canvas.shape_tool = on.then(|| ShapeTool { kind: SELECT.into(), arrow: None });
+    if on {
+        app.canvas.want_focus = true;
+        app.status(tl!("Drag a box on the page around the pictures and shapes to select. Esc stops."));
+    }
+    json!({"tool": on})
 }
 
 /// A drag in progress: its page and its start and current end (page points).
@@ -133,6 +155,17 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, rects: &[Rect]
     }
     // Released: the shape is drawn and selected, and the tool is put down.
     stop(app);
+    if tool.selects() {
+        // What the box holds is selected; an empty box leaves the selection as it was.
+        let (x, y) = (st.from.0.min(st.to.0), st.from.1.min(st.to.1));
+        let size = ((st.to.0 - st.from.0).abs(), (st.to.1 - st.from.1).abs());
+        match app.run("select.objects", json!({"page": st.page, "x": x, "y": y, "width": size.0, "height": size.1})) {
+            Ok(r) if r["selected"].as_array().is_some_and(Vec::is_empty) => app.status(tl!("No picture or shape lies wholly inside the box.")),
+            Ok(_) => {}
+            Err(e) => app.status(e),
+        }
+        return true;
+    }
     if let Err(e) = app.run("insert.shape", params(&tool, &st)) {
         app.status(e);
     }
@@ -156,7 +189,11 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
     };
     let (Some(a), Some(b)) = (to_screen(st.from.0, st.from.1), to_screen(st.to.0, st.to.1)) else { return };
     let ink = Stroke::new(1.5, t.accent);
-    if tool.open() {
+    if tool.selects() {
+        let area = Rect::from_two_pos(a, b);
+        painter.rect_filled(area, 0.0, t.accent.gamma_multiply(0.12));
+        painter.rect_stroke(area, 0.0, Stroke::new(1.0, t.accent), egui::StrokeKind::Middle);
+    } else if tool.open() {
         painter.line_segment([a, b], ink);
     } else {
         painter.rect_stroke(Rect::from_two_pos(a, b), 0.0, ink, egui::StrokeKind::Middle);
@@ -252,5 +289,74 @@ mod tests {
         assert!((hit.rect.x - 200.0).abs() < 0.5 && (hit.rect.y - 300.0).abs() < 0.5, "{:?}", hit.rect);
         h.state_mut().run("edit.undo", json!({})).unwrap();
         assert_eq!(h.state().session.doc, before);
+    }
+    /// Select Objects: a box dragged on the page selects the pictures and shapes inside it, and
+    /// dragging one of them then moves them all. Each had to be Shift+clicked before, and only
+    /// the first one moved.
+    #[test]
+    fn a_box_selects_the_shapes_inside_it_and_they_move_together() {
+        use egui::{Event, PointerButton};
+        let mut a = app();
+        a.run("view.commentsPane", json!({"value": false})).unwrap();
+        for (x, y) in [(100, 100), (250, 140), (100, 420)] {
+            a.run("insert.shape", json!({"kind": "rectangle", "x": x, "y": y, "page": 0, "width": 80, "height": 50})).unwrap();
+        }
+        assert_eq!(a.run("ui.selectObjects", json!({})).unwrap()["tool"], true);
+        let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 1100.0)).build_ui_state(
+            |ui, app: &mut WordApp| {
+                let ctx = ui.ctx().clone();
+                app.logic(&ctx);
+                app.ui(ui);
+            },
+            a,
+        );
+        h.run_steps(6);
+        let drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: (f32, f32), to: (f32, f32)| {
+            let a = crate::canvas::page_to_screen(h.state_mut(), 0, from.0, from.1).unwrap();
+            let b = crate::canvas::page_to_screen(h.state_mut(), 0, to.0, to.1).unwrap();
+            h.event(Event::PointerMoved(a));
+            h.step();
+            h.event(Event::PointerButton { pos: a, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+            h.step();
+            for i in 1..=4 {
+                h.event(Event::PointerMoved(a + (b - a) * (i as f32 / 4.0)));
+                h.step();
+            }
+            h.event(Event::PointerButton { pos: b, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+            h.run_steps(3);
+        };
+        // A box around the upper two.
+        drag(&mut h, (90.0, 90.0), (350.0, 210.0));
+        assert_eq!(wordcraft_engine::cmd::objects::picked_objects(&h.state().session).len(), 2, "the two inside the box");
+        assert!(h.state().canvas.shape_tool.is_none(), "the tool is put down");
+        let frames = |h: &mut egui_kittest::Harness<'_, WordApp>| {
+            let layout = h.state_mut().session.layout();
+            let mut out: Vec<(i32, i32)> = layout
+                .pages
+                .first()
+                .map(|pg| {
+                    pg.items
+                        .iter()
+                        .filter_map(|it| match it {
+                            wordcraft_layout::Placed::Object { rect, .. } => Some((rect.x.round() as i32, rect.y.round() as i32)),
+                            _ => None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            out.sort();
+            out.dedup();
+            out
+        };
+        assert_eq!(frames(&mut h), vec![(100, 100), (100, 420), (250, 140)]);
+        // One of them dragged 60 pt right and 30 pt down, with the alignment guides held off:
+        // both go, and the third stays.
+        h.state_mut().ui.alignment_guides = false;
+        drag(&mut h, (280.0, 160.0), (340.0, 190.0));
+        assert_eq!(frames(&mut h), vec![(100, 420), (160, 130), (310, 170)]);
+        assert_eq!(wordcraft_engine::cmd::objects::picked_objects(&h.state().session).len(), 2, "still selected together");
+        // One undo puts both back.
+        h.state_mut().run("edit.undo", json!({})).unwrap();
+        assert_eq!(frames(&mut h), vec![(100, 100), (100, 420), (250, 140)]);
     }
 }

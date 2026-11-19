@@ -401,6 +401,9 @@ pub(super) fn home(app: &mut WordApp, ui: &mut Ui) {
                 mi(ui, app, "Select All", "select.all", json!({}));
                 mi(ui, app, "Select Paragraph", "select.paragraph", json!({}));
                 mi(ui, app, "Select Sentence", "select.sentence", json!({}));
+                ui.separator();
+                // A box dragged on the page selects the pictures and shapes inside it.
+                mi(ui, app, "Select Objects", "ui.selectObjects", json!({}));
             });
         });
     });

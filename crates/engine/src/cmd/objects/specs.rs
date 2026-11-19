@@ -241,6 +241,30 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("arrange.sendBackward", "Send Backward", "Layout › Arrange", |s, _| with_float(s, |f| f.wrap = Wrap::BehindText)).when(has_placeable),
         CommandSpec::new("arrange.align", "Align", "Layout › Arrange", |s, v| {
             let h = p::str(v, "value").unwrap_or("center").to_string();
+            if !matches!(h.as_str(), "left" | "center" | "right" | "top" | "middle" | "bottom") {
+                return Err(CmdError::Params("`value`: left, center, right, top, middle or bottom".into()));
+            }
+            // Several selected: with each other.
+            if super::multi::several(s) {
+                return super::multi::align_all(s, &h);
+            }
+            if matches!(h.as_str(), "top" | "middle" | "bottom") {
+                // One: between the top and bottom margins.
+                let th = crate::cmd::page::sect(s).text_height();
+                let own = selected(s).map(|(_, o)| obj_size(&o).1).unwrap_or(72.0);
+                return with_float(s, |f| {
+                    if f.wrap == Wrap::Inline {
+                        f.wrap = Wrap::Square;
+                    }
+                    f.v_rel = wordcraft_doc::para::Anchor::Margin;
+                    f.v_align = None;
+                    f.y = match h.as_str() {
+                        "top" => 0.0,
+                        "bottom" => th - own,
+                        _ => (th - own) / 2.0,
+                    };
+                });
+            }
             let tw = crate::cmd::page::sect(s).text_width();
             let w = selected(s).map(|(_, o)| obj_size(&o).0).unwrap_or(72.0);
             with_float(s, |f| {
@@ -256,8 +280,11 @@ pub fn specs() -> Vec<CommandSpec> {
                 };
             })
         })
-        .params(r#"{"value": "left|center|right"}"#)
+        .params(r#"{"value": "left|center|right|top|middle|bottom"}  (one picture or shape: between the page's margins; several selected: with each other, on that side of the box around them all)"#)
         .when(has_placeable),
+        CommandSpec::new("arrange.distribute", "Distribute", "Layout › Arrange", super::multi::distribute)
+            .params(r#"{"value": "horizontal|vertical"}  (three or more floating pictures or shapes selected: spaced evenly between the two outermost)"#)
+            .when(|s| if super::select::picked_objects(s).len() >= 3 { None } else { Some("select three or more pictures or shapes first (Shift+click)") }),
         CommandSpec::new("arrange.selectionPane", "Selection Pane", "Layout › Arrange", objects_list).pure(),
         CommandSpec::new("arrange.bounds", "Move or Resize", "Layout › Arrange", bounds)
             .params(r#"{"width"?: pt, "height"?: pt, "x"?: pt, "y"?: pt, "page"?: n, "to"?: Pos}  (x/y: the top-left on page `page` (0-based, default its page); moving an inline object by x/y floats it. to: an In Line with Text object moves to that text position and stays inline, as a drag does)"#)
@@ -271,13 +298,17 @@ pub fn specs() -> Vec<CommandSpec> {
             if let Some(r) = crate::cmd::canvas::member_nudge(s, dx, dy) {
                 return r;
             }
+            // Several selected: they move together.
+            if super::multi::several(s) {
+                return super::multi::nudge_all(s, dx, dy);
+            }
             unalign(s)?;
             with_float(s, |f| {
                 f.x = (f.x + dx).clamp(-MAX_OFFSET, MAX_OFFSET);
                 f.y = (f.y + dy).clamp(-MAX_OFFSET, MAX_OFFSET);
             })
         })
-        .params(r#"{"dx"?: pt, "dy"?: pt}"#)
+        .params(r#"{"dx"?: pt, "dy"?: pt}  (with several pictures or shapes selected, all of them move)"#)
         .when(has_floating),
         CommandSpec::new("arrange.group", "Group", "Layout › Arrange", group)
             .params(r#"{}  (groups the selected pictures, shapes and text boxes: the selected one plus those added with select.addObject)"#)
@@ -287,6 +318,10 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"pos"?: Pos, "index"?: n, "objects"?: [Pos | n]}  (n: its Selection Pane index; with no object selected yet, the first one becomes the selection)"#)
             .pure(),
         CommandSpec::new("select.objects", "Select Objects", "Home › Editing › Select", |s, v| {
+            // A box drawn on the page: every floating drawing inside it.
+            if v.get("width").is_some() || v.get("height").is_some() {
+                return super::multi::select_in(s, v);
+            }
             let n = p::u64(v, "index").unwrap_or(0) as usize;
             let list = all_objects(s);
             let (pos, _) = list.into_iter().nth(n).ok_or_else(|| CmdError::Failed("no such object".into()))?;
@@ -294,7 +329,7 @@ pub fn specs() -> Vec<CommandSpec> {
             s.sel = Selection { anchor: pos, focus: end };
             sel_result(s)
         })
-        .params(r#"{"index"?: n}"#)
+        .params(r#"{"index"?: n} (the n-th object) | {"x": pt, "y": pt, "width": pt, "height": pt, "page"?: n} (a box on the page: the floating pictures and shapes wholly inside it are selected together)"#)
         .pure(),
         CommandSpec::new("shape.outline", "Shape Outline", "Shape Format › Shape Styles", |s, v| {
             let c = p::str(v, "color").and_then(Rgb::parse);

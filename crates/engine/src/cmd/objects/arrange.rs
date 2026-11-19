@@ -241,8 +241,15 @@ fn move_object_once(s: &mut Session, pos: &Pos, page: usize, x: f32, y: f32, (w,
 /// Turn the selected floating object's alignment (left, centred, …) into an offset from its
 /// column / paragraph that keeps it where it is, so it can be moved by an offset.
 pub(super) fn unalign(s: &mut Session) -> Result<(), CmdError> {
+    let (pos, _) = selected(s).ok_or_else(|| CmdError::Disabled("no picture or shape selected".into()))?;
+    unalign_at(s, &pos)
+}
+
+/// [`unalign`] for the drawing at `pos`.
+pub(super) fn unalign_at(s: &mut Session, pos: &Pos) -> Result<(), CmdError> {
     use wordcraft_doc::para::Anchor;
-    let (pos, obj) = selected(s).ok_or_else(|| CmdError::Disabled("no picture or shape selected".into()))?;
+    let pos = pos.clone();
+    let obj = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).cloned().ok_or_else(|| CmdError::Failed("object vanished".into()))?;
     let Some((_, _, float)) = obj.frame() else { return Ok(()) };
     if float.h_align.is_none() && float.v_align.is_none() {
         return Ok(());

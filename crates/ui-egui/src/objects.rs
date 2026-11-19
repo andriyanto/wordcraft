@@ -62,6 +62,9 @@ pub struct ObjectDrag {
     /// Dragging one of a bent or curved connector's runs (its adjust value, 1–3) to this page
     /// point.
     bend: Option<(u8, (f32, f32))>,
+    /// Several pictures or shapes are selected and this one of them is being moved: they all
+    /// move with it.
+    together: bool,
     /// Ctrl/⌘ is held: dropping leaves the original and puts a copy at the new place.
     copy: bool,
     /// The alignment guides a move snapped to, shown while dragging ([`crate::guides`]).
@@ -154,6 +157,7 @@ fn press_connector_handle(app: &mut WordApp, layout: &DocLayout, pages: &[Rect],
         preview: None,
         copy: false,
         drop_at: None,
+        together: false,
     });
     true
 }
@@ -356,7 +360,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
         }
         if ui.input(|i| i.pointer.primary_down()) {
             let shift = ui.input(|i| i.modifiers.shift);
-            d.copy = ui.input(|i| i.modifiers.command) && d.drag.grab == Grab::Move && d.object.member.is_none();
+            d.copy = ui.input(|i| i.modifiers.command) && d.drag.grab == Grab::Move && d.object.member.is_none() && !d.together;
             if d.drag.grab == Grab::Rotate {
                 d.drag.turn_to(at, pages, scale, shift);
             } else {
@@ -388,6 +392,12 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             }
             app.canvas.obj_drag = Some(d);
         } else {
+            if d.together && !d.drag.moved {
+                // A click on one of several selected (no drag): that one alone is selected.
+                let pos = d.object.pos();
+                let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
+                let _ = app.run("select.range", json!({"anchor": pos, "focus": end}));
+            }
             drop(app, &d);
             // A double-click on a shape (not a drag, not a handle) types in it: the caret goes
             // into its text, which a shape without any gets first. Other objects refuse.
@@ -481,15 +491,22 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             preview: None,
             copy: false,
             drop_at: None,
+            together: false,
         });
         return false;
     }
     if pressed {
         let pos = object.pos();
-        let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
-        let _ = app.run("select.range", json!({"anchor": pos, "focus": end}));
-        let (min, picture) = match selected(app) {
-            Some((_, o)) => (wordcraft_engine::cmd::objects::min_size(o), matches!(o, InlineObject::Image { .. })),
+        // One of several selected, pressed to move them: they stay selected, and move together.
+        let picked = wordcraft_engine::cmd::objects::picked_objects(&app.session);
+        // (Ctrl starts a copy of the one pressed instead.)
+        let together = grab == Grab::Move && picked.len() > 1 && picked.contains(&pos) && object.floating() && !ui.input(|i| i.modifiers.command);
+        if !together {
+            let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
+            let _ = app.run("select.range", json!({"anchor": pos, "focus": end}));
+        }
+        let (min, picture) = match hit_object(app, &object) {
+            Some(o) => (wordcraft_engine::cmd::objects::min_size(o), matches!(o, InlineObject::Image { .. })),
             None => return true,
         };
         // Objects in table cells can be selected and resized, not moved; charts neither.
@@ -507,8 +524,9 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
                 bend: None,
                 guides: Vec::new(),
                 preview: None,
-                copy,
+                copy: copy && !together,
                 drop_at: None,
+                together,
             });
         }
     }
@@ -553,6 +571,7 @@ fn press_member(app: &mut WordApp, layout: &DocLayout, pages: &[Rect], scale: f3
         preview: None,
         copy: false,
         drop_at: None,
+        together: false,
     });
     true
 }
@@ -839,6 +858,11 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
             let _ = app.run("arrange.copyTo", json!({"page": d.drag.to_page, "x": r.x, "y": r.y}));
             return;
         }
+        // Several selected: all of them by as much as this one was dragged (on its page).
+        Grab::Move if d.together => {
+            let _ = app.run("arrange.nudge", json!({"dx": r.x - d.drag.start.x, "dy": r.y - d.drag.start.y}));
+            return;
+        }
         Grab::Move => json!({"page": d.drag.to_page, "x": r.x, "y": r.y}),
         // An inline object stays in the text; a floating one keeps its far edges put.
         Grab::Resize(_) if d.object.floating() && movable(app, &d.object) => {
@@ -912,6 +936,17 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
             painter.image(tex.id(), to, uv, Color32::from_white_alpha(PREVIEW_OPACITY));
         }
         frame::paint(painter, t, to, d.drag.deg, false, false, false);
+        if d.together {
+            // The others selected with it, where they will be.
+            let (dx, dy) = (d.drag.rect.x - d.drag.start.x, d.drag.rect.y - d.drag.start.y);
+            for p in wordcraft_engine::cmd::objects::picked_objects(&app.session).iter().filter(|p| **p != d.object.pos()) {
+                if let Some(o) = layout.object(p, d.drag.page)
+                    && let Some(f) = screen(pages, scale, d.drag.to_page, wordcraft_geom::Rect::new(o.rect.x + dx, o.rect.y + dy, o.rect.w, o.rect.h))
+                {
+                    frame::paint_outline(painter, t, f, o.spin.deg);
+                }
+            }
+        }
         paint_following_connectors(app, d, painter, t, layout, pages, scale);
         paint_guides(d, painter, t, layout, pages, scale);
         paint_drop_caret(d, painter, layout, pages, scale);

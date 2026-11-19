@@ -114,5 +114,15 @@ pub(super) fn align_menu(ui: &mut Ui, app: &mut WordApp, label: Option<&str>) {
         mi(ui, app, "Align Left", "arrange.align", json!({"value": "left"}));
         mi(ui, app, "Align Center", "arrange.align", json!({"value": "center"}));
         mi(ui, app, "Align Right", "arrange.align", json!({"value": "right"}));
+        ui.separator();
+        mi(ui, app, "Align Top", "arrange.align", json!({"value": "top"}));
+        mi(ui, app, "Align Middle", "arrange.align", json!({"value": "middle"}));
+        mi(ui, app, "Align Bottom", "arrange.align", json!({"value": "bottom"}));
+        ui.separator();
+        // Three or more selected (Shift+click, or Select Objects): the gaps between them made equal.
+        mi(ui, app, "Distribute Horizontally", "arrange.distribute", json!({"value": "horizontal"}));
+        mi(ui, app, "Distribute Vertically", "arrange.distribute", json!({"value": "vertical"}));
+        ui.separator();
+        mi(ui, app, "Select Objects", "ui.selectObjects", json!({}));
     });
 }
