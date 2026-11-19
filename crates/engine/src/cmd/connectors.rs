@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use serde_json::{Value, json};
 use wordcraft_doc::connector::{
-    ConnEnd, Glued, RouteEnd, Routed, Was, ends_spun, leaves_upright, nearest_site, route_connector, site_point, site_way_out,
+    Around, ConnEnd, Glued, RouteEnd, Routed, Was, ends_spun, leaves_upright, nearest_site, route_around, route_connector, site_point, site_way_out,
 };
 use wordcraft_doc::para::{Anchor, InlineObject, Wrap};
 use wordcraft_doc::{Pos, StoryRef};
@@ -41,7 +41,147 @@ pub fn specs() -> Vec<CommandSpec> {
                 r#"{"handle"?: 1-3 (which run between the first and the last; 1), "x": pt, "y": pt} (move that run of the selected bent or curved connector to this point of its page) | {"handle"?: n, "value": n} (the run's adjust value: 100000ths of the frame's width or height, outside 0-100000 for a run outside the frame)"#,
             )
             .when(has_connector),
+        CommandSpec::new("shape.reroute", "Reroute Connectors", "Shape Format › Insert Shapes", reroute_connectors)
+            .params(
+                r#"{}  (the selected connectors, and those glued to the selected shapes, are glued to the connection sites that make them shortest: the sides of their shapes that face each other. A connector glued at one end goes to the site nearest its free end. Each is then routed anew, around the drawings in its way)"#,
+            )
+            .when(has_reroutable),
     ]
+}
+
+fn has_reroutable(s: &Session) -> Option<&'static str> {
+    (!reroutable(s).is_empty()).then_some(()).map_or(Some("select a glued connector, or a shape connectors are glued to"), |()| None)
+}
+
+/// The glued connectors `shape.reroute` applies to: those selected, and those glued to a
+/// selected shape.
+fn reroutable(s: &Session) -> Vec<Pos> {
+    let picked = super::objects::picked_objects(s);
+    if picked.is_empty() {
+        return Vec::new();
+    }
+    let picked_ids: Vec<u32> = picked
+        .iter()
+        .filter_map(|p| match s.doc.para_at(p)?.object_at(p.off)? {
+            InlineObject::Shape { kind, extra, .. } if !kind.is_connector() && extra.id != 0 => Some(vec![extra.id]),
+            // A group: its members' connectors.
+            InlineObject::Group { children, .. } => Some(
+                children
+                    .iter()
+                    .filter_map(|c| match &c.obj {
+                        InlineObject::Shape { extra, .. } if extra.id != 0 => Some(extra.id),
+                        _ => None,
+                    })
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let (_, conns, _) = scan(s);
+    conns
+        .into_iter()
+        .filter(|c| {
+            picked.contains(c)
+                || matches!(s.doc.para_at(c).and_then(|p| p.object_at(c.off)), Some(InlineObject::Shape { extra, .. })
+                    if [extra.start, extra.end].into_iter().flatten().any(|e| picked_ids.contains(&e.id)))
+        })
+        .collect()
+}
+
+/// The length of the path a connector `kind` takes from `start` to `end`: what `shape.reroute`
+/// makes least.
+fn route_length(kind: wordcraft_doc::para::ShapeKind, start: RouteEnd, end: RouteEnd) -> f32 {
+    use wordcraft_doc::graphic::PathSeg;
+    let to = route_connector(kind, start, end, Was::default());
+    let segs = wordcraft_doc::connector::connector_path(kind, to.preset.as_ref(), to.frame.w, to.frame.h).unwrap_or_default();
+    let (mut len, mut at) = (0.0f32, (0.0f32, 0.0f32));
+    for seg in segs {
+        let next = match seg {
+            PathSeg::Move(x, y) => {
+                at = (x, y);
+                continue;
+            }
+            PathSeg::Line(x, y) => (x, y),
+            // A curve by its control points: longer than the curve, the more it bends.
+            PathSeg::Cubic(a, b, c, d, x, y) => {
+                len += (a - at.0).hypot(b - at.1) + (c - a).hypot(d - b);
+                at = (c, d);
+                (x, y)
+            }
+            PathSeg::Close => continue,
+        };
+        len += (next.0 - at.0).hypot(next.1 - at.1);
+        at = next;
+    }
+    if len.is_finite() { len } else { f32::MAX }
+}
+
+/// `shape.reroute`: glue connectors to the sites of their shapes that make them shortest.
+fn reroute_connectors(s: &mut Session, _v: &Value) -> CmdResult {
+    let chosen = reroutable(s);
+    if chosen.is_empty() {
+        return Err(CmdError::Disabled("select a glued connector, or a shape connectors are glued to".into()));
+    }
+    let (ids, ..) = scan(s);
+    let layout = s.layout();
+    let objects = layout.object_index();
+    let mut plans: Vec<(Pos, Option<u32>, Option<u32>)> = Vec::new();
+    for pos in &chosen {
+        let Some(hit) = objects.object(pos, s.page_hint) else { continue };
+        let Some(InlineObject::Shape { kind, extra, .. }) = s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else { continue };
+        let r = hit.rect;
+        let (s0, e0) = ends_spun([r.x, r.y, r.w, r.h], hit.spin);
+        // Each end's choices: every site of the shape it is glued to, or where it is.
+        let choices = |end: Option<ConnEnd>, free: (f32, f32)| -> Vec<(Option<u32>, RouteEnd)> {
+            let Some((shape, rect, spin)) = end.and_then(|e| target_frame(s, &objects, &ids, (e.id, hit.page))) else {
+                return vec![(None, RouteEnd::free(free))];
+            };
+            let n = wordcraft_doc::connector::shape_sites(shape, rect[2], rect[3]).len().min(wordcraft_doc::connector::MAX_SITE as usize) as u32;
+            let sites: Vec<_> = (0..n)
+                .filter_map(|i| Some((Some(i), RouteEnd { at: site_point(shape, rect, spin, i)?, out: site_way_out(shape, rect, spin, i) })))
+                .collect();
+            if sites.is_empty() { vec![(None, RouteEnd::free(free))] } else { sites }
+        };
+        let (starts, ends) = (choices(extra.start, s0), choices(extra.end, e0));
+        let mut best: Option<(f32, Option<u32>, Option<u32>)> = None;
+        for (a, from) in &starts {
+            for (b, to) in &ends {
+                let len = route_length(*kind, *from, *to);
+                if best.is_none_or(|(l, ..)| len < l - 0.01) {
+                    best = Some((len, *a, *b));
+                }
+            }
+        }
+        if let Some((_, a, b)) = best {
+            plans.push((pos.clone(), a, b));
+        }
+    }
+    let mut changed = Vec::new();
+    for (pos, a, b) in plans {
+        let para = s.doc.para_mut(pos.story, &pos.path)?;
+        let Some(InlineObject::Shape { extra, .. }) = para.object_at_mut(pos.off) else { continue };
+        let before = (extra.start, extra.end);
+        if let (Some(e), Some(site)) = (extra.start.as_mut(), a) {
+            e.site = site;
+        }
+        if let (Some(e), Some(site)) = (extra.end.as_mut(), b) {
+            e.site = site;
+        }
+        if before != (extra.start, extra.end) {
+            para.touch();
+            changed.push(pos);
+        }
+    }
+    if !changed.is_empty() {
+        s.touch();
+    }
+    // Each one routed anew, its sites changed or not: around what has come to stand in its way.
+    let moved = reroute_all(s, &chosen);
+    if moved {
+        s.touch();
+    }
+    Ok(json!({"rerouted": changed.len(), "moved": moved, "connectors": chosen.len()}))
 }
 
 /// Commands after which glued connectors are re-routed: those that move, resize, turn, add or
@@ -50,8 +190,17 @@ pub fn reroutes_after(id: &str) -> bool {
     id.starts_with("arrange.") || id.starts_with("shape.") || id.starts_with("picture.") || id == "insert.shape" || id.starts_with("draw.")
 }
 
-/// The body's floating drawings with an id (by id) and its glued connectors.
-fn scan(s: &Session) -> (HashMap<u32, Pos>, Vec<Pos>, Vec<Pos>) {
+/// Where a shape a connector may be glued to is: in the body itself, or a member of a group there
+/// (the group's place and the member's index in it).
+#[derive(Clone, Debug, PartialEq)]
+struct Target {
+    pos: Pos,
+    member: Option<usize>,
+}
+
+/// The body's floating drawings with an id (by id; a group's members too) and its glued
+/// connectors.
+fn scan(s: &Session) -> (HashMap<u32, Target>, Vec<Pos>, Vec<Pos>) {
     let (mut ids, mut conns, mut groups) = (HashMap::new(), Vec::new(), Vec::new());
     for path in s.doc.para_paths(StoryRef::Body) {
         let Some(para) = s.doc.para(StoryRef::Body, &path) else { continue };
@@ -60,16 +209,26 @@ fn scan(s: &Session) -> (HashMap<u32, Pos>, Vec<Pos>, Vec<Pos>) {
             match obj {
                 InlineObject::Shape { kind, extra, float, .. } => {
                     if extra.id != 0 {
-                        ids.entry(extra.id).or_insert(pos.clone());
+                        ids.entry(extra.id).or_insert(Target { pos: pos.clone(), member: None });
                     }
                     if kind.is_connector() && float.wrap != Wrap::Inline && (extra.start.is_some() || extra.end.is_some()) {
                         conns.push(pos);
                     }
                 }
-                InlineObject::Group { children, .. }
-                    if children.iter().any(|c| matches!(&c.obj, InlineObject::Shape { kind, extra, .. } if kind.is_connector() && (extra.start.is_some() || extra.end.is_some()))) =>
-                {
-                    groups.push(pos)
+                InlineObject::Group { children, .. } => {
+                    // Its members can be glued to from outside the group: a connector between
+                    // two shapes stays between them when one is grouped with something else.
+                    for (i, c) in children.iter().enumerate().take(wordcraft_doc::para::MAX_GROUP_CHILDREN) {
+                        if let InlineObject::Shape { kind, extra, .. } = &c.obj
+                            && extra.id != 0
+                            && !kind.is_connector()
+                        {
+                            ids.entry(extra.id).or_insert(Target { pos: pos.clone(), member: Some(i) });
+                        }
+                    }
+                    if children.iter().any(|c| matches!(&c.obj, InlineObject::Shape { kind, extra, .. } if kind.is_connector() && (extra.start.is_some() || extra.end.is_some()))) {
+                        groups.push(pos)
+                    }
                 }
                 _ => {}
             }
@@ -83,12 +242,186 @@ pub fn reroute(s: &mut Session) -> bool {
     reroute_with(s, None)
 }
 
+/// Member `i` of the group `group` laid out at `hit`, as connectors see it: the shape, its frame
+/// on the page (carried round with the group when the group is turned) and its spin there.
+fn member_frame<'a>(
+    group: &'a InlineObject,
+    hit: &wordcraft_layout::hit::ObjectHit,
+    i: usize,
+) -> Option<(Glued<'a>, [f32; 4], wordcraft_geom::Spin)> {
+    member_frame_at(group, (hit.rect, hit.spin), i)
+}
+
+/// [`member_frame`] for a group whose frame is `r`, turned `spin`.
+fn member_frame_at<'a>(
+    group: &'a InlineObject,
+    (r, spin): (wordcraft_geom::Rect, wordcraft_geom::Spin),
+    i: usize,
+) -> Option<(Glued<'a>, [f32; 4], wordcraft_geom::Spin)> {
+    let InlineObject::Group { children, .. } = group else { return None };
+    let child = &children.get(i)?.obj;
+    let [x, y, w, h] = group.member_rects(r.x, r.y, r.w, r.h).into_iter().find(|(n, _)| *n == i)?.1;
+    // The group turns about its own middle: the member's middle goes round with it, and the
+    // member's own turn is within the group's.
+    let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+    let (nx, ny) = spin.apply(r.x + r.w / 2.0, r.y + r.h / 2.0, cx, cy);
+    let (_, _, float) = child.frame()?;
+    Some((Glued::of(child)?, [x + nx - cx, y + ny - cy, w, h], float.spin().within(spin)))
+}
+
 /// How far (points) a glued end may be from its site and still be where it belongs.
 const AT_SITE: f32 = 0.05;
 
 /// [`reroute`], routing the connector at `fresh` anew even when its ends are where they belong
 /// (its glue was just changed: the way it leaves its shapes may have).
 fn reroute_with(s: &mut Session, fresh: Option<&Pos>) -> bool {
+    reroute_all(s, fresh.map_or(&[], std::slice::from_ref))
+}
+
+/// The shape with drawing id `id` on `page` as connectors see it: the shape, its frame there and
+/// its spin. `None` for a shape that is gone or on another page.
+fn target_frame<'a>(
+    s: &'a Session,
+    objects: &wordcraft_layout::hit::ObjectIndex,
+    ids: &HashMap<u32, Target>,
+    (id, page): (u32, usize),
+) -> Option<(Glued<'a>, [f32; 4], wordcraft_geom::Spin)> {
+    let target = ids.get(&id)?;
+    let hit = objects.object(&target.pos, page)?;
+    if hit.page != page {
+        return None;
+    }
+    let obj = s.doc.para_at(&target.pos)?.object_at(target.pos.off)?;
+    match target.member {
+        None => Some((Glued::of(obj)?, [hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h], hit.spin)),
+        Some(i) => member_frame(obj, hit, i),
+    }
+}
+
+/// The connectors glued to the drawing at `moved` (a shape, or a group with glued members) as
+/// they would run with that drawing's frame at `to` on `page`, turned `spin`: each one's path in
+/// page points. What a drag shows before the drawing is dropped; the document is not touched.
+pub fn follow_routes(
+    s: &Session,
+    layout: &wordcraft_layout::DocLayout,
+    moved: &Pos,
+    (page, to, spin): (usize, wordcraft_geom::Rect, wordcraft_geom::Spin),
+) -> Vec<Vec<wordcraft_doc::graphic::PathSeg>> {
+    use wordcraft_doc::graphic::PathSeg;
+    let (ids, conns, _) = scan(s);
+    if conns.is_empty() || !ids.values().any(|t| t.pos == *moved) {
+        return Vec::new();
+    }
+    let objects = layout.object_index();
+    // An end's site: on the moved drawing where it would be, else where its shape is.
+    let drawings = drawings_on(s, layout, page, Some((moved, to, spin)));
+    let site = |e: Option<ConnEnd>| -> Option<(RouteEnd, bool, &Pos, [f32; 4])> {
+        let e = e?;
+        let target = ids.get(&e.id)?;
+        let on_moved = target.pos == *moved;
+        let (shape, rect, at) = if on_moved {
+            let obj = s.doc.para_at(moved)?.object_at(moved.off)?;
+            match target.member {
+                None => (Glued::of(obj)?, [to.x, to.y, to.w, to.h], spin),
+                Some(i) => member_frame_at(obj, (to, spin), i)?,
+            }
+        } else {
+            target_frame(s, &objects, &ids, (e.id, page))?
+        };
+        Some((
+            RouteEnd { at: site_point(shape, rect, at, e.site)?, out: site_way_out(shape, rect, at, e.site) },
+            on_moved,
+            &target.pos,
+            bounds_of(rect, at),
+        ))
+    };
+    let mut out = Vec::new();
+    for pos in conns.iter().take(256) {
+        let Some(hit) = objects.object(pos, page).filter(|h| h.page == page) else { continue };
+        let Some(InlineObject::Shape { kind, extra, float, w, h, .. }) = s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else { continue };
+        let (a, b) = (site(extra.start), site(extra.end));
+        if !a.is_some_and(|x| x.1) && !b.is_some_and(|x| x.1) {
+            continue;
+        }
+        let r = hit.rect;
+        let (s0, e0) = ends_spun([r.x, r.y, r.w, r.h], hit.spin);
+        let was = Was { preset: extra.preset.as_deref(), w: *w, h: *h, upright: leaves_upright(float.rot) };
+        let round = around(&drawings, pos, [a.map(|x| (x.2, x.3)), b.map(|x| (x.2, x.3))]);
+        let routed = route_around(*kind, a.map_or(RouteEnd::free(s0), |x| x.0), b.map_or(RouteEnd::free(e0), |x| x.0), was, &round);
+        let f = routed.frame;
+        let Some(segs) = wordcraft_doc::connector::connector_path(*kind, routed.preset.as_ref(), f.w, f.h) else { continue };
+        let turn = wordcraft_geom::Spin::new(routed.rot, f.flip_h, f.flip_v);
+        let on_page = |x: f32, y: f32| turn.apply(f.x + f.w / 2.0, f.y + f.h / 2.0, f.x + x, f.y + y);
+        out.push(
+            segs.into_iter()
+                .map(|seg| match seg {
+                    PathSeg::Move(x, y) => {
+                        let p = on_page(x, y);
+                        PathSeg::Move(p.0, p.1)
+                    }
+                    PathSeg::Line(x, y) => {
+                        let p = on_page(x, y);
+                        PathSeg::Line(p.0, p.1)
+                    }
+                    PathSeg::Cubic(a, b, c, d, x, y) => {
+                        let (p1, p2, p3) = (on_page(a, b), on_page(c, d), on_page(x, y));
+                        PathSeg::Cubic(p1.0, p1.1, p2.0, p2.1, p3.0, p3.1)
+                    }
+                    PathSeg::Close => PathSeg::Close,
+                })
+                .collect(),
+        );
+    }
+    out
+}
+
+/// The bounds (x0, y0, x1, y1) on its page of a drawing whose frame is `rect`, turned `spin`.
+fn bounds_of(rect: [f32; 4], spin: wordcraft_geom::Spin) -> [f32; 4] {
+    let b = spin.bounds(wordcraft_geom::Rect::new(rect[0], rect[1], rect[2], rect[3]));
+    [b.x, b.y, b.right(), b.bottom()]
+}
+
+/// The body's drawings on `page` a connector may have to go around (shapes, pictures, groups;
+/// not lines and connectors): where each is, and its bounds. The drawing at `moved` is taken to
+/// be at the frame and spin given with it.
+fn drawings_on(
+    s: &Session,
+    layout: &wordcraft_layout::DocLayout,
+    page: usize,
+    moved: Option<(&Pos, wordcraft_geom::Rect, wordcraft_geom::Spin)>,
+) -> Vec<(Pos, [f32; 4])> {
+    let Some(pg) = layout.pages.get(page) else { return Vec::new() };
+    let mut out = Vec::new();
+    for it in pg.items.iter().take(4096) {
+        let wordcraft_layout::Placed::Object { rect, spin, story: StoryRef::Body, path, off, .. } = it else { continue };
+        let pos = Pos { story: StoryRef::Body, path: path.clone(), off: *off };
+        let Some(obj) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
+        if !obj.is_drawing() || matches!(obj, InlineObject::Shape { kind, .. } if kind.is_open()) {
+            continue;
+        }
+        let (rect, spin) = match moved {
+            Some((m, to, turned)) if *m == pos => (to, turned),
+            _ => (*rect, *spin),
+        };
+        out.push((pos, bounds_of([rect.x, rect.y, rect.w, rect.h], spin)));
+    }
+    out
+}
+
+/// What a connector at `conn`, its ends glued to the drawings at `hosts` (bounds given), goes
+/// around among `drawings`: everything but itself and what it is glued to (a group it is glued
+/// into: only the member it is glued to counts, as its end's shape).
+fn around(drawings: &[(Pos, [f32; 4])], conn: &Pos, hosts: [Option<(&Pos, [f32; 4])>; 2]) -> Around {
+    let is_host = |p: &Pos| hosts.iter().flatten().any(|(h, _)| *h == p);
+    Around {
+        start: hosts[0].map(|(_, b)| b),
+        end: hosts[1].map(|(_, b)| b),
+        others: drawings.iter().filter(|(p, _)| p != conn && !is_host(p)).map(|(_, b)| *b).collect(),
+    }
+}
+
+/// [`reroute`], routing the connectors at `fresh` anew even when their ends are where they belong.
+fn reroute_all(s: &mut Session, fresh: &[Pos]) -> bool {
     let (ids, conns, groups) = scan(s);
     let mut moved = false;
     for pos in groups {
@@ -109,32 +442,32 @@ fn reroute_with(s: &mut Session, fresh: Option<&Pos>) -> bool {
     let layout = s.layout();
     let objects = layout.object_index();
     // A glued end: its site on the page, and the way out of its shape there.
-    let site = |e: Option<ConnEnd>, page: usize| -> Option<RouteEnd> {
+    let site = |e: Option<ConnEnd>, page: usize| -> Option<(RouteEnd, &Pos, [f32; 4])> {
         let e = e?;
-        let target = ids.get(&e.id)?;
-        let hit = objects.object(target, page)?;
-        let shape = Glued::of(s.doc.para_at(target)?.object_at(target.off)?)?;
-        if hit.page != page {
-            return None;
-        }
-        let rect = [hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h];
-        Some(RouteEnd { at: site_point(shape, rect, hit.spin, e.site)?, out: site_way_out(shape, rect, hit.spin, e.site) })
+        let (shape, rect, spin) = target_frame(s, &objects, &ids, (e.id, page))?;
+        let end = RouteEnd { at: site_point(shape, rect, spin, e.site)?, out: site_way_out(shape, rect, spin, e.site) };
+        Some((end, &ids.get(&e.id)?.pos, bounds_of(rect, spin)))
     };
+    // The drawings of each page a connector is on, to go around: found once a page.
+    let mut on_page: HashMap<usize, Vec<(Pos, [f32; 4])>> = HashMap::new();
     let mut plans = Vec::new();
     for pos in conns {
         let Some(hit) = objects.object(&pos, s.page_hint) else { continue };
         let Some(InlineObject::Shape { kind, extra, float, w, h, .. }) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
         let r = hit.rect;
         let (s0, e0) = ends_spun([r.x, r.y, r.w, r.h], hit.spin);
-        let (start, end) = (site(extra.start, hit.page).unwrap_or(RouteEnd::free(s0)), site(extra.end, hit.page).unwrap_or(RouteEnd::free(e0)));
+        let (from, to) = (site(extra.start, hit.page), site(extra.end, hit.page));
+        let (start, end) = (from.map_or(RouteEnd::free(s0), |x| x.0), to.map_or(RouteEnd::free(e0), |x| x.0));
         // A connector whose ends are at their sites stays as it is, as a file or the user made
         // it: only one that a moved shape left behind is routed again.
         let near = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).abs() < AT_SITE && (a.1 - b.1).abs() < AT_SITE;
-        if fresh != Some(&pos) && near(start.at, s0) && near(end.at, e0) {
+        if !fresh.contains(&pos) && near(start.at, s0) && near(end.at, e0) {
             continue;
         }
         let was = Was { preset: extra.preset.as_deref(), w: *w, h: *h, upright: leaves_upright(float.rot) };
-        plans.push((pos, route_connector(*kind, start, end, was), (r.x, r.y), (hit.origin.x, hit.origin.y)));
+        let drawings = on_page.entry(hit.page).or_insert_with(|| drawings_on(s, &layout, hit.page, None));
+        let round = around(drawings, &pos, [from.map(|x| (x.1, x.2)), to.map(|x| (x.1, x.2))]);
+        plans.push((pos, route_around(*kind, start, end, was, &round), (r.x, r.y), (hit.origin.x, hit.origin.y)));
     }
     for (pos, to, at, origin) in plans {
         moved |= place(s, &pos, to, at, origin);

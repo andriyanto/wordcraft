@@ -7687,6 +7687,163 @@ fn a_moved_connector_run_stays_where_it_was_put() {
     assert!(s.run("shape.bend", &json!({"value": 10})).is_err());
 }
 
+/// A connector stays glued to a shape that is grouped with another: it follows the shape when
+/// the group moves. It was left behind, its end where the shape had been: the glue named a
+/// shape the body no longer had on its own.
+#[test]
+fn a_connector_follows_a_shape_that_was_grouped() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 400, "y": 300, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 202, "y": 130, "x1": 398, "y1": 130, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 130), (400, 130)]);
+    // The second box and the oval, grouped.
+    let oval = select_drawing(&mut s, Some((450.0, 330.0)));
+    select_drawing(&mut s, Some((450.0, 130.0)));
+    run(&mut s, "select.addObject", json!({"pos": oval}));
+    run(&mut s, "arrange.group", json!({}));
+    assert!(matches!(cmd::objects::selected(&s), Some((_, wordcraft_doc::InlineObject::Group { .. }))));
+    // The group moves down: the connector's end goes with the box inside it.
+    run(&mut s, "arrange.nudge", json!({"dx": 0, "dy": 80}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 210), (400, 210)]);
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    assert!(
+        matches!(&obj, wordcraft_doc::InlineObject::Shape { extra, .. } if extra.start.is_some() && extra.end.is_some()),
+        "still glued at both ends: {obj:?}"
+    );
+    assert!(!cmd::connectors::reroute(&mut s), "nothing left to settle");
+}
+
+/// While a shape is dragged, the connectors glued to it are shown as they will run where it is
+/// dropped (`follow_routes`), a grouped shape's too; the document is not touched until the drop.
+#[test]
+fn connectors_are_previewed_where_a_dragged_shape_would_take_them() {
+    use wordcraft_doc::graphic::PathSeg;
+    use wordcraft_geom::{Rect, Spin};
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 400, "y": 300, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 202, "y": 130, "x1": 398, "y1": 130, "page": 0}));
+    let corners = |paths: &[Vec<PathSeg>]| -> Vec<Vec<(i32, i32)>> {
+        paths
+            .iter()
+            .map(|p| {
+                p.iter()
+                    .filter_map(|seg| match seg {
+                        PathSeg::Move(x, y) | PathSeg::Line(x, y) => Some((x.round() as i32, y.round() as i32)),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect()
+    };
+    let second = select_drawing(&mut s, Some((450.0, 130.0)));
+    let oval = select_drawing(&mut s, Some((450.0, 330.0)));
+    let before = s.doc.clone();
+    let layout = s.layout();
+    // The second box 100 pt lower: the connector's end is at its left side there.
+    let to = (0, Rect::new(400.0, 200.0, 100.0, 60.0), Spin::default());
+    let paths = cmd::connectors::follow_routes(&s, &layout, &second, to);
+    assert_eq!(corners(&paths), vec![vec![(200, 130), (300, 130), (300, 230), (400, 230)]]);
+    // A shape nothing is glued to drags no connector along; nor is the document changed.
+    assert!(cmd::connectors::follow_routes(&s, &layout, &oval, to).is_empty());
+    assert!(s.doc == before);
+    // Grouped with the oval: the group dragged 100 pt right takes the connector's end with it.
+    select_drawing(&mut s, Some((450.0, 130.0)));
+    run(&mut s, "select.addObject", json!({"pos": oval}));
+    run(&mut s, "arrange.group", json!({}));
+    let (group, _) = cmd::objects::selected(&s).unwrap();
+    let layout = s.layout();
+    let r = layout.object(&group, 0).unwrap().rect;
+    let paths = cmd::connectors::follow_routes(&s, &layout, &group, (0, Rect::new(r.x + 100.0, r.y, r.w, r.h), Spin::default()));
+    assert_eq!(corners(&paths), vec![vec![(200, 130), (350, 130), (350, 130), (500, 130)]]);
+    // Hostile frames give paths of finite numbers, or none.
+    for wild in [Rect::new(f32::NAN, 0.0, 10.0, 10.0), Rect::new(0.0, 0.0, f32::INFINITY, -5.0), Rect::new(1e30, -1e30, 0.0, 0.0)] {
+        for path in cmd::connectors::follow_routes(&s, &layout, &group, (0, wild, Spin::new(f32::NAN, true, false))) {
+            for seg in path {
+                if let PathSeg::Move(x, y) | PathSeg::Line(x, y) = seg {
+                    assert!(x.is_finite() && y.is_finite());
+                }
+            }
+        }
+    }
+}
+
+/// A bent connector goes around a drawing that stands between its shapes, and around its own
+/// shape when it must leave it on the far side: it ran straight through both before. A drawing
+/// put in the way of a connector that is where it belongs leaves it alone until it is rerouted.
+#[test]
+fn a_connector_goes_around_the_drawings_in_its_way() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 202, "y": 130, "x1": 398, "y1": 130, "page": 0}));
+    let plain = vec![(200, 130), (300, 130), (300, 130), (400, 130)];
+    assert_eq!(connector_corners(&mut s), plain);
+    // A box dropped between them: the connector is as it was.
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 260, "y": 90, "page": 0, "width": 80, "height": 80}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), plain);
+    // Rerouted: over or under the box, still straight out of one shape and into the other.
+    run(&mut s, "shape.reroute", json!({}));
+    let around = connector_corners(&mut s);
+    assert_eq!((around.len(), around[0], around[5]), (6, (200, 130), (400, 130)), "{around:?}");
+    assert!(around[1].0 > 200 && around[1].0 < 260 && around[1].1 == 130, "out of the first box before the one in the way: {around:?}");
+    assert!(around[2].1 < 90 || around[2].1 > 170, "past its top or bottom: {around:?}");
+    assert!(around[4].0 > 340 && around[4].0 < 400, "{around:?}");
+    // A glued shape moves: the new route goes around too.
+    select_drawing(&mut s, Some((450.0, 130.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": 0, "dy": 20}));
+    select_drawing(&mut s, None);
+    let moved = connector_corners(&mut s);
+    assert_eq!((moved[0], *moved.last().unwrap()), ((200, 130), (400, 150)), "{moved:?}");
+    let crosses =
+        moved.windows(2).any(|w| w[0].0.min(w[1].0) < 339 && w[0].0.max(w[1].0) > 261 && w[0].1.min(w[1].1) < 169 && w[0].1.max(w[1].1) > 91);
+    assert!(!crosses, "{moved:?}");
+    // The box taken out of the way and the connector rerouted: the plain elbow again.
+    select_drawing(&mut s, Some((300.0, 130.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": 0, "dy": 400}));
+    select_drawing(&mut s, None);
+    run(&mut s, "shape.reroute", json!({}));
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 150), (400, 150)]);
+    assert!(!cmd::connectors::reroute(&mut s));
+}
+
+/// Reroute Connectors glues a connector to the sides of its shapes that face each other, where
+/// a shape that was moved left it going around: the shortest way between the two.
+#[test]
+fn reroute_connectors_takes_the_sides_that_face_each_other() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 300, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 500, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 402, "y": 130, "x1": 498, "y1": 130, "page": 0}));
+    // The second box moves to the other side of the first, and lower: the connector leaves the
+    // first box's right side and goes all the way round to the second's left.
+    select_drawing(&mut s, Some((550.0, 130.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": -450, "dy": 200}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s).len(), 6, "around both: {:?}", connector_corners(&mut s));
+    // Rerouted: from the first box's left side or bottom to the second's right side or top.
+    let r = run(&mut s, "shape.reroute", json!({}));
+    assert_eq!(r["rerouted"], 1);
+    let corners = connector_corners(&mut s);
+    assert!(corners.len() <= 4, "{corners:?}");
+    assert!(matches!(corners.first(), Some((300, 130)) | Some((350, 160))), "{corners:?}");
+    assert!(matches!(corners.last(), Some((150, 330)) | Some((100, 300))), "{corners:?}");
+    // Already the shortest: nothing changes, and it is no edit.
+    let before = s.doc.clone();
+    assert_eq!(run(&mut s, "shape.reroute", json!({}))["rerouted"], 0);
+    assert!(s.doc == before);
+    // With a shape selected: its connectors. With nothing glued selected: refused.
+    select_drawing(&mut s, Some((350.0, 130.0)));
+    assert_eq!(run(&mut s, "shape.reroute", json!({}))["connectors"], 1);
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 100, "y": 600, "page": 0}));
+    assert!(s.run("shape.reroute", &json!({})).is_err());
+}
+
 /// Every shape of the gallery can be inserted by name, is drawn from its own outline, and is
 /// saved to DOCX and read back as itself. The gallery had nine shapes; a preset beyond a kind's
 /// own (a hexagon, a flowchart document) could come from a file only, and was shown as a

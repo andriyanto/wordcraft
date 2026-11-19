@@ -897,6 +897,7 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
                 painter.add(egui::Shape::mesh(mesh));
             }
             frame::paint_turning(painter, t, to, d.drag.deg);
+            paint_following_connectors(app, d, painter, t, layout, pages, scale);
             return;
         }
         if !shows_pixels(d) {
@@ -911,6 +912,7 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
             painter.image(tex.id(), to, uv, Color32::from_white_alpha(PREVIEW_OPACITY));
         }
         frame::paint(painter, t, to, d.drag.deg, false, false, false);
+        paint_following_connectors(app, d, painter, t, layout, pages, scale);
         paint_guides(d, painter, t, layout, pages, scale);
         paint_drop_caret(d, painter, layout, pages, scale);
         return;
@@ -956,21 +958,13 @@ fn paint_bend_handle(painter: &Painter, t: &Tokens, c: Pos2) {
     painter.add(egui::Shape::convex_polygon(pts, Color32::WHITE, egui::Stroke::new(1.2, t.accent)));
 }
 
-/// A connector's run being dragged: the connector as it would then be, and the handle there.
-fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, pages: &[Rect], scale: f32) {
+/// The path `segs` drawn as a line, each of its points put on the screen by `on_screen` (a point
+/// with no place there breaks the line).
+fn paint_path(painter: &Painter, segs: &[wordcraft_doc::graphic::PathSeg], stroke: egui::Stroke, on_screen: impl Fn(f32, f32) -> Option<Pos2>) {
     use wordcraft_doc::graphic::PathSeg;
-    let Some((run, at)) = d.bend.filter(|_| d.drag.moved) else { return };
-    let Some((_, InlineObject::Shape { kind, extra, .. })) = selected(app) else { return };
-    let o = &d.object;
-    let r = o.rect;
-    let own = o.spin.unapply(r.x + r.w / 2.0, r.y + r.h / 2.0, at.0, at.1);
-    let Some(bent) = wordcraft_doc::connector::bend_to(*kind, extra.preset.as_deref(), r.w, r.h, run, (own.0 - r.x, own.1 - r.y)) else { return };
-    let Some(segs) = wordcraft_doc::connector::connector_path(*kind, bent.as_ref(), r.w, r.h) else { return };
-    let on_screen = |x: f32, y: f32| point_on_screen(pages, scale, o.page, frame_point_on_page(o, (x, y)));
-    let stroke = egui::Stroke::new(1.5, t.accent);
     let mut last: Option<Pos2> = None;
     for seg in segs {
-        let to = match seg {
+        let to = match *seg {
             PathSeg::Move(x, y) => on_screen(x, y),
             PathSeg::Line(x, y) => {
                 let to = on_screen(x, y);
@@ -990,6 +984,33 @@ fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens,
         };
         last = to;
     }
+}
+
+/// While a drawing is dragged, resized or turned: the connectors glued to it as they will run
+/// when it is dropped there. They followed only on the drop before, so until then the drawing
+/// seemed to leave them behind.
+fn paint_following_connectors(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, layout: &DocLayout, pages: &[Rect], scale: f32) {
+    if d.object.member.is_some() || d.copy {
+        return;
+    }
+    let spin = wordcraft_geom::Spin::new(d.drag.deg, d.object.spin.flip_h, d.object.spin.flip_v);
+    let routes = wordcraft_engine::cmd::connectors::follow_routes(&app.session, layout, &d.object.pos(), (d.drag.to_page, d.drag.rect, spin));
+    for segs in routes {
+        paint_path(painter, &segs, egui::Stroke::new(1.5, t.accent), |x, y| point_on_screen(pages, scale, d.drag.to_page, (x, y)));
+    }
+}
+
+/// A connector's run being dragged: the connector as it would then be, and the handle there.
+fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, pages: &[Rect], scale: f32) {
+    let Some((run, at)) = d.bend.filter(|_| d.drag.moved) else { return };
+    let Some((_, InlineObject::Shape { kind, extra, .. })) = selected(app) else { return };
+    let o = &d.object;
+    let r = o.rect;
+    let own = o.spin.unapply(r.x + r.w / 2.0, r.y + r.h / 2.0, at.0, at.1);
+    let Some(bent) = wordcraft_doc::connector::bend_to(*kind, extra.preset.as_deref(), r.w, r.h, run, (own.0 - r.x, own.1 - r.y)) else { return };
+    let Some(segs) = wordcraft_doc::connector::connector_path(*kind, bent.as_ref(), r.w, r.h) else { return };
+    let on_screen = |x: f32, y: f32| point_on_screen(pages, scale, o.page, frame_point_on_page(o, (x, y)));
+    paint_path(painter, &segs, egui::Stroke::new(1.5, t.accent), on_screen);
     let handle = wordcraft_doc::connector::bend_handles(*kind, bent.as_ref(), r.w, r.h).into_iter().find(|b| b.adjust == run);
     if let Some(c) = handle.and_then(|b| on_screen(b.at.0, b.at.1)) {
         paint_bend_handle(painter, t, c);

@@ -65,6 +65,15 @@ pub(super) fn shape_format(app: &mut WordApp, ui: &mut Ui) {
                     super::insert::shape_gallery_for(ui, app, super::insert::GalleryUse::Change);
                 },
             );
+            // Its connectors (or the selected ones) glued to the sides that face each other.
+            small(
+                ui,
+                app,
+                "shape.elbowConnector",
+                Some("Reroute Connectors"),
+                "Reroute Connectors",
+                crate::widgets::ButtonAction::new("shape.reroute", json!({}), false),
+            );
         });
     });
     group(ui, "Shape Styles", None, app, |ui, app| {

@@ -157,6 +157,11 @@ pub(super) fn context_menu(app: &mut WordApp, ui: &mut Ui) {
             matches!(wordcraft_engine::cmd::objects::selected(&app.session), Some((_, wordcraft_doc::InlineObject::Shape { story: Some(_), .. })));
         item(ui, app, if has_text { "Edit Text" } else { "Add Text" }, "shape.addText", json!({}));
     }
+    if crate::widgets::enabled(app, "shape.reroute") {
+        // The selected connectors, or those glued to the selected shape, take the sides of
+        // their shapes that face each other.
+        item(ui, app, "Reroute Connectors", "shape.reroute", json!({}));
+    }
     if picture || object {
         // A numbered caption under (or over) the picture, shape, text box or chart (#1230).
         item(ui, app, "Insert Caption…", "references.caption", json!({}));
