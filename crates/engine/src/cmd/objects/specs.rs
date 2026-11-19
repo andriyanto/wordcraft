@@ -374,6 +374,11 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"kind": string}  (a shape of insert.shape; the shape keeps its size, colours, text and connectors)"#)
         .when(has_shape),
+        CommandSpec::new("shape.adjust", "Adjust Shape", "Shape Format › Insert Shapes", super::shape::adjust)
+            .params(
+                r#"{"handle"?: n (which of the shape's handles, from 1; 1), "x": pt, "y": pt} (move that handle of the selected shape to this point of its page) | {"handle"?: n, "own": [x, y]} (to this point of the shape's own frame, points from its top left before any rotation). A handle changes the shape's proportions: a parallelogram's lean, a block arrow's head and shaft, a callout's tip, a rounded corner; it stays within what the shape allows"#,
+            )
+            .when(super::shape::has_handle),
         CommandSpec::new("shape.textDirection", "Text Direction", "Shape Format › Text", |s, v| {
             let dir = p::str(v, "dir").unwrap_or("horz");
             let vert = match dir {

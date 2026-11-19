@@ -110,9 +110,31 @@ fn connector_bends(app: &WordApp, layout: &DocLayout) -> Option<(ObjectHit, Vec<
     Some((o, on_page))
 }
 
-/// The selected connector's run handle under `at` (screen): its adjust value, and the connector.
+/// The handles that change the selected shape's proportions (a parallelogram's lean, an arrow's
+/// head and shaft, a callout's tip, a rounded corner): each one's number, from 1, and where it is
+/// on its page; and the shape. None while several drawings are selected, while the shape's text
+/// is edited, and for a shape that can't be resized.
+fn shape_adjusts(app: &WordApp, layout: &DocLayout) -> Option<(ObjectHit, Vec<(u8, (f32, f32))>)> {
+    if !app.session.also_selected.is_empty() {
+        return None;
+    }
+    let (o, editing) = active(app, layout)?;
+    if editing || !selectable_story(app, o.story) || fixed(app, &o) {
+        return None;
+    }
+    let InlineObject::Shape { kind, extra, .. } = hit_object(app, &o)? else { return None };
+    let at = wordcraft_doc::preset::shape_handles(*kind, extra.preset.as_deref(), extra.corner, o.rect.w, o.rect.h);
+    if at.is_empty() {
+        return None;
+    }
+    let on_page = at.into_iter().enumerate().filter_map(|(i, p)| Some((u8::try_from(i + 1).ok()?, frame_point_on_page(&o, p)))).collect();
+    Some((o, on_page))
+}
+
+/// The diamond handle under `at` (screen): one of the selected connector's runs (its adjust
+/// value) or one of the selected shape's proportions (its number), and the drawing.
 fn connector_bend_at(app: &WordApp, layout: &DocLayout, pages: &[Rect], scale: f32, at: Pos2) -> Option<(ObjectHit, u8)> {
-    let (o, handles) = connector_bends(app, layout)?;
+    let (o, handles) = connector_bends(app, layout).or_else(|| shape_adjusts(app, layout))?;
     let hit = handles.into_iter().find(|(_, p)| point_on_screen(pages, scale, o.page, *p).is_some_and(|s| s.distance(at) <= END_GRAB))?;
     Some((o, hit.0))
 }
@@ -177,9 +199,29 @@ fn drag_connector_handle(app: &mut WordApp, ui: &Ui, pages: &[Rect], layout: &Do
             let key = if which { "end" } else { "start" };
             let _ = app.run("shape.connect", json!({key: {"x": x, "y": y, "page": d.object.page}}));
         } else if let Some((run, (x, y))) = d.bend {
-            let _ = app.run("shape.bend", json!({"handle": run, "x": x, "y": y}));
+            if is_connector(app, &d.object) {
+                let _ = app.run("shape.bend", json!({"handle": run, "x": x, "y": y}));
+            } else {
+                // A shape's own handle: to this point of its own frame (a member of a drawing
+                // canvas has no frame of its own in the layout).
+                let (ox, oy) = own_point(&d.object, (x, y));
+                let _ = app.run("shape.adjust", json!({"handle": run, "own": [ox, oy]}));
+            }
         }
     }
+}
+
+/// Whether the drawing laid out at `o` is a connector.
+fn is_connector(app: &WordApp, o: &ObjectHit) -> bool {
+    matches!(hit_object(app, o), Some(InlineObject::Shape { kind, .. }) if kind.is_connector())
+}
+
+/// The page point `at` in the own frame of the drawing laid out at `o`: from its top left,
+/// before its turn and flips.
+fn own_point(o: &ObjectHit, at: (f32, f32)) -> (f32, f32) {
+    let r = o.rect;
+    let own = o.spin.unapply(r.x + r.w / 2.0, r.y + r.h / 2.0, at.0, at.1);
+    (own.0 - r.x, own.1 - r.y)
 }
 
 /// The selected object: the selection is exactly one picture, shape or text box, in the body
@@ -974,6 +1016,12 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
         // not charts): else a plain frame.
         let handles = selectable_story(app, o.story) && !fixed(app, &o);
         frame::paint(painter, t, f, o.spin.deg, editing, handles, handles && !size_only(app, &o));
+        // What changes its proportions: a diamond on the corner or edge each handle moves.
+        for (_, p) in shape_adjusts(app, layout).map(|a| a.1).unwrap_or_default() {
+            if let Some(c) = point_on_screen(pages, scale, o.page, p) {
+                paint_bend_handle(painter, t, c);
+            }
+        }
     }
 }
 
@@ -997,10 +1045,13 @@ fn paint_bend_handle(painter: &Painter, t: &Tokens, c: Pos2) {
 /// with no place there breaks the line).
 fn paint_path(painter: &Painter, segs: &[wordcraft_doc::graphic::PathSeg], stroke: egui::Stroke, on_screen: impl Fn(f32, f32) -> Option<Pos2>) {
     use wordcraft_doc::graphic::PathSeg;
-    let mut last: Option<Pos2> = None;
+    let (mut last, mut start): (Option<Pos2>, Option<Pos2>) = (None, None);
     for seg in segs {
         let to = match *seg {
-            PathSeg::Move(x, y) => on_screen(x, y),
+            PathSeg::Move(x, y) => {
+                start = on_screen(x, y);
+                start
+            }
             PathSeg::Line(x, y) => {
                 let to = on_screen(x, y);
                 if let (Some(a), Some(b)) = (last, to) {
@@ -1015,7 +1066,13 @@ fn paint_path(painter: &Painter, segs: &[wordcraft_doc::graphic::PathSeg], strok
                 }
                 to
             }
-            PathSeg::Close => last,
+            PathSeg::Close => {
+                // Back to where this part of the path began.
+                if let (Some(a), Some(b)) = (last, start) {
+                    painter.line_segment([a, b], stroke);
+                }
+                start
+            }
         };
         last = to;
     }
@@ -1038,6 +1095,10 @@ fn paint_following_connectors(app: &WordApp, d: &ObjectDrag, painter: &Painter, 
 /// A connector's run being dragged: the connector as it would then be, and the handle there.
 fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, pages: &[Rect], scale: f32) {
     let Some((run, at)) = d.bend.filter(|_| d.drag.moved) else { return };
+    if !is_connector(app, &d.object) {
+        paint_adjust_drag(app, d, (run, at), painter, t, pages, scale);
+        return;
+    }
     let Some((_, InlineObject::Shape { kind, extra, .. })) = selected(app) else { return };
     let o = &d.object;
     let r = o.rect;
@@ -1048,6 +1109,33 @@ fn paint_bend_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens,
     paint_path(painter, &segs, egui::Stroke::new(1.5, t.accent), on_screen);
     let handle = wordcraft_doc::connector::bend_handles(*kind, bent.as_ref(), r.w, r.h).into_iter().find(|b| b.adjust == run);
     if let Some(c) = handle.and_then(|b| on_screen(b.at.0, b.at.1)) {
+        paint_bend_handle(painter, t, c);
+    }
+}
+
+/// One of a shape's own handles being dragged to the page point `at`: the shape's outline as it
+/// would then be, and the handle where it would sit (it stops where the shape allows).
+fn paint_adjust_drag(app: &WordApp, d: &ObjectDrag, (number, at): (u8, (f32, f32)), painter: &Painter, t: &Tokens, pages: &[Rect], scale: f32) {
+    use wordcraft_doc::preset::{Adjusted, move_handle, shape_handles};
+    let o = &d.object;
+    let Some(InlineObject::Shape { kind, extra, .. }) = hit_object(app, o) else { return };
+    let Some(index) = usize::from(number).checked_sub(1) else { return };
+    let r = o.rect;
+    let Some(moved) = move_handle(*kind, extra.preset.as_deref(), (r.w, r.h), index, own_point(o, at)) else { return };
+    let (preset, corner) = match &moved {
+        Adjusted::Preset(geom) => (Some(geom), extra.corner),
+        Adjusted::Corner(corner) => (extra.preset.as_deref(), Some(*corner)),
+    };
+    let on_screen = |x: f32, y: f32| point_on_screen(pages, scale, o.page, frame_point_on_page(o, (x, y)));
+    let stroke = egui::Stroke::new(1.5, t.accent);
+    if let Some(segs) = preset.and_then(|p| wordcraft_doc::preset::outline(p, r.w, r.h)) {
+        // The preset's own outline: a callout's tail too, which reaches outside the frame.
+        paint_path(painter, &segs, stroke, on_screen);
+    } else if let Some(unit) = wordcraft_doc::wrap::shape_outline(*kind, r.w, r.h, corner) {
+        let points: Vec<Pos2> = unit.iter().filter_map(|(x, y)| on_screen(x * r.w, y * r.h)).collect();
+        painter.add(egui::Shape::closed_line(points, stroke));
+    }
+    if let Some(c) = shape_handles(*kind, preset, corner, r.w, r.h).get(index).and_then(|p| on_screen(p.0, p.1)) {
         paint_bend_handle(painter, t, c);
     }
 }

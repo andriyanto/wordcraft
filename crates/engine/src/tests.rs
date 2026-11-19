@@ -8064,6 +8064,106 @@ fn changing_a_shape_to_a_gallery_preset_keeps_it_and_moves_its_connectors() {
     assert!(s.run("shape.change", &json!({"kind": "noSuchShape"})).is_err());
 }
 
+/// A shape's handles change its proportions: a parallelogram's lean (the connector on its slanted
+/// side follows), a block arrow's head and shaft, a callout's tip, a rounded corner. The shape
+/// keeps the result as its preset's adjust values, so a DOCX file saves it; one undo step takes
+/// it back. Proportions came only from files before.
+#[test]
+fn a_shapes_handle_changes_its_proportions_and_is_saved() {
+    use wordcraft_doc::InlineObject::Shape;
+    use wordcraft_doc::para::ShapeKind;
+    let adjust_of = |s: &Session| -> (ShapeKind, Option<String>, Vec<(String, i32)>, Option<u32>) {
+        let (_, obj) = cmd::objects::selected(s).expect("a shape is selected");
+        let Shape { kind, extra, .. } = obj else { panic!("{obj:?}") };
+        let p = extra.preset.as_deref();
+        (kind, p.map(|p| p.name.clone()), p.map(|p| p.adjust.clone()).unwrap_or_default(), extra.corner)
+    };
+    let adj = |pairs: &[(&str, i32)]| pairs.iter().map(|(n, v)| (n.to_string(), *v)).collect::<Vec<_>>();
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "parallelogram", "x": 100, "y": 100, "page": 0, "width": 120, "height": 80}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 120, "height": 80}));
+    run(&mut s, "insert.shape", json!({"kind": "straightConnector", "x": 208, "y": 140, "x1": 398, "y1": 140, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(210, 140), (400, 140)]);
+    // The lean's handle, on the top edge 20 pt in, dragged to 40 pt in: half the shorter side.
+    select_drawing(&mut s, Some((160.0, 140.0)));
+    run(&mut s, "shape.adjust", json!({"x": 140, "y": 93}));
+    assert_eq!(adjust_of(&s), (ShapeKind::Rectangle, Some("parallelogram".into()), adj(&[("adj", 50_000)]), None));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 140), (400, 140)], "the connector follows the side that leans more");
+    // Out of reach it stops where the shape allows; a missing coordinate leaves that way alone.
+    select_drawing(&mut s, Some((160.0, 140.0)));
+    run(&mut s, "shape.adjust", json!({"x": -900}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj", 0)]));
+    run(&mut s, "shape.adjust", json!({"y": 5000}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj", 0)]));
+    run(&mut s, "shape.adjust", json!({"own": [30, 0]}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj", 37_500)]));
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(adjust_of(&s).2, adj(&[("adj", 0)]), "one step back");
+    s.run("edit.redo", &json!({})).unwrap();
+    // Turned a quarter: the handle is where the turned shape shows it. The frame 100..220 ×
+    // 100..180 turns about (160, 140); its top edge is now the right side, x = 200.
+    run(&mut s, "arrange.rotate", json!({"direction": "right"}));
+    run(&mut s, "shape.adjust", json!({"x": 200, "y": 100}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj", 25_000)]), "20 pt along the turned top edge");
+
+    // A block arrow is the preset it is drawn as once a handle moves: head first, then shaft.
+    run(&mut s, "insert.shape", json!({"kind": "arrow", "x": 100, "y": 300, "page": 0, "width": 200, "height": 80}));
+    select_drawing(&mut s, Some((200.0, 340.0)));
+    assert_eq!(adjust_of(&s), (ShapeKind::Arrow, None, vec![], None));
+    run(&mut s, "shape.adjust", json!({"handle": 1, "x": 220, "y": 300}));
+    assert_eq!(adjust_of(&s), (ShapeKind::Arrow, Some("rightArrow".into()), adj(&[("adj1", 40_000), ("adj2", 100_000)]), None));
+    run(&mut s, "shape.adjust", json!({"handle": 2, "own": [0, 10]}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj1", 75_000), ("adj2", 100_000)]));
+    assert!(s.run("shape.adjust", &json!({"handle": 3, "own": [0, 10]})).is_err());
+    assert!(s.run("shape.adjust", &json!({"handle": 0, "own": [0, 10]})).is_err());
+    assert!(s.run("shape.adjust", &json!({})).is_err(), "nowhere to move it");
+    for junk in [json!({"own": "there"}), json!({"own": [1]}), json!({"own": [null, 2]}), json!({"handle": "x"}), json!({"handle": u64::MAX, "x": 1})]
+    {
+        assert!(s.run("shape.adjust", &junk).is_err(), "{junk}");
+    }
+    run(&mut s, "shape.adjust", json!({"x": 1e30, "y": -1e30}));
+    run(&mut s, "shape.adjust", json!({"own": [f64::MAX, f64::MIN]}));
+    // Numbers too large to be a place count as 0, the frame's left edge: the longest head.
+    assert_eq!(adjust_of(&s).2, adj(&[("adj1", 75_000), ("adj2", 250_000)]));
+
+    // A callout's tip takes both of its values; a rounded rectangle's handle is its corner.
+    run(&mut s, "insert.shape", json!({"kind": "wedgeRectCallout", "x": 100, "y": 450, "page": 0, "width": 120, "height": 60}));
+    select_drawing(&mut s, Some((160.0, 480.0)));
+    run(&mut s, "shape.adjust", json!({"x": 280, "y": 465}));
+    assert_eq!(adjust_of(&s).2, adj(&[("adj1", 100_000), ("adj2", -25_000)]));
+    run(&mut s, "insert.shape", json!({"kind": "roundedRectangle", "x": 350, "y": 450, "page": 0, "width": 120, "height": 80}));
+    select_drawing(&mut s, Some((410.0, 490.0)));
+    run(&mut s, "shape.adjust", json!({"x": 380, "y": 450}));
+    assert_eq!(adjust_of(&s), (ShapeKind::RoundedRectangle, None, vec![], Some(37_500)));
+
+    // Saved and opened again, every shape is as it was adjusted.
+    let shapes = |s: &Session| -> Vec<(ShapeKind, Option<String>, Vec<(String, i32)>, Option<u32>)> {
+        let mut out: Vec<_> = drawings(s)
+            .into_iter()
+            .filter_map(|(_, obj)| match obj {
+                Shape { kind, extra, .. } if !kind.is_connector() && (kind != ShapeKind::Rectangle || extra.preset.is_some()) => {
+                    let p = extra.preset.as_deref();
+                    Some((kind, p.map(|p| p.name.clone()), p.map(|p| p.adjust.clone()).unwrap_or_default(), extra.corner))
+                }
+                _ => None,
+            })
+            .collect();
+        out.sort_by_key(|(_, name, ..)| name.clone());
+        out
+    };
+    let before = shapes(&s);
+    assert_eq!(before.len(), 4, "{before:?}");
+    let back = Session::new(wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap());
+    assert_eq!(shapes(&back), before);
+
+    // Nothing to adjust: a rectangle, a connector, text.
+    select_drawing(&mut s, Some((460.0, 140.0)));
+    assert!(matches!(s.run("shape.adjust", &json!({"x": 1, "y": 1})), Err(crate::CmdError::Disabled(_))));
+    select_drawing(&mut s, None);
+    assert!(matches!(s.run("shape.adjust", &json!({"x": 1, "y": 1})), Err(crate::CmdError::Disabled(_))));
+}
+
 /// Typing with a shape selected types in the shape, as in Word: it replaced the shape with the
 /// letters before. The shape gets a text of its own: centred, in the middle of the shape, white
 /// on the dark fill a new shape has. One undo step takes the text and the typing back.
