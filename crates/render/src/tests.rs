@@ -1541,7 +1541,7 @@ fn a_kept_preset_is_drawn_as_itself() {
     assert!(!inside((103.0, 53.0)) && !inside((217.0, 127.0)), "its frame's corners are outside it");
     assert!(inside((103.0, 90.0)), "its side points reach the frame");
     // A preset with no outline in the library is drawn as its kind, as before.
-    let cloud = PresetGeom::new("cloud", []).unwrap();
+    let cloud = PresetGeom::new("sun", []).unwrap();
     assert_eq!(shape_path_with(ShapeKind::Ellipse, Some(&cloud), r, None).elements(), shape_path(ShapeKind::Ellipse, r, None).elements());
     assert_eq!(shape_path_with(ShapeKind::Diamond, None, r, None).elements(), shape_path(ShapeKind::Diamond, r, None).elements());
     // A frame's opening is not filled.

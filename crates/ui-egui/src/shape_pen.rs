@@ -114,7 +114,7 @@ fn params(tool: &ShapeTool, st: &ShapeStroke) -> Value {
         v["x"] = json!(st.from.0);
         v["y"] = json!(st.from.1);
         // A shape that points up or down is placed upright.
-        let upright = matches!(tool.kind.as_str(), "arrowUp" | "arrowDown" | "upDownArrow");
+        let upright = upright(tool.kind.as_str());
         v["width"] = json!(if upright { DEFAULT.1 } else { DEFAULT.0 });
         v["height"] = json!(if upright { DEFAULT.0 } else { DEFAULT.1 });
     } else {
@@ -198,6 +198,12 @@ pub fn paint(app: &WordApp, painter: &egui::Painter, t: &Tokens, layout: &DocLay
     } else {
         painter.rect_stroke(Rect::from_two_pos(a, b), 0.0, ink, egui::StrokeKind::Middle);
     }
+}
+
+/// Whether the gallery shape `name` stands taller than it is wide: the arrows that point up or
+/// down, and a single bracket or brace. A click places it upright, and its tile shows it so.
+pub(crate) fn upright(name: &str) -> bool {
+    matches!(name, "arrowUp" | "arrowDown" | "upDownArrow" | "leftBracket" | "rightBracket" | "leftBrace" | "rightBrace")
 }
 
 #[cfg(test)]
