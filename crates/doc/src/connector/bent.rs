@@ -127,6 +127,43 @@ pub fn path_direction(segs: &[PathSeg], at_end: bool) -> Option<(f32, f32)> {
     })
 }
 
+/// The point halfway along the path `segs` (curves by eight steps each): where a connector's
+/// label sits. `None` for a path with no points.
+pub fn path_midpoint(segs: &[PathSeg]) -> Option<(f32, f32)> {
+    let mut pts: Vec<(f32, f32)> = Vec::with_capacity(segs.len().saturating_mul(8).min(256));
+    for s in segs.iter().take(32) {
+        match *s {
+            PathSeg::Move(x, y) | PathSeg::Line(x, y) => pts.push((x, y)),
+            PathSeg::Cubic(a, b, c, d, e, f) => {
+                let Some(&(x0, y0)) = pts.last() else { continue };
+                for k in 1..=8 {
+                    let t = k as f32 / 8.0;
+                    let u = 1.0 - t;
+                    let at = |p0: f32, p1: f32, p2: f32, p3: f32| u * u * u * p0 + 3.0 * u * u * t * p1 + 3.0 * u * t * t * p2 + t * t * t * p3;
+                    pts.push((at(x0, a, c, e), at(y0, b, d, f)));
+                }
+            }
+            PathSeg::Close => {}
+        }
+    }
+    pts.retain(|p| p.0.is_finite() && p.1.is_finite());
+    let len = |w: &[(f32, f32)]| match w {
+        [a, b] => (b.0 - a.0).hypot(b.1 - a.1),
+        _ => 0.0,
+    };
+    let mut left = pts.windows(2).map(len).sum::<f32>() / 2.0;
+    for w in pts.windows(2) {
+        let [a, b] = w else { continue };
+        let l = len(w);
+        if l >= left && l > 0.0 {
+            let t = left / l;
+            return Some((a.0 + (b.0 - a.0) * t, a.1 + (b.1 - a.1) * t));
+        }
+        left -= l;
+    }
+    pts.first().copied()
+}
+
 /// One end of a connector to route: where it is on the page, and, for an end glued to a shape,
 /// the way out of that shape there (a unit vector along the page's x or y axis).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -703,6 +740,23 @@ mod tests {
         let segs = connector_path(kind, Some(&past), 100.0, 40.0).unwrap();
         assert_eq!(path_direction(&segs, true), Some((-1.0, 0.0)));
         assert_eq!(path_direction(&[PathSeg::Move(1.0, 1.0), PathSeg::Line(1.0, 1.0)], true), None);
+    }
+
+    #[test]
+    fn the_middle_of_a_path_is_halfway_along_it() {
+        use PathSeg::{Line, Move};
+        // An elbow 100 across and 40 down, through the middle: 140 long, half is 70 along.
+        let segs = connector_path(ShapeKind::ElbowConnector, None, 100.0, 40.0).unwrap();
+        assert_eq!(path_midpoint(&segs), Some((50.0, 20.0)));
+        assert_eq!(path_midpoint(&[Move(0.0, 0.0), Line(10.0, 0.0), Line(10.0, 30.0)]), Some((10.0, 10.0)));
+        // A curve: its own middle, by symmetry.
+        let curve = connector_path(ShapeKind::CurvedConnector, None, 100.0, 40.0).unwrap();
+        let mid = path_midpoint(&curve).unwrap();
+        assert!((mid.0 - 50.0).abs() < 0.5 && (mid.1 - 20.0).abs() < 0.5, "{mid:?}");
+        // A point, nothing, and numbers that are none.
+        assert_eq!(path_midpoint(&[Move(3.0, 4.0)]), Some((3.0, 4.0)));
+        assert_eq!(path_midpoint(&[]), None);
+        assert_eq!(path_midpoint(&[Move(f32::NAN, 0.0), Line(1.0, 1.0), Line(3.0, 1.0)]), Some((2.0, 1.0)));
     }
 
     #[test]

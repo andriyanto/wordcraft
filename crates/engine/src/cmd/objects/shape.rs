@@ -50,7 +50,7 @@ fn text_shape(s: &Session) -> Option<(Pos, Option<u32>, Option<Rgb>)> {
 }
 
 pub(super) fn has_text_shape(s: &Session) -> Option<&'static str> {
-    if text_shape(s).is_some() { None } else { Some(NO_TEXT_SHAPE) }
+    if takes_typing(s) { None } else { Some(NO_TEXT_SHAPE) }
 }
 
 /// Whether typing now goes into the selected shape instead of replacing it ([`enter_text`]).
@@ -79,13 +79,17 @@ pub fn shape_param(v: &Value) -> Result<NamedShape, CmdError> {
 }
 
 pub fn takes_typing(s: &Session) -> bool {
-    text_shape(s).is_some()
+    text_shape(s).is_some() || super::label::selected_connector(s).is_some()
 }
 
 /// Put the caret at the end of the selected shape's text, as a double-click or the first typed
 /// letter does in Word. A shape with no text gets an empty one first: centred, in the middle of
 /// the shape, white on a dark fill. The story's id, or `None` when no such shape is selected.
 pub fn enter_text(s: &mut Session) -> Result<Option<u32>, CmdError> {
+    // A connector's text is its label: a text box kept on its middle.
+    if let Some(story) = super::label::enter(s)? {
+        return Ok(Some(story));
+    }
     let Some((pos, story, fill)) = text_shape(s) else { return Ok(None) };
     let id = match story {
         Some(id) => id,

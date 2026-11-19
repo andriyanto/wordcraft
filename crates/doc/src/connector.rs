@@ -16,8 +16,8 @@ use crate::wordart::TextWarp;
 
 mod bent;
 pub use bent::{
-    Around, BendHandle, RouteEnd, Routed, STUB, Was, axis_direction, bend_handles, bend_to, connector_path, path_direction, route_around,
-    route_connector,
+    Around, BendHandle, RouteEnd, Routed, STUB, Was, axis_direction, bend_handles, bend_to, connector_path, path_direction, path_midpoint,
+    route_around, route_connector,
 };
 
 /// DrawingML outline ends (ST_LineCap); missing and unknown values use flat ends.
@@ -236,6 +236,11 @@ pub struct ShapeExtra {
     /// shape instead of the one WordCraft showed. Dropped when the shape is made another kind.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<std::sync::Arc<PresetGeom>>,
+    /// On a text box that is a connector's label: the drawing id of that connector. The box is
+    /// kept on the middle of the connector as it is routed. DrawingML has no text on a connector:
+    /// a label is a text box of its own, told apart in a file by its name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label_of: Option<u32>,
 }
 
 /// A DrawingML preset geometry (`a:prstGeom`, ECMA-376 §20.1.9.18): the preset's name

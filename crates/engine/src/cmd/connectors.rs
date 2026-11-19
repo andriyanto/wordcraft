@@ -396,7 +396,8 @@ fn drawings_on(
         let wordcraft_layout::Placed::Object { rect, spin, story: StoryRef::Body, path, off, .. } = it else { continue };
         let pos = Pos { story: StoryRef::Body, path: path.clone(), off: *off };
         let Some(obj) = s.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
-        if !obj.is_drawing() || matches!(obj, InlineObject::Shape { kind, .. } if kind.is_open()) {
+        // Lines and connectors cross each other freely, and a connector's label sits on it.
+        if !obj.is_drawing() || matches!(obj, InlineObject::Shape { kind, extra, .. } if kind.is_open() || extra.label_of.is_some()) {
             continue;
         }
         let (rect, spin) = match moved {

@@ -320,8 +320,15 @@ impl Session {
                 self.touch();
             }
             // Glued connectors follow the shapes they join.
-            let rerouted = crate::cmd::connectors::reroutes_after(id) && crate::cmd::connectors::reroute(self);
+            let follows = crate::cmd::connectors::reroutes_after(id);
+            let mut rerouted = follows && crate::cmd::connectors::reroute(self);
             if rerouted {
+                self.touch();
+            }
+            // Their labels stay on their middles: after the connectors moved, and after an edit
+            // of a label's own text (its box grows with it).
+            if (follows || (changed && crate::cmd::objects::in_label(self))) && crate::cmd::objects::place_labels(self) {
+                rerouted = true;
                 self.touch();
             }
             // A command that changed nothing is not an edit (#23): it adds no undo
