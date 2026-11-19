@@ -200,8 +200,7 @@ pub(super) fn icon(s: &mut Session, v: &Value) -> CmdResult {
 }
 
 pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
-    let kind: ShapeKind =
-        serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
+    let (kind, preset) = crate::cmd::objects::shape_param(v)?;
     let pair = |a: &str, b: &str| match (p::f32(v, a), p::f32(v, b)) {
         (Some(x), Some(y)) if x.is_finite() && y.is_finite() => Ok(Some((x, y))),
         (None, None) => Ok(None),
@@ -232,7 +231,7 @@ pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
         Some("none") | None => (false, false),
         Some(x) => return Err(CmdError::Params(format!("`arrow`: none, start, end or both, not `{x}`"))),
     };
-    let extra = wordcraft_doc::connector::ShapeExtra { arrow_start, arrow_end, ..Default::default() };
+    let extra = wordcraft_doc::connector::ShapeExtra { arrow_start, arrow_end, preset, ..Default::default() };
     // Connectors float in front of the text, so they can be glued to floating shapes; so does a
     // shape drawn at a place on the page.
     let float = if kind.is_connector() || place.is_some() {

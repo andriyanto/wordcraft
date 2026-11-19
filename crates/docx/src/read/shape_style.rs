@@ -93,6 +93,17 @@ pub(crate) fn kept_preset(
     (geom.name != kind_preset(kind) || !geom.adjust.is_empty()).then(|| Arc::new(geom))
 }
 
+/// The shape a DrawingML preset named `prst` is in a document: the kind it is drawn as when
+/// nothing draws the preset itself, and the preset to keep with it so it is saved as itself (none
+/// where the kind says it all). `None` for a name that can't stand in a file. What reading a
+/// shape with that preset gives, for a shape made here (the shape gallery).
+pub fn preset_shape(prst: &str) -> Option<(ShapeKind, Option<Arc<wordcraft_doc::connector::PresetGeom>>)> {
+    wordcraft_doc::connector::PresetGeom::valid_name(prst).then(|| {
+        let kind = preset_kind(prst);
+        (kind, kept_preset(prst, [], kind))
+    })
+}
+
 /// Whether a shape of `kind` can be saved as the kept preset `geom`: the preset is one WordCraft
 /// draws as that kind (a text box takes any: it is a shape with text in it), and its names can
 /// stand in a file. A preset left on a shape that was since made another kind is not saved.

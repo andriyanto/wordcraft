@@ -89,7 +89,7 @@ pub(crate) fn grown(r: &Rect, g: f32, dx: f32, dy: f32) -> Rect {
 /// blur as the raster renderer, see [`wordcraft_doc::effects::bands`]).
 pub(crate) fn shape_effects(
     s: &mut Surface,
-    (kind, corner): (ShapeKind, Option<u32>),
+    (kind, corner, preset): (ShapeKind, Option<u32>, Option<&wordcraft_doc::connector::PresetGeom>),
     rect: &Rect,
     fx: &wordcraft_doc::effects::ShapeEffects,
     (filled, stroked, sw): (bool, bool, f32),
@@ -98,13 +98,13 @@ pub(crate) fn shape_effects(
     let silhouette = |s: &mut Surface, c: Rgb, a: f32, g: f32, dx: f32, dy: f32| {
         if filled {
             let grow = g + if stroked { sw / 2.0 } else { 0.0 };
-            if let Some(p) = shape_path(kind, &grown(rect, grow, dx, dy), corner) {
+            if let Some(p) = shape_path_with(kind, preset, &grown(rect, grow, dx, dy), corner) {
                 s.set_stroke(None);
                 s.set_fill(Some(fill(c, a)));
                 s.draw_path(&p);
             }
         } else if sw + 2.0 * g > 0.05
-            && let Some(p) = shape_path(kind, &grown(rect, 0.0, dx, dy), corner)
+            && let Some(p) = shape_path_with(kind, preset, &grown(rect, 0.0, dx, dy), corner)
         {
             s.set_fill(None);
             s.set_stroke(Some(Stroke { paint: rgb::Color::new(c.0, c.1, c.2).into(), width: sw + 2.0 * g, opacity: norm(a), ..Default::default() }));
@@ -124,6 +124,25 @@ pub(crate) fn shape_effects(
     }
     s.set_fill(None);
     s.set_stroke(None);
+}
+
+/// Outline of a shape in a rectangle: that of the preset geometry it keeps, where
+/// [`wordcraft_doc::preset::outline`] draws that preset (the same as the raster renderer); else
+/// its kind's ([`shape_path`]).
+pub(crate) fn shape_path_with(kind: ShapeKind, preset: Option<&wordcraft_doc::connector::PresetGeom>, r: &Rect, corner: Option<u32>) -> Option<Path> {
+    use wordcraft_doc::graphic::PathSeg;
+    let drawn = preset.filter(|_| ok(r.x) && ok(r.y) && ok(r.w) && ok(r.h)).and_then(|p| wordcraft_doc::preset::outline(p, r.w, r.h));
+    let Some(segs) = drawn else { return shape_path(kind, r, corner) };
+    let mut pb = PathBuilder::new();
+    for seg in segs {
+        match seg {
+            PathSeg::Move(x, y) => pb.move_to(r.x + x, r.y + y),
+            PathSeg::Line(x, y) => pb.line_to(r.x + x, r.y + y),
+            PathSeg::Cubic(a, b, c, d, e, f) => pb.cubic_to(r.x + a, r.y + b, r.x + c, r.y + d, r.x + e, r.y + f),
+            PathSeg::Close => pb.close(),
+        }
+    }
+    pb.finish()
 }
 
 /// Outline of a basic shape in a rectangle (same geometry as the raster renderer); `corner` is a

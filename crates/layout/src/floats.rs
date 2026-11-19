@@ -869,7 +869,7 @@ pub fn is_floating(o: &InlineObject) -> bool {
 /// leaves ([`wordcraft_doc::wrap::text_insets`]), never thinner than a line of text needs.
 fn text_rect(obj: &InlineObject, rect: Rect) -> Rect {
     let InlineObject::Shape { kind, extra, .. } = obj else { return rect };
-    let [l, t, r, b] = wordcraft_doc::wrap::text_insets(*kind, rect.w, rect.h, extra.corner);
+    let [l, t, r, b] = wordcraft_doc::wrap::text_insets_of(*kind, extra.preset.as_deref(), rect.w, rect.h, extra.corner);
     let (w, h) = (rect.w - l - r, rect.h - t - b);
     if !(w.is_finite() && h.is_finite()) || w < 1.0 || h < 1.0 {
         return rect;

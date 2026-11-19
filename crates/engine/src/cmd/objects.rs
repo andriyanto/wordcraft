@@ -37,7 +37,7 @@ pub use select::{min_size, object_selection, picked_objects, selected, selected_
 use shape::can_link;
 pub(crate) use shape::set_text_body;
 pub use shape::text_box_target;
-pub use shape::{enter_text, takes_typing};
+pub use shape::{NamedShape, enter_text, named_shape, shape_param, takes_typing};
 pub use specs::specs;
 
 #[cfg(test)]

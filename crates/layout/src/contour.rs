@@ -10,7 +10,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use wordcraft_doc::para::{Float, InlineObject, Wrap};
-use wordcraft_doc::wrap::{ALPHA_GRID, MAX_WRAP_POINTS, alpha_outline, shape_outline};
+use wordcraft_doc::wrap::{ALPHA_GRID, MAX_WRAP_POINTS, alpha_outline};
 use wordcraft_geom::{Rect, finite};
 
 /// A wrap outline placed on the page, in the coordinates of its wrap area's top-left corner
@@ -146,7 +146,7 @@ pub fn wrap_outline(o: &InlineObject, picture: impl FnOnce(&str, [f32; 4]) -> Op
         return Some(Arc::new(p.unit()));
     }
     match o {
-        InlineObject::Shape { kind, extra, .. } => shape_outline(*kind, w, h, extra.corner).map(Arc::new),
+        InlineObject::Shape { kind, extra, .. } => wordcraft_doc::wrap::outline_of(*kind, extra.preset.as_deref(), w, h, extra.corner).map(Arc::new),
         InlineObject::Image { media, crop, .. } => picture(media, *crop),
         _ => None,
     }

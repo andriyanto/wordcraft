@@ -21,6 +21,7 @@ pub(super) fn graphic_draws(doc: &Document, g: &Graphic, rect: Rect, alpha: f32)
                 stroke_width: stroke_width * k,
                 effects: Default::default(),
                 corner: None,
+                preset: None,
                 dash: Vec::new(),
                 cap: Default::default(),
             }),
@@ -126,6 +127,8 @@ pub(super) fn shape_draws(rect: Rect, look: &ShapeLook, opts: &DisplayOptions, o
             stroke_width,
             effects,
             corner: extra.corner,
+            // Only a preset this build draws: any other is drawn as the shape's kind.
+            preset: extra.preset.clone().filter(|p| wordcraft_doc::preset::has_outline(p)),
             dash: extra.dash.pattern(stroke_width),
             cap: extra.cap,
         });
@@ -249,6 +252,7 @@ fn line_draws(
             stroke_width,
             effects,
             corner: None,
+            preset: None,
             dash: extra.dash.pattern(stroke_width),
             cap: extra.cap,
         }),
@@ -527,6 +531,7 @@ fn canvas_background(rect: Rect, c: &wordcraft_doc::para::CanvasStyle) -> Draw {
         stroke_width: c.stroke_width,
         effects: Default::default(),
         corner: None,
+        preset: None,
         dash: Vec::new(),
         cap: Default::default(),
     }

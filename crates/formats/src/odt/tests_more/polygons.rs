@@ -136,3 +136,38 @@ fn hostile_paths_do_not_panic() {
         let _ = export(&d).unwrap();
     }
 }
+
+/// A shape that keeps a DrawingML preset WordCraft draws from its own outline (a hexagon, a
+/// cube) has no name in ODF here: it is saved as that outline, a path, and opens again looking
+/// the same. It was saved as the rectangle its kind is.
+#[test]
+fn a_preset_shape_is_saved_as_the_outline_it_has() {
+    use wordcraft_doc::connector::{PresetGeom, ShapeExtra};
+    use wordcraft_doc::para::{Float, Wrap};
+    let shape = |name: &str| InlineObject::Shape {
+        kind: ShapeKind::Rectangle,
+        w: 120.0,
+        h: 80.0,
+        fill: Some(wordcraft_doc::fill::Fill::solid(wordcraft_doc::Rgb(0x15, 0x60, 0x82))),
+        stroke: Some(wordcraft_doc::Rgb::BLACK),
+        stroke_width: 1.0,
+        float: Float { wrap: Wrap::InFrontOfText, ..Default::default() },
+        story: None,
+        freeform: None,
+        effects: Default::default(),
+        extra: ShapeExtra { preset: PresetGeom::new(name, []).map(std::sync::Arc::new), ..Default::default() },
+    };
+    let mut p = wordcraft_doc::Paragraph::new();
+    for name in ["hexagon", "cube", "cloud"] {
+        p.insert_object(p.len(), shape(name), &Default::default()).unwrap();
+    }
+    let mut d = Document::new();
+    d.body = vec![wordcraft_doc::para_block(p)];
+    let back = drawn(&import(&crate::odt::tests::export_model(&d).unwrap()).unwrap());
+    let hexagon = vec![(0.0, 40.0), (20.0, 0.0), (100.0, 0.0), (120.0, 40.0), (100.0, 80.0), (20.0, 80.0)];
+    assert_eq!(back[0], (ShapeKind::Freeform, (120.0, 80.0), vec![(hexagon, true)]));
+    assert_eq!((back[1].0, back[1].2.len()), (ShapeKind::Freeform, 4), "the cube and its inner edges: {:?}", back[1]);
+    assert_eq!(back[1].2.iter().map(|p| p.1).collect::<Vec<_>>(), vec![true, false, false, false]);
+    // A preset with no outline here is still its kind.
+    assert_eq!((back[2].0, back[2].2.len()), (ShapeKind::Rectangle, 0));
+}

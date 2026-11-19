@@ -17,32 +17,72 @@ fn drop_cap_menu_keeps_the_options() {
     assert_eq!((state.position, state.lines, state.distance, state.font.as_deref()), ("margin", 5, 7.0, Some("Liberation Mono")));
 }
 
-/// #4349: Insert › Shapes offers the basic shapes as a grid of drawn tiles, each named for
-/// screen readers and by its tooltip; a click picks that shape up, to be drawn on the page
-/// (`shape_pen`), and inserts nothing yet.
+/// #4349: Insert › Shapes offers its shapes as a grid of drawn tiles under their groups'
+/// headings, each named for screen readers and by its tooltip; a click picks that shape up, to
+/// be drawn on the page (`shape_pen`), and inserts nothing yet. Every shape of the library is
+/// there: the gallery had nine.
 #[test]
-fn the_shapes_menu_offers_its_basic_shapes_as_a_grid_of_tiles() {
+fn the_shapes_menu_offers_its_shapes_as_a_grid_of_tiles() {
     use egui_kittest::kittest::Queryable;
+    use wordcraft_doc::preset::{LIBRARY, ShapeGroup};
     let app = WordApp::new(Session::new(wordcraft_doc::Document::from_text("Lanterns")), crate::Services::default());
     let mut h = egui_kittest::Harness::builder()
-        .with_size(vec2(400.0, 300.0))
+        .with_size(vec2(400.0, 1200.0))
         .build_ui_state(|ui, app: &mut WordApp| super::insert::shape_gallery(ui, app), app);
     h.run_steps(2);
-    let rects: Vec<Rect> = super::insert::SHAPE_TILES.iter().map(|(label, _)| h.get_by_label(label).rect()).collect();
+    for group in ShapeGroup::ALL {
+        h.get_by_label(group.label());
+    }
+    let rects: Vec<Rect> = LIBRARY.iter().filter(|s| s.group == ShapeGroup::Basic).map(|s| h.get_by_label(s.label).rect()).collect();
     // A grid, not a list: tiles sit side by side, wrapping into rows.
     assert_eq!(rects[0].top(), rects[1].top(), "the first two shapes share a row");
     assert!(rects[0].right() <= rects[1].left(), "side by side");
     let rows = rects.iter().map(|r| r.top().round() as i32).collect::<std::collections::BTreeSet<_>>().len();
-    assert!(rows >= 2 && rows < super::insert::SHAPE_TILES.len(), "{rows} rows for {} shapes", super::insert::SHAPE_TILES.len());
+    assert!(rows >= 2 && rows < rects.len(), "{rows} rows for {} shapes", rects.len());
     assert!(rects.iter().all(|r| r.width() >= 24.0 && r.height() >= 24.0), "tiles are big enough to read and hit");
     // Every tile picks its own shape up; the document is as it was until the shape is drawn.
+    assert!(LIBRARY.len() > 60, "{} shapes", LIBRARY.len());
     let before = h.state().session.undo_depth();
-    for (label, kind) in super::insert::SHAPE_TILES {
-        h.get_by_label(label).click();
+    for shape in LIBRARY {
+        assert!(wordcraft_engine::cmd::objects::named_shape(shape.name).is_ok(), "{} is a shape insert.shape takes", shape.name);
+        h.get_by_label(shape.label).click();
         h.run_steps(2);
-        assert_eq!(h.state().canvas.shape_tool.as_ref().map(|t| t.kind.as_str()), Some(kind), "{label} picks a {kind} up");
-        assert_eq!(h.state().session.undo_depth(), before, "{label} inserts nothing yet");
+        assert_eq!(h.state().canvas.shape_tool.as_ref().map(|t| t.kind.as_str()), Some(shape.name), "{} picks a {} up", shape.label, shape.name);
+        assert_eq!(h.state().session.undo_depth(), before, "{} inserts nothing yet", shape.label);
     }
+}
+
+/// Shape Format › Change Shape makes the selected shape another one from the same gallery (it
+/// had no button: `shape.change` could only be run by name). The shape keeps its size and its
+/// text; lines are not offered.
+#[test]
+fn change_shape_makes_the_selected_shape_another_one() {
+    use egui_kittest::kittest::Queryable;
+    use wordcraft_doc::para::{InlineObject, ShapeKind};
+    let mut app = WordApp::new(Session::new(wordcraft_doc::Document::new()), crate::Services::default());
+    app.run("insert.shape", json!({"kind": "rectangle", "width": 120, "height": 80})).unwrap();
+    app.run("text.insert", json!({"text": "Step"})).unwrap();
+    // Out of its text: the shape itself selected.
+    app.run("select.range", json!({"anchor": wordcraft_doc::Pos::body(0, 0), "focus": wordcraft_doc::Pos::body(0, '\u{FFFC}'.len_utf8())})).unwrap();
+    let mut h = egui_kittest::Harness::builder()
+        .with_size(vec2(400.0, 1200.0))
+        .build_ui_state(|ui, app: &mut WordApp| super::insert::shape_gallery_for(ui, app, super::insert::GalleryUse::Change), app);
+    h.run_steps(2);
+    assert!(h.query_by_label("Line").is_none(), "a shape is not made a line");
+    h.get_by_label("Hexagon").click();
+    h.run_steps(2);
+    let shape =
+        |h: &egui_kittest::Harness<'_, WordApp>| match h.state().session.doc.body.first().and_then(|b| b.as_para()).and_then(|p| p.objects.first()) {
+            Some(InlineObject::Shape { kind, w, h, story, extra, .. }) => {
+                (*kind, (*w, *h), story.is_some(), extra.preset.as_deref().map(|p| p.name.clone()))
+            }
+            o => panic!("{o:?}"),
+        };
+    assert_eq!(shape(&h), (ShapeKind::Rectangle, (120.0, 80.0), true, Some("hexagon".to_string())), "a hexagon, of the same size, with its text");
+    // To a shape a kind stands for: the kept preset goes.
+    h.get_by_label("Oval").click();
+    h.run_steps(2);
+    assert_eq!(shape(&h), (ShapeKind::Ellipse, (120.0, 80.0), true, None));
 }
 
 /// #4412: the Shading button's bar is the colour a click applies (the last one picked), as

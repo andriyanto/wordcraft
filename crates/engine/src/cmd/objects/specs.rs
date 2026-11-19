@@ -326,17 +326,18 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{}  (the caret goes into the selected shape's text, at its end; a shape with no text gets an empty, centred one first. What typing with the shape selected and a double-click on it do)"#)
             .when(has_text_shape),
         CommandSpec::new("shape.change", "Change Shape", "Shape Format › Insert Shapes", |s, v| {
-            let kind: wordcraft_doc::para::ShapeKind = serde_json::from_value(v.get("kind").cloned().unwrap_or(json!("rectangle"))).map_err(|e| CmdError::Params(e.to_string()))?;
+            let (kind, preset) = super::shape::shape_param(v)?;
             with_obj(s, |o| {
                 if let InlineObject::Shape { kind: k, extra, .. } = o {
                     *k = kind;
-                    // A geometry kept from a file is no longer this shape's.
+                    // A geometry kept from a file is no longer this shape's; the new shape's own
+                    // preset is.
                     extra.odf_geometry = None;
-                    extra.preset = None;
+                    extra.preset = preset.clone();
                 }
             })
         })
-        .params(r#"{"kind": string}"#)
+        .params(r#"{"kind": string}  (a shape of insert.shape; the shape keeps its size, colours, text and connectors)"#)
         .when(has_shape),
         CommandSpec::new("shape.textDirection", "Text Direction", "Shape Format › Text", |s, v| {
             let dir = p::str(v, "dir").unwrap_or("horz");

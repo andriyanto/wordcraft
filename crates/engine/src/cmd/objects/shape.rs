@@ -1,5 +1,9 @@
 use super::select::{all_objects, edit_obj, picked_objects, selected, selected_all};
 use super::{CmdError, CmdResult, InlineObject, Pos, Rgb, Session, StoryRef, TextBody, Value, json, p};
+use wordcraft_doc::para::ShapeKind;
+
+/// A shape by name: its kind, and the preset geometry it keeps when the kind doesn't say it all.
+pub type NamedShape = (ShapeKind, Option<std::sync::Arc<wordcraft_doc::connector::PresetGeom>>);
 
 pub(super) const NO_TEXT_BOX: &str = "select a text box first";
 
@@ -50,6 +54,30 @@ pub(super) fn has_text_shape(s: &Session) -> Option<&'static str> {
 }
 
 /// Whether typing now goes into the selected shape instead of replacing it ([`enter_text`]).
+/// The shape `name` stands for in `insert.shape` and `shape.change`: a [`ShapeKind`]'s own name
+/// (`rectangle`, `ellipse`…), or a DrawingML preset of the shape gallery or one WordCraft draws
+/// (`hexagon`, `flowChartDocument`…), which is its nearest kind keeping that preset.
+pub fn named_shape(name: &str) -> Result<NamedShape, CmdError> {
+    if let Some(kind) = wordcraft_doc::preset::kind_of_name(name) {
+        return Ok((kind, None));
+    }
+    let known = wordcraft_doc::preset::gallery_shape(name).is_some()
+        || wordcraft_doc::connector::PresetGeom::new(name, []).is_some_and(|p| wordcraft_doc::preset::has_outline(&p));
+    known
+        .then(|| wordcraft_docx::preset_shape(name))
+        .flatten()
+        .ok_or_else(|| CmdError::Params(format!("`kind`: no shape named `{}`", name.chars().take(40).collect::<String>())))
+}
+
+/// The shape the `kind` of `v` names (a rectangle when it gives none).
+pub fn shape_param(v: &Value) -> Result<NamedShape, CmdError> {
+    match v.get("kind") {
+        None => Ok((ShapeKind::Rectangle, None)),
+        Some(Value::String(name)) => named_shape(name),
+        Some(_) => Err(CmdError::Params("`kind`: a shape's name".into())),
+    }
+}
+
 pub fn takes_typing(s: &Session) -> bool {
     text_shape(s).is_some()
 }

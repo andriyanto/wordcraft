@@ -91,8 +91,10 @@ fn params(tool: &ShapeTool, st: &ShapeStroke) -> Value {
     } else if click {
         v["x"] = json!(st.from.0);
         v["y"] = json!(st.from.1);
-        v["width"] = json!(DEFAULT.0);
-        v["height"] = json!(DEFAULT.1);
+        // A shape that points up or down is placed upright.
+        let upright = matches!(tool.kind.as_str(), "arrowUp" | "arrowDown" | "upDownArrow");
+        v["width"] = json!(if upright { DEFAULT.1 } else { DEFAULT.0 });
+        v["height"] = json!(if upright { DEFAULT.0 } else { DEFAULT.1 });
     } else {
         v["x"] = json!(st.from.0.min(st.to.0));
         v["y"] = json!(st.from.1.min(st.to.1));
@@ -202,6 +204,11 @@ mod tests {
             json!({"kind": "elbowConnector", "arrow": "end", "page": 2, "x": 300.0, "y": 400.0, "x1": 180.0, "y1": 340.0})
         );
         assert_eq!(params(&conn, &click)["x1"], json!(158.0));
+        // A shape that points up or down is placed upright by a click (lying down, an up-down
+        // arrow's heads leave it no shaft); a preset of the gallery goes by its name.
+        let up_down = ShapeTool { kind: "upDownArrow".into(), arrow: None };
+        assert_eq!(params(&up_down, &click), json!({"kind": "upDownArrow", "page": 0, "x": 50.0, "y": 60.0, "width": 72.0, "height": 108.0}));
+        assert_eq!(params(&up_down, &drag)["width"], json!(120.0));
     }
 
     /// Drawn with the mouse: the shape is where the drag was, floating in front of the text and

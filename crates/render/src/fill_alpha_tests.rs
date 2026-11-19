@@ -30,6 +30,7 @@ fn soft_shape(kind: ShapeKind, alpha: f32, radius: f32, effects: ShapeEffects) -
         dash: Vec::new(),
         cap: Default::default(),
         corner: None,
+        preset: None,
         effects: ShapeEffects { soft_edge: Some(radius), ..effects },
     }
 }

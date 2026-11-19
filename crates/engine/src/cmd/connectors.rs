@@ -9,7 +9,9 @@
 use std::collections::HashMap;
 
 use serde_json::{Value, json};
-use wordcraft_doc::connector::{ConnEnd, RouteEnd, Routed, Was, ends_spun, leaves_upright, nearest_site, route_connector, site_point, site_way_out};
+use wordcraft_doc::connector::{
+    ConnEnd, Glued, RouteEnd, Routed, Was, ends_spun, leaves_upright, nearest_site, route_connector, site_point, site_way_out,
+};
 use wordcraft_doc::para::{Anchor, InlineObject, Wrap};
 use wordcraft_doc::{Pos, StoryRef};
 
@@ -111,15 +113,12 @@ fn reroute_with(s: &mut Session, fresh: Option<&Pos>) -> bool {
         let e = e?;
         let target = ids.get(&e.id)?;
         let hit = objects.object(target, page)?;
-        let kind = match s.doc.para_at(target)?.object_at(target.off)? {
-            InlineObject::Shape { kind, .. } => *kind,
-            _ => return None,
-        };
+        let shape = Glued::of(s.doc.para_at(target)?.object_at(target.off)?)?;
         if hit.page != page {
             return None;
         }
         let rect = [hit.rect.x, hit.rect.y, hit.rect.w, hit.rect.h];
-        Some(RouteEnd { at: site_point(kind, rect, hit.spin, e.site)?, out: site_way_out(kind, rect, hit.spin, e.site) })
+        Some(RouteEnd { at: site_point(shape, rect, hit.spin, e.site)?, out: site_way_out(shape, rect, hit.spin, e.site) })
     };
     let mut plans = Vec::new();
     for pos in conns {
@@ -246,8 +245,8 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                 .object(&at, hit.page)
                 .filter(|t| t.page == hit.page)
                 .ok_or_else(|| CmdError::Params(format!("`{key}`: no shape there on this page")))?;
-            let tkind = match s.doc.para_at(&at).and_then(|p| p.object_at(at.off)) {
-                Some(InlineObject::Shape { kind, .. }) if !kind.is_connector() => *kind,
+            let tkind = match s.doc.para_at(&at).and_then(|p| p.object_at(at.off)).and_then(Glued::of) {
+                Some(shape) if !shape.kind.is_connector() => shape,
                 _ => return Err(CmdError::Params(format!("`{key}`: connectors glue to shapes and text boxes"))),
             };
             let rect = [th.rect.x, th.rect.y, th.rect.w, th.rect.h];
@@ -274,11 +273,11 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                     if at == pos {
                         continue;
                     }
-                    let Some(InlineObject::Shape { kind, .. }) = s.doc.para_at(&at).and_then(|p| p.object_at(at.off)) else { continue };
-                    if kind.is_connector() {
+                    let Some(shape) = s.doc.para_at(&at).and_then(|p| p.object_at(at.off)).and_then(Glued::of) else { continue };
+                    if shape.kind.is_connector() {
                         continue;
                     }
-                    if let Some((n, _, d)) = nearest_site(*kind, [rect.x, rect.y, rect.w, rect.h], *spin, (x, y))
+                    if let Some((n, _, d)) = nearest_site(shape, [rect.x, rect.y, rect.w, rect.h], *spin, (x, y))
                         && d <= SNAP
                         && best.as_ref().is_none_or(|b| d < b.2)
                     {

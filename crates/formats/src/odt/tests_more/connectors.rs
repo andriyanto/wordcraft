@@ -47,8 +47,20 @@ fn a_connector_is_glued_between_its_shapes() {
     assert_eq!((s[0].0, s[0].3), (ShapeKind::Rectangle, 1));
     assert_eq!((s[1].0, s[1].3), (ShapeKind::Ellipse, 2));
     // From the rectangle's bottom (its site 2) to the ellipse's top (site 0), and placed so:
-    // (36, 36) to (252, 72).
-    assert_eq!(s[2], (ShapeKind::ElbowConnector, [36.0, 36.0, 216.0, 36.0], (false, false), 0, Some((1, 2)), Some((2, 0))));
+    // (36, 36) to (252, 72). It leaves the bottom downwards and arrives at the top from above:
+    // a frame turned a quarter about the middle of the two ends (it left sideways before, along
+    // the rectangle's bottom).
+    assert_eq!(s[2], (ShapeKind::ElbowConnector, [126.0, -54.0, 36.0, 216.0], (false, true), 0, Some((1, 2)), Some((2, 0))));
+    let d = doc("");
+    let turned = d.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).find_map(|o| match o {
+        InlineObject::Shape { kind: ShapeKind::ElbowConnector, w, h, float, .. } => {
+            Some(wordcraft_doc::connector::ends_spun([float.x, float.y, *w, *h], float.spin()))
+        }
+        _ => None,
+    });
+    let (a, b) = turned.expect("the connector");
+    let near = |p: (f32, f32), q: (f32, f32)| (p.0 - q.0).abs() < 0.1 && (p.1 - q.1).abs() < 0.1;
+    assert!(near(a, (36.0, 36.0)) && near(b, (252.0, 72.0)), "{a:?} {b:?}");
     // Its type: straight and curved.
     assert_eq!(shapes(&doc(r#" draw:type="line""#))[2].0, ShapeKind::StraightConnector);
     assert_eq!(shapes(&doc(r#" draw:type="curve""#))[2].0, ShapeKind::CurvedConnector);

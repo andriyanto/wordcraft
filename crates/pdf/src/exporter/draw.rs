@@ -1,7 +1,7 @@
 use super::text::GlyphPaint;
 use super::{
     Draw, Exporter, Fill, FillRule, LineCap, LineJoin, LineStyle, PathBuilder, Rect, Rgb, ShapeKind, Size, Stroke, StrokeDash, Surface, Transform,
-    append_path, fill, grown, krilla, norm, ok, paint_fill, pdf_line_cap, rect_path, rgb, shape_effects, shape_path, vector_picture,
+    append_path, fill, grown, krilla, norm, ok, paint_fill, pdf_line_cap, rect_path, rgb, shape_effects, shape_path_with, vector_picture,
 };
 use wordcraft_doc::picfx::PicFx;
 
@@ -94,19 +94,20 @@ impl Exporter<'_> {
                 s.draw_path(&p);
                 s.set_stroke(None);
             }
-            Draw::Shape { rect, kind, fill: f, stroke, stroke_width, effects, corner, dash, cap } => {
-                let Some(p) = shape_path(*kind, rect, *corner) else { return };
+            Draw::Shape { rect, kind, fill: f, stroke, stroke_width, effects, corner, preset, dash, cap } => {
+                let preset = preset.as_deref();
+                let Some(p) = shape_path_with(*kind, preset, rect, *corner) else { return };
                 let can_fill = *kind != ShapeKind::Line;
                 let fx = effects.sanitized();
                 if !fx.is_empty() && (f.is_some() && can_fill || stroke.is_some()) {
-                    shape_effects(s, (*kind, *corner), rect, &fx, (f.is_some() && can_fill, stroke.is_some(), *stroke_width));
+                    shape_effects(s, (*kind, *corner, preset), rect, &fx, (f.is_some() && can_fill, stroke.is_some(), *stroke_width));
                 }
                 // Soft edges: the fill fades out toward the outline (which fades with it).
                 if let (Some(rad), Some(c), true) = (fx.soft_edge, f.as_ref(), can_fill) {
                     let rad = rad.min(rect.w.min(rect.h) / 2.0).max(0.0);
                     s.set_stroke(None);
                     for (g, paint) in c.soft_bands(rad) {
-                        if let Some(p) = shape_path(*kind, &grown(rect, g, 0.0, 0.0), *corner) {
+                        if let Some(p) = shape_path_with(*kind, preset, &grown(rect, g, 0.0, 0.0), *corner) {
                             s.set_fill(Some(paint_fill(&paint)));
                             s.draw_path(&p);
                         }

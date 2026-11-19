@@ -504,6 +504,12 @@ fn shapes_have_paths() {
     }
     assert!(shape_path(ShapeKind::Rectangle, &Rect::new(0.0, 5.0, 10.0, 0.0), None).is_none());
     assert!(shape_path(ShapeKind::Ellipse, &Rect::new(0.0, 0.0, f32::NAN, 1.0), None).is_none());
+    // A kept preset the library draws is the shape's path; hostile frames still give none.
+    let hexagon = wordcraft_doc::connector::PresetGeom::new("hexagon", []).unwrap();
+    assert!(crate::paint::shape_path_with(ShapeKind::Rectangle, Some(&hexagon), &r, None).is_some());
+    for (w, h) in [(f32::NAN, 10.0), (10.0, f32::INFINITY), (0.0, 10.0), (-10.0, 10.0)] {
+        assert!(crate::paint::shape_path_with(ShapeKind::Rectangle, Some(&hexagon), &Rect { x: 0.0, y: 0.0, w, h }, None).is_none(), "{w} x {h}");
+    }
     assert_eq!(parse_iso("2024-02-03T04:05:06Z"), Some((2024, 2, 3, 4, 5, 6)));
     assert_eq!(parse_iso("garbage"), None);
     assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));
