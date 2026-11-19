@@ -802,6 +802,211 @@ pub fn side_sites(preset: &PresetGeom, w: f32, h: f32) -> Option<Vec<(f32, f32)>
     Some(vec![(cx, keep(min(&ys, 0.0), h)), (keep(min(&xs, 0.0), w), cy), (cx, keep(max(&ys, h), h)), (keep(max(&xs, w), w), cy)])
 }
 
+/// How one adjust value follows a handle: the value (100000ths) is `scale` times how far the
+/// pointer is from `origin` along the frame's x axis (or its y axis), kept within `min..=max`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Follows {
+    name: &'static str,
+    along_x: bool,
+    origin: f32,
+    scale: f32,
+    min: f32,
+    max: f32,
+}
+
+/// A handle on a shape that changes its proportions: where it is in the frame, and the adjust
+/// values it sets (one, or a callout tip's two).
+#[derive(Clone, Debug, PartialEq)]
+struct Handle {
+    at: (f32, f32),
+    sets: Vec<Follows>,
+}
+
+/// The preset a shape of `kind` with no kept preset is, where that preset has handles here, and
+/// the adjust values that draw it as the kind is drawn (a block arrow's shaft is 40% thick).
+fn own_preset(kind: ShapeKind) -> Option<PresetGeom> {
+    let (name, adjust): (&str, &[(&str, i32)]) = match kind {
+        ShapeKind::Triangle => ("triangle", &[("adj", 50_000)]),
+        ShapeKind::Arrow => ("rightArrow", &[("adj1", 40_000), ("adj2", 50_000)]),
+        ShapeKind::ArrowLeft => ("leftArrow", &[("adj1", 40_000), ("adj2", 50_000)]),
+        ShapeKind::ArrowUp => ("upArrow", &[("adj1", 40_000), ("adj2", 50_000)]),
+        ShapeKind::ArrowDown => ("downArrow", &[("adj1", 40_000), ("adj2", 50_000)]),
+        _ => return None,
+    };
+    PresetGeom::new(name, adjust.iter().map(|(n, v)| (n.to_string(), *v)))
+}
+
+/// The handles of `preset` in a `w` × `h` frame: where the standard's preset definitions put
+/// them (on the outline, at the corner or edge each value moves).
+fn handles_of(preset: &PresetGeom, w: f32, h: f32) -> Vec<Handle> {
+    let ok = |v: f32| v.is_finite() && v > 0.0;
+    if !ok(w) || !ok(h) {
+        return Vec::new();
+    }
+    let (w, h) = (w.min(MAX_SIDE), h.min(MAX_SIDE));
+    let ss = w.min(h);
+    let (hc, vc) = (w / 2.0, h / 2.0);
+    let adj = |name: &str, default: f32, max: f32| share(preset, name, default, max);
+    // A value measured along x (or y) from `origin`, `per` points to the whole.
+    let x = |name: &'static str, origin: f32, per: f32, max: f32| Follows { name, along_x: true, origin, scale: FULL / per, min: 0.0, max };
+    let y = |name: &'static str, origin: f32, per: f32, max: f32| Follows { name, along_x: false, origin, scale: FULL / per, min: 0.0, max };
+    let one = |at: (f32, f32), f: Follows| Handle { at, sets: vec![f] };
+    match preset.name.as_str() {
+        "parallelogram" => {
+            let max = FULL * w / ss;
+            vec![one((ss * adj("adj", 25_000.0, max), 0.0), x("adj", 0.0, ss, max))]
+        }
+        "trapezoid" | "hexagon" => {
+            let max = 50_000.0 * w / ss;
+            vec![one((ss * adj("adj", 25_000.0, max), 0.0), x("adj", 0.0, ss, max))]
+        }
+        "triangle" => vec![one((w * adj("adj", 50_000.0, FULL), 0.0), x("adj", 0.0, w, FULL))],
+        "octagon" => vec![one((ss * adj("adj", 29_289.0, 50_000.0), 0.0), x("adj", 0.0, ss, 50_000.0))],
+        "plus" => vec![one((ss * adj("adj", 25_000.0, 50_000.0), 0.0), x("adj", 0.0, ss, 50_000.0))],
+        "frame" => vec![one((ss * adj("adj1", 12_500.0, 50_000.0), 0.0), x("adj1", 0.0, ss, 50_000.0))],
+        "donut" => vec![one((ss * adj("adj", 25_000.0, 50_000.0), vc), x("adj", 0.0, ss, 50_000.0))],
+        "corner" => {
+            let (max_x, max_y) = (FULL * w / ss, FULL * h / ss);
+            vec![
+                one((ss * adj("adj2", 50_000.0, max_x), 0.0), x("adj2", 0.0, ss, max_x)),
+                one((w, h - ss * adj("adj1", 50_000.0, max_y)), y("adj1", h, -ss, max_y)),
+            ]
+        }
+        "diagStripe" => vec![one((0.0, h * adj("adj", 50_000.0, FULL)), y("adj", 0.0, h, FULL))],
+        "chevron" | "homePlate" => {
+            let max = FULL * w / ss;
+            vec![one((w - ss * adj("adj", 50_000.0, max), 0.0), x("adj", w, -ss, max))]
+        }
+        "can" => {
+            let max = 50_000.0 * h / ss;
+            vec![one((hc, ss * adj("adj", 25_000.0, max)), y("adj", 0.0, ss, max))]
+        }
+        "cube" => vec![one((0.0, ss * adj("adj", 25_000.0, FULL)), y("adj", 0.0, ss, FULL))],
+        "foldedCorner" => vec![one((w - ss * adj("adj", 16_667.0, 50_000.0), h), x("adj", w, -ss, 50_000.0))],
+        "star4" | "star6" | "star8" | "star12" | "star16" | "star24" | "star32" => {
+            let n = preset.name.get(4..).and_then(|d| d.parse::<usize>().ok()).unwrap_or(8).clamp(4, 32);
+            let default = match n {
+                4 => 12_500.0,
+                6 => 28_868.0,
+                _ => 37_500.0,
+            };
+            // On the inner corner left of the top point: half a point's angle from straight up,
+            // as far out as the inner corners are. (A 6-point star's is a little nearer the
+            // middle sideways: its points touch the frame's sides.)
+            let half = std::f32::consts::PI / n as f32;
+            let inner = adj("adj", default, 50_000.0) * 2.0;
+            let wide = if n == 6 { value(preset, "hf", 115_470.0) / FULL * 0.5 } else { half.sin() };
+            vec![one((hc - hc * inner * wide, vc - vc * inner * half.cos()), y("adj", vc, -2.0 * vc * half.cos(), 50_000.0))]
+        }
+        "rightArrow" | "leftArrow" | "upArrow" | "downArrow" => {
+            let upright = matches!(preset.name.as_str(), "upArrow" | "downArrow");
+            let (len, thick) = if upright { (h, w) } else { (w, h) };
+            let max = FULL * len / ss;
+            let (shaft, head) = (thick * adj("adj1", 50_000.0, FULL) / 2.0, ss * adj("adj2", 50_000.0, max));
+            // Pointing right: the head's inner corner at (len - head, 0), the shaft's edge at
+            // (0, thick / 2 - shaft); turned with the arrow.
+            match preset.name.as_str() {
+                "leftArrow" => vec![one((head, 0.0), x("adj2", 0.0, ss, max)), one((w, vc - shaft), y("adj1", vc, -thick / 2.0, FULL))],
+                "upArrow" => vec![one((0.0, head), y("adj2", 0.0, ss, max)), one((hc - shaft, h), x("adj1", hc, -thick / 2.0, FULL))],
+                "downArrow" => vec![one((0.0, h - head), y("adj2", h, -ss, max)), one((hc - shaft, 0.0), x("adj1", hc, -thick / 2.0, FULL))],
+                _ => vec![one((w - head, 0.0), x("adj2", w, -ss, max)), one((0.0, vc - shaft), y("adj1", vc, -thick / 2.0, FULL))],
+            }
+        }
+        "leftRightArrow" => {
+            let max = 50_000.0 * w / ss;
+            let head = ss * adj("adj2", 50_000.0, max);
+            vec![one((head, 0.0), x("adj2", 0.0, ss, max)), one((head, vc - h * adj("adj1", 50_000.0, FULL) / 2.0), y("adj1", vc, -h / 2.0, FULL))]
+        }
+        "upDownArrow" => {
+            let max = 50_000.0 * h / ss;
+            let head = ss * adj("adj2", 50_000.0, max);
+            vec![one((0.0, head), y("adj2", 0.0, ss, max)), one((hc - w * adj("adj1", 50_000.0, FULL) / 2.0, head), x("adj1", hc, -w / 2.0, FULL))]
+        }
+        "snip1Rect" | "round1Rect" => vec![one((w - ss * adj("adj", 16_667.0, 50_000.0), 0.0), x("adj", w, -ss, 50_000.0))],
+        "snip2SameRect" | "round2SameRect" => vec![
+            one((ss * adj("adj1", 16_667.0, 50_000.0), 0.0), x("adj1", 0.0, ss, 50_000.0)),
+            one((ss * adj("adj2", 0.0, 50_000.0), h), x("adj2", 0.0, ss, 50_000.0)),
+        ],
+        "snip2DiagRect" | "round2DiagRect" => {
+            let defaults = if preset.name == "round2DiagRect" { (16_667.0, 0.0) } else { (0.0, 16_667.0) };
+            vec![
+                one((ss * adj("adj1", defaults.0, 50_000.0), 0.0), x("adj1", 0.0, ss, 50_000.0)),
+                one((w - ss * adj("adj2", defaults.1, 50_000.0), 0.0), x("adj2", w, -ss, 50_000.0)),
+            ]
+        }
+        "snipRoundRect" => vec![
+            one((ss * adj("adj1", 16_667.0, 50_000.0), 0.0), x("adj1", 0.0, ss, 50_000.0)),
+            one((w - ss * adj("adj2", 16_667.0, 50_000.0), 0.0), x("adj2", w, -ss, 50_000.0)),
+        ],
+        "wedgeRectCallout" | "wedgeRoundRectCallout" | "wedgeEllipseCallout" => {
+            // The tip: anywhere, as far as ten frames away.
+            let far = 1_000_000.0;
+            let tip = tail(preset, w, h).tip;
+            let to =
+                |name: &'static str, along_x: bool, origin: f32, per: f32| Follows { name, along_x, origin, scale: FULL / per, min: -far, max: far };
+            vec![Handle { at: tip, sets: vec![to("adj1", true, hc, w), to("adj2", false, vc, h)] }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// The preset a shape's handles work on: the one it keeps, else its kind's own where that has
+/// handles ([`own_preset`]).
+fn handled(kind: ShapeKind, preset: Option<&PresetGeom>) -> Option<PresetGeom> {
+    if kind.is_open() || kind == ShapeKind::Freeform {
+        return None;
+    }
+    preset.cloned().or_else(|| own_preset(kind))
+}
+
+/// Where the handles that change a shape's proportions are, in its `w` × `h` frame: one for each
+/// thing its preset lets be adjusted (a parallelogram's lean, an arrow's head and shaft, a
+/// callout's tip), and a rounded rectangle's corner. None for a shape with nothing to adjust.
+pub fn shape_handles(kind: ShapeKind, preset: Option<&PresetGeom>, corner: Option<u32>, w: f32, h: f32) -> Vec<(f32, f32)> {
+    if kind == ShapeKind::RoundedRectangle && preset.is_none() {
+        let ok = w.is_finite() && h.is_finite() && w > 0.0 && h > 0.0;
+        return if ok { vec![(crate::connector::corner_radius(corner, w, h), 0.0)] } else { Vec::new() };
+    }
+    handled(kind, preset).map(|p| handles_of(&p, w, h).into_iter().map(|hd| hd.at).collect()).unwrap_or_default()
+}
+
+/// What moving a shape's handle gives: its preset with new adjust values, or a rounded
+/// rectangle's new corner.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Adjusted {
+    Preset(PresetGeom),
+    Corner(u32),
+}
+
+/// A shape's handle `index` (as [`shape_handles`] lists them) moved to the frame point `to`.
+/// `None` for a handle the shape doesn't have.
+pub fn move_handle(kind: ShapeKind, preset: Option<&PresetGeom>, (w, h): (f32, f32), index: usize, to: (f32, f32)) -> Option<Adjusted> {
+    let fin = |v: f32| if v.is_finite() { v.clamp(-1.0e7, 1.0e7) } else { 0.0 };
+    let to = (fin(to.0), fin(to.1));
+    if kind == ShapeKind::RoundedRectangle && preset.is_none() {
+        let ss = w.min(h);
+        let ok = index == 0 && ss.is_finite() && ss > 0.0;
+        return ok.then(|| Adjusted::Corner((to.0 / ss * FULL).clamp(0.0, crate::connector::MAX_CORNER as f32).round() as u32));
+    }
+    let mut geom = handled(kind, preset)?;
+    let handle = handles_of(&geom, w, h).into_iter().nth(index)?;
+    for f in handle.sets {
+        let v = ((if f.along_x { to.0 } else { to.1 }) - f.origin) * f.scale;
+        let v = if v.is_finite() { v.clamp(f.min, f.max).round() as i32 } else { continue };
+        let room = geom.adjust.len() < PresetGeom::MAX_ADJUST;
+        match geom.adjust.iter().position(|(n, _)| n == f.name) {
+            Some(at) => {
+                if let Some(slot) = geom.adjust.get_mut(at) {
+                    slot.1 = v;
+                }
+            }
+            None if room => geom.adjust.push((f.name.to_string(), v)),
+            None => {}
+        }
+    }
+    Some(Adjusted::Preset(geom))
+}
+
 /// The kind a gallery name stands for when it is a [`ShapeKind`]'s own name.
 pub fn kind_of_name(name: &str) -> Option<ShapeKind> {
     serde_json::from_value(serde_json::Value::String(name.to_string())).ok()
@@ -946,6 +1151,89 @@ mod tests {
         assert_eq!(corners(&outline(&preset("star8"), 100.0, 100.0).unwrap()).len(), 16);
         let six = corners(&outline(&preset("star6"), 100.0, 100.0).unwrap());
         assert_eq!((six[0], six[2], six[4]), ((0.0, 25.0), (50.0, 0.0), (100.0, 25.0)), "{six:?}");
+    }
+
+    /// The handle of each thing a preset lets be adjusted sits on the corner or edge it moves,
+    /// and dragging it there and back gives the value it had.
+    #[test]
+    fn a_handle_sits_where_its_value_puts_the_outline_and_moves_it() {
+        use ShapeKind::Rectangle;
+        // A parallelogram's lean: on the top edge, where the slanted side meets it.
+        let lean = preset("parallelogram");
+        assert_eq!(shape_handles(Rectangle, Some(&lean), None, 120.0, 80.0), vec![(20.0, 0.0)]);
+        let Some(Adjusted::Preset(moved)) = move_handle(Rectangle, Some(&lean), (120.0, 80.0), 0, (40.0, -7.0)) else { panic!() };
+        assert_eq!(moved.adjust, vec![("adj".to_string(), 50_000)]);
+        assert_eq!(corners(&outline(&moved, 120.0, 80.0).unwrap())[1], (40.0, 0.0), "the outline follows the handle");
+        // Kept within what the shape allows: no farther than the whole width, not before the corner.
+        let far = move_handle(Rectangle, Some(&lean), (120.0, 80.0), 0, (500.0, 0.0));
+        assert_eq!(far, Some(Adjusted::Preset(with("parallelogram", &[("adj", 150_000)]))));
+        let back = move_handle(Rectangle, Some(&lean), (120.0, 80.0), 0, (-30.0, 0.0));
+        assert_eq!(back, Some(Adjusted::Preset(with("parallelogram", &[("adj", 0)]))));
+        // A callout's tip is its handle, and takes both of its values.
+        let callout = preset("wedgeRectCallout");
+        let at = shape_handles(Rectangle, Some(&callout), None, 120.0, 60.0);
+        assert!(matches!(at.as_slice(), [(x, y)] if (x - 35.0).abs() < 0.01 && (y - 67.5).abs() < 0.01), "{at:?}");
+        let Some(Adjusted::Preset(tip)) = move_handle(Rectangle, Some(&callout), (120.0, 60.0), 0, (180.0, 15.0)) else { panic!() };
+        assert_eq!(tip.adjust, vec![("adj1".to_string(), 100_000), ("adj2".to_string(), -25_000)]);
+        // A chevron's notch, a cylinder's lid, a star's inner corners.
+        assert_eq!(shape_handles(Rectangle, Some(&preset("chevron")), None, 200.0, 80.0), vec![(160.0, 0.0)]);
+        assert_eq!(shape_handles(Rectangle, Some(&preset("can")), None, 100.0, 80.0), vec![(50.0, 20.0)]);
+        // Each handle is on a corner of the outline (a ring's, on its hole).
+        for name in presets().into_iter().chain(["triangle", "rightArrow", "leftArrow", "upArrow", "downArrow"]) {
+            let geom = preset(name);
+            let Some(drawn) = outline(&geom, 120.0, 80.0) else {
+                assert!(shape_handles(Rectangle, Some(&geom), None, 120.0, 80.0).is_empty(), "{name} isn't drawn as itself: no handle moves it");
+                continue;
+            };
+            let on = corners(&drawn);
+            for at in shape_handles(Rectangle, Some(&geom), None, 120.0, 80.0) {
+                let near = on.iter().any(|c| (c.0 - at.0).abs() < 0.01 && (c.1 - at.1).abs() < 0.01);
+                assert!(near || matches!(name, "donut" | "frame" | "can"), "{name}: {at:?} is on none of {on:?}");
+            }
+        }
+        // Every handle of every preset: moved to where it is, the values stay as they are.
+        for name in presets() {
+            let geom = preset(name);
+            for (i, at) in shape_handles(Rectangle, Some(&geom), None, 120.0, 80.0).into_iter().enumerate() {
+                let Some(Adjusted::Preset(same)) = move_handle(Rectangle, Some(&geom), (120.0, 80.0), i, at) else { panic!("{name} {i}") };
+                assert_eq!(outline(&same, 120.0, 80.0), outline(&geom, 120.0, 80.0), "{name}: handle {i} at {at:?}");
+            }
+        }
+    }
+
+    /// The shapes a kind draws take handles too: a block arrow's head and shaft (it becomes the
+    /// preset it is, looking as it did), a triangle's point, a rounded rectangle's corner.
+    #[test]
+    fn kinds_with_something_to_adjust_have_handles() {
+        // A right arrow 200 × 80: the head starts 40 from the tip, the shaft is 40% thick.
+        assert_eq!(shape_handles(ShapeKind::Arrow, None, None, 200.0, 80.0), vec![(160.0, 0.0), (0.0, 24.0)]);
+        let own = own_preset(ShapeKind::Arrow).unwrap();
+        let unit: Vec<(f32, f32)> = corners(&outline(&own, 200.0, 80.0).unwrap()).into_iter().map(|(x, y)| (x / 200.0, y / 80.0)).collect();
+        let drawn = crate::wrap::arrow_outline(ShapeKind::Arrow, 200.0, 80.0);
+        for (a, b) in unit.iter().zip(&drawn) {
+            assert!((a.0 - b.0).abs() < 1e-4 && (a.1 - b.1).abs() < 1e-4, "{unit:?} is not {drawn:?}");
+        }
+        let Some(Adjusted::Preset(longer)) = move_handle(ShapeKind::Arrow, None, (200.0, 80.0), 0, (120.0, 0.0)) else { panic!() };
+        assert_eq!((longer.name.as_str(), longer.adjust.clone()), ("rightArrow", vec![("adj1".to_string(), 40_000), ("adj2".to_string(), 100_000)]));
+        for kind in [ShapeKind::ArrowLeft, ShapeKind::ArrowUp, ShapeKind::ArrowDown, ShapeKind::Triangle] {
+            let at = shape_handles(kind, None, None, 120.0, 90.0);
+            assert!(!at.is_empty(), "{kind:?}");
+            for (i, p) in at.iter().enumerate() {
+                assert!(move_handle(kind, None, (120.0, 90.0), i, *p).is_some(), "{kind:?} {i}");
+            }
+        }
+        // A rounded rectangle: its corner, on the top edge.
+        assert_eq!(shape_handles(ShapeKind::RoundedRectangle, None, Some(25_000), 120.0, 80.0), vec![(20.0, 0.0)]);
+        assert_eq!(move_handle(ShapeKind::RoundedRectangle, None, (120.0, 80.0), 0, (30.0, 9.0)), Some(Adjusted::Corner(37_500)));
+        assert_eq!(move_handle(ShapeKind::RoundedRectangle, None, (120.0, 80.0), 0, (900.0, 0.0)), Some(Adjusted::Corner(50_000)));
+        // Nothing to adjust, a handle a shape doesn't have, and frames and points that are none.
+        assert!(shape_handles(ShapeKind::Rectangle, None, None, 120.0, 80.0).is_empty());
+        assert!(shape_handles(ShapeKind::ElbowConnector, None, None, 120.0, 80.0).is_empty());
+        assert_eq!(move_handle(ShapeKind::Arrow, None, (200.0, 80.0), 7, (0.0, 0.0)), None);
+        assert!(shape_handles(ShapeKind::Arrow, None, None, f32::NAN, 80.0).is_empty());
+        assert!(shape_handles(ShapeKind::RoundedRectangle, None, None, 0.0, 80.0).is_empty());
+        let wild = move_handle(ShapeKind::Arrow, None, (200.0, 80.0), 0, (f32::NAN, f32::INFINITY));
+        assert!(matches!(wild, Some(Adjusted::Preset(p)) if p.adjust.iter().all(|(_, v)| (0..=250_000).contains(v))));
     }
 
     #[test]

@@ -261,3 +261,81 @@ pub(super) fn shape_effects(s: &mut Session, v: &Value) -> CmdResult {
     }
     Ok(json!({"shapes": targets.len(), "effects": serde_json::to_value(last).unwrap_or(Value::Null)}))
 }
+
+pub(super) const NO_HANDLE: &str = "select a shape with a handle to adjust first";
+
+/// The selected shape's handles, where it has any: the points of its own frame that change its
+/// proportions ([`wordcraft_doc::preset::shape_handles`]).
+fn handles(obj: &InlineObject) -> Vec<(f32, f32)> {
+    let InlineObject::Shape { kind, extra, w, h, .. } = obj else { return Vec::new() };
+    wordcraft_doc::preset::shape_handles(*kind, extra.preset.as_deref(), extra.corner, *w, *h)
+}
+
+pub(super) fn has_handle(s: &Session) -> Option<&'static str> {
+    match selected(s) {
+        Some((_, obj)) if !handles(&obj).is_empty() => None,
+        _ => Some(NO_HANDLE),
+    }
+}
+
+/// `shape.adjust`: move one of the selected shape's handles, which changes the shape's
+/// proportions (a parallelogram's lean, an arrow's head and shaft, a callout's tip, a rounded
+/// corner). The shape keeps the result as its preset's adjust values, so a file saves it.
+pub(super) fn adjust(s: &mut Session, v: &Value) -> CmdResult {
+    use wordcraft_doc::preset::{Adjusted, move_handle};
+    let (pos, obj) = selected(s).ok_or_else(|| CmdError::Disabled(NO_HANDLE.into()))?;
+    let at = handles(&obj);
+    let InlineObject::Shape { kind, extra, w, h, .. } = &obj else { return Err(CmdError::Disabled(NO_HANDLE.into())) };
+    if at.is_empty() {
+        return Err(CmdError::Disabled(NO_HANDLE.into()));
+    }
+    let index = match p::u64(v, "handle") {
+        None => 0,
+        Some(n) => usize::try_from(n)
+            .ok()
+            .and_then(|n| n.checked_sub(1))
+            .filter(|i| *i < at.len())
+            .ok_or_else(|| CmdError::Params(format!("`handle`: 1 to {}", at.len())))?,
+    };
+    let now = at.get(index).copied().ok_or_else(|| CmdError::Params("this shape has no such handle".into()))?;
+    // Where the handle goes, in the shape's own frame.
+    let (size, to) = match (v.get("own"), p::f32(v, "x"), p::f32(v, "y")) {
+        (Some(own), ..) => {
+            let coord = |i: usize| own.get(i).and_then(Value::as_f64).map(|n| wordcraft_geom::finite(n as f32));
+            let (Some(x), Some(y)) = (coord(0), coord(1)) else { return Err(CmdError::Params("`own`: [x, y] in points".into())) };
+            ((*w, *h), (x, y))
+        }
+        (None, x, y) if x.is_some() || y.is_some() => {
+            // A shape in a drawing canvas has no frame of its own in the layout.
+            if crate::cmd::canvas::selected_member(s).is_some() {
+                return Err(CmdError::Params("a shape in a drawing canvas takes a point of its own frame (`own`)".into()));
+            }
+            let layout = s.layout();
+            let hit = layout.object(&pos, s.page_hint).ok_or_else(|| CmdError::Failed("the shape isn't laid out".into()))?;
+            let r = hit.rect;
+            let (cx, cy) = (r.x + r.w / 2.0, r.y + r.h / 2.0);
+            // A missing coordinate leaves the handle where it is that way.
+            let here = hit.spin.apply(cx, cy, r.x + now.0, r.y + now.1);
+            let own = hit.spin.unapply(cx, cy, wordcraft_geom::finite(x.unwrap_or(here.0)), wordcraft_geom::finite(y.unwrap_or(here.1)));
+            ((r.w, r.h), (own.0 - r.x, own.1 - r.y))
+        }
+        _ => return Err(CmdError::Params("a point of the page (`x`, `y`) or of the shape's own frame (`own`)".into())),
+    };
+    let moved =
+        move_handle(*kind, extra.preset.as_deref(), size, index, to).ok_or_else(|| CmdError::Params("this shape has no such handle".into()))?;
+    // With a member of a drawing canvas picked, the member changes.
+    let o = edit_obj(s, &pos, |o| {
+        if let InlineObject::Shape { extra, .. } = o {
+            match &moved {
+                Adjusted::Corner(corner) => extra.corner = Some(*corner),
+                Adjusted::Preset(geom) => {
+                    // A geometry kept from a file is no longer this shape's.
+                    extra.odf_geometry = None;
+                    extra.preset = Some(std::sync::Arc::new(geom.clone()));
+                }
+            }
+        }
+    })?;
+    s.touch();
+    Ok(json!({"object": serde_json::to_value(o).unwrap_or(Value::Null)}))
+}
