@@ -186,15 +186,34 @@ pub fn specs() -> Vec<CommandSpec> {
                 "right" => Spin::new(90.0, false, false),
                 other => return Err(CmdError::Params(format!("unknown direction `{other}`"))),
             };
+            // Several selected, as one block: about the middle of the box around them all.
+            if p::str(v, "about") == Some("selection") {
+                use super::multi::Together;
+                let how = match p::str(v, "direction").unwrap_or("right") {
+                    "left" => Together::Turn { by: 270.0 },
+                    "flipHorizontal" | "flipH" => Together::Flip { h: true, v: false },
+                    "flipVertical" | "flipV" => Together::Flip { h: false, v: true },
+                    _ => Together::Turn { by: 90.0 },
+                };
+                return super::multi::apply_together(s, how);
+            }
             // Several selected: each turns or flips where it is, about its own middle.
             if super::multi::several(s) {
                 return super::multi::each_float(s, |f| f.set_spin(f.spin().within(by)));
             }
             with_float(s, |f| f.set_spin(f.spin().within(by)))
         })
-        .params(r#"{"direction": "right|left|flipVertical|flipHorizontal"}  (turns 90° or mirrors the selected picture, shape or text box; its pixels are kept. Several selected: each one, about its own middle)"#)
+        .params(r#"{"direction": "right|left|flipVertical|flipHorizontal"}  (turns 90° or mirrors the selected picture, shape or text box; its pixels are kept. Several selected: each one, about its own middle; with "about": "selection", all of them as one block, about the middle of the box around them)"#)
         .when(has_movable),
         CommandSpec::new("arrange.rotation", "Rotation", "Layout › Arrange", |s, v| {
+            // Several turned as one block, by so much more.
+            if p::str(v, "about") == Some("selection") {
+                let by = p::req_f32(v, "by")?;
+                if !by.is_finite() {
+                    return Err(CmdError::Params("`by`: degrees".into()));
+                }
+                return super::multi::apply_together(s, super::multi::Together::Turn { by });
+            }
             let deg = p::req_f32(v, "degrees")?;
             let (fh, fv) = (p::bool(v, "flipH"), p::bool(v, "flipV"));
             if super::multi::several(s) {
@@ -208,7 +227,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 f.set_spin(Spin::new(deg, fh.unwrap_or(cur.flip_h), fv.unwrap_or(cur.flip_v)));
             })
         })
-        .params(r#"{"degrees": number, "flipH"?: bool, "flipV"?: bool}  (the exact angle, clockwise, of the selected picture, shape or text box; normalised to 0–360)"#)
+        .params(r#"{"degrees": number, "flipH"?: bool, "flipV"?: bool}  (the exact angle, clockwise, of the selected picture, shape or text box; normalised to 0–360). Several selected: each one; {"by": degrees, "about": "selection"} turns them all as one block by so much more, about the middle of the box around them"#)
         .when(has_movable),
         CommandSpec::new("arrange.wrap", "Wrap Text", "Layout › Arrange", |s, v| {
             let wrap: Wrap = serde_json::from_value(v.get("wrap").cloned().unwrap_or(json!("square"))).map_err(|e| CmdError::Params(e.to_string()))?;
@@ -296,6 +315,9 @@ pub fn specs() -> Vec<CommandSpec> {
         })
         .params(r#"{"value": "left|center|right|top|middle|bottom", "to"?: "page|margin|selection"}  (one picture or shape: between the page's margins; several selected: with each other, on that side of the box around them all. to: every floating one selected lines up with that side of the page, or of the area inside its margins, keeping its place the other way)"#)
         .when(has_placeable),
+        CommandSpec::new("arrange.scale", "Resize Together", "Layout › Size", super::multi::scale)
+            .params(r#"{"x"?: factor, "y"?: factor, "keep"?: [x, y]}  (every floating picture or shape selected resized by the same factors (0.01–100; 1 when left out), each keeping the point of its own frame at `keep` where it is: shares of its width and height from its top left, [0, 0] when left out, [1, 1] its bottom right. What dragging a handle does with several selected)"#)
+            .when(has_placeable),
         CommandSpec::new("arrange.distribute", "Distribute", "Layout › Arrange", super::multi::distribute)
             .params(r#"{"value": "horizontal|vertical"}  (three or more floating pictures or shapes selected: spaced evenly between the two outermost)"#)
             .when(|s| if super::select::picked_objects(s).len() >= 3 { None } else { Some("select three or more pictures or shapes first (Shift+click)") }),

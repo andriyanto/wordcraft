@@ -1292,3 +1292,95 @@ fn dragging_a_shapes_diamond_handle_changes_its_proportions() {
     h.run_steps(2);
     assert!(!h.state().session.also_selected.is_empty() && handles(&mut h).is_empty(), "several are selected");
 }
+
+/// With several drawings selected, dragging a resize handle of the one showing handles resizes
+/// them all by as much (each keeping its own opposite corner), and dragging its rotation handle
+/// turns them all as one block. Pressing a handle selected that one alone before.
+#[test]
+fn dragging_a_handle_with_several_selected_resizes_or_turns_them_all() {
+    use egui::{Event, PointerButton};
+    let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+    app.run("view.commentsPane", json!({"value": false})).unwrap();
+    for (x, y, w, h) in [(100, 100, 80, 40), (300, 100, 60, 60), (100, 300, 100, 20)] {
+        app.run("insert.shape", json!({"kind": "rectangle", "x": x, "y": y, "page": 0, "width": w, "height": h})).unwrap();
+    }
+    app.run("select.objects", json!({"x": 50, "y": 50, "width": 400, "height": 320, "page": 0})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 1100.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    // Each one's frame (rounded) and turn, sorted.
+    let frames = |h: &mut egui_kittest::Harness<'_, WordApp>| -> Vec<([i32; 4], i32)> {
+        let layout = h.state_mut().session.layout();
+        let picks = wordcraft_engine::cmd::objects::picked_objects(&h.state().session);
+        let mut out: Vec<([i32; 4], i32)> = picks
+            .iter()
+            .filter_map(|p| layout.object(p, 0))
+            .map(|o| ([o.rect.x, o.rect.y, o.rect.w, o.rect.h].map(|v| v.round() as i32), o.spin.deg.round() as i32))
+            .collect();
+        out.sort();
+        out
+    };
+    assert_eq!(frames(&mut h).len(), 3, "all three selected");
+    let drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: Pos2, to: Pos2| {
+        h.event(Event::PointerMoved(from));
+        h.step();
+        h.event(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        for i in 1..=6 {
+            h.event(Event::PointerMoved(from + (to - from) * (i as f32 / 6.0)));
+            h.step();
+        }
+        h.event(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.run_steps(3);
+    };
+    // The one showing handles, on screen.
+    let shown = |h: &mut egui_kittest::Harness<'_, WordApp>| -> egui::Rect {
+        let layout = h.state_mut().session.layout();
+        let (o, _) = active(h.state(), &layout).expect("one of them shows its handles");
+        let a = crate::canvas::page_to_screen(h.state_mut(), 0, o.rect.x, o.rect.y).unwrap();
+        let b = crate::canvas::page_to_screen(h.state_mut(), 0, o.rect.right(), o.rect.bottom()).unwrap();
+        egui::Rect::from_min_max(a, b)
+    };
+    let before = frames(&mut h);
+    let f = shown(&mut h);
+    let layout = h.state_mut().session.layout();
+    let (o, _) = active(h.state(), &layout).unwrap();
+    // Its bottom right handle dragged out to twice its width and height.
+    let to = crate::canvas::page_to_screen(h.state_mut(), 0, o.rect.x + o.rect.w * 2.0, o.rect.y + o.rect.h * 2.0).unwrap();
+    drag(&mut h, f.right_bottom(), to);
+    let after = frames(&mut h);
+    assert_eq!(after.len(), 3, "all three still selected: {after:?}");
+    for (b, a) in before.iter().zip(&after) {
+        let (b, a) = (b.0, a.0);
+        assert!((a[0] - b[0]).abs() <= 1 && (a[1] - b[1]).abs() <= 1, "each keeps its top left: {before:?} {after:?}");
+        assert!((a[2] - 2 * b[2]).abs() <= 2 && (a[3] - 2 * b[3]).abs() <= 2, "each twice the size: {before:?} {after:?}");
+    }
+    // One undo puts them back.
+    h.state_mut().run("edit.undo", json!({})).unwrap();
+    h.run_steps(2);
+    assert_eq!(frames(&mut h), before);
+    // Its rotation handle taken a quarter turn round the middle of the box around them all.
+    let f = shown(&mut h);
+    let layout = h.state_mut().session.layout();
+    let (_, (px, py)) = wordcraft_engine::cmd::objects::together_pivot(&h.state().session, &layout).unwrap();
+    let pivot = crate::canvas::page_to_screen(h.state_mut(), 0, px, py).unwrap();
+    let grip = crate::frame::rotate_handle(f, 0.0);
+    let v = grip - pivot;
+    // The same distance from the pivot, a quarter turn clockwise.
+    let quarter = pivot + egui::vec2(-v.y, v.x);
+    drag(&mut h, grip, quarter);
+    let turned = frames(&mut h);
+    assert!(turned.iter().all(|t| t.1 == 90), "each turned a quarter: {turned:?}");
+    let middles: Vec<(i32, i32)> = {
+        let mut m: Vec<(i32, i32)> = turned.iter().map(|(r, _)| (r[0] + r[2] / 2, r[1] + r[3] / 2)).collect();
+        m.sort();
+        m
+    };
+    assert_eq!(middles, vec![(130, 130), (310, 310), (320, 120)], "turned as one block about (230, 210)");
+}

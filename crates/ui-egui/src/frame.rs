@@ -74,7 +74,7 @@ impl Handle {
 }
 
 /// Where the rotation handle of frame `f` turned `deg` is: above the middle of its top edge.
-fn rotate_handle(f: egui::Rect, deg: f32) -> Pos2 {
+pub(crate) fn rotate_handle(f: egui::Rect, deg: f32) -> Pos2 {
     turn(pos2(f.center().x, f.min.y - ROTATE_GAP), f.center(), deg)
 }
 
@@ -227,6 +227,24 @@ impl Drag {
         let deg = dy.atan2(dx).to_degrees() + 90.0;
         let step = if snap { SNAP_DEG } else { 1.0 };
         self.deg = wordcraft_geom::normalize_degrees((deg / step).round() * step);
+    }
+
+    /// Follow the pointer with the rotation handle of one of several drawings turned as one
+    /// block about `pivot` (screen): the turn is how far the pointer has gone round the pivot
+    /// since the press, by whole degrees (or 15° steps, `snap`), added to `from`, the angle the
+    /// frame had.
+    pub fn turn_about(&mut self, pointer: Pos2, pivot: Pos2, from: f32, snap: bool) {
+        if !self.moved && pointer.distance(self.press) < DRAG_START {
+            return;
+        }
+        let (a, b) = (self.press - pivot, pointer - pivot);
+        if a.length() < 1.0 || b.length() < 1.0 {
+            return;
+        }
+        self.moved = true;
+        let by = (b.y.atan2(b.x) - a.y.atan2(a.x)).to_degrees();
+        let step = if snap { SNAP_DEG } else { 1.0 };
+        self.deg = wordcraft_geom::normalize_degrees(from + (by / step).round() * step);
     }
 
     /// Follow the pointer. A move keeps the grabbed point under it, across pages too; a resize

@@ -36,6 +36,7 @@ use crate::WordApp;
 use crate::frame::{self, Drag, Grab};
 use crate::guides;
 use crate::theme::Tokens;
+use wordcraft_engine::cmd::objects::Together;
 
 /// The band along a text box's border that grabs the box rather than its text, screen points.
 const EDGE: f32 = 5.0;
@@ -62,9 +63,12 @@ pub struct ObjectDrag {
     /// Dragging one of a bent or curved connector's runs (its adjust value, 1–3) to this page
     /// point.
     bend: Option<(u8, (f32, f32))>,
-    /// Several pictures or shapes are selected and this one of them is being moved: they all
-    /// move with it.
+    /// Several pictures or shapes are selected and this one of them is being moved, resized or
+    /// turned: they all move, resize or turn with it (turned as one block, about `pivot`).
     together: bool,
+    /// The middle of the box around several drawings turned together: their page, and the
+    /// point there.
+    pivot: Option<(usize, (f32, f32))>,
     /// Ctrl/⌘ is held: dropping leaves the original and puts a copy at the new place.
     copy: bool,
     /// The alignment guides a move snapped to, shown while dragging ([`crate::guides`]).
@@ -180,6 +184,7 @@ fn press_connector_handle(app: &mut WordApp, layout: &DocLayout, pages: &[Rect],
         copy: false,
         drop_at: None,
         together: false,
+        pivot: None,
     });
     true
 }
@@ -404,7 +409,11 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             let shift = ui.input(|i| i.modifiers.shift);
             d.copy = ui.input(|i| i.modifiers.command) && d.drag.grab == Grab::Move && d.object.member.is_none() && !d.together;
             if d.drag.grab == Grab::Rotate {
-                d.drag.turn_to(at, pages, scale, shift);
+                // Several turned as one block: about the middle of the box around them all.
+                match d.pivot.and_then(|(page, p)| point_on_screen(pages, scale, page, p)) {
+                    Some(pivot) if d.together => d.drag.turn_about(at, pivot, d.object.spin.deg, shift),
+                    _ => d.drag.turn_to(at, pages, scale, shift),
+                }
             } else {
                 let locked_axis = if d.copy && shift && d.object.floating() {
                     let horizontal = d.drag.update_axis(at, pages, scale, d.min, d.press_origin);
@@ -534,15 +543,18 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
             copy: false,
             drop_at: None,
             together: false,
+            pivot: None,
         });
         return false;
     }
     if pressed {
         let pos = object.pos();
-        // One of several selected, pressed to move them: they stay selected, and move together.
+        // One of several selected, pressed to move, resize or turn them: they stay selected, and
+        // change together.
         let picked = wordcraft_engine::cmd::objects::picked_objects(&app.session);
         // (Ctrl starts a copy of the one pressed instead.)
-        let together = grab == Grab::Move && picked.len() > 1 && picked.contains(&pos) && object.floating() && !ui.input(|i| i.modifiers.command);
+        let together = picked.len() > 1 && picked.contains(&pos) && object.floating() && !ui.input(|i| i.modifiers.command);
+        let pivot = (together && grab == Grab::Rotate).then(|| wordcraft_engine::cmd::objects::together_pivot(&app.session, layout)).flatten();
         if !together {
             let end = Pos { off: pos.off + OBJ.len_utf8(), ..pos.clone() };
             let _ = app.run("select.range", json!({"anchor": pos, "focus": end}));
@@ -569,6 +581,7 @@ pub fn pointer(app: &mut WordApp, ui: &Ui, resp: &egui::Response, pages: &[Rect]
                 copy: copy && !together,
                 drop_at: None,
                 together,
+                pivot,
             });
         }
     }
@@ -614,6 +627,7 @@ fn press_member(app: &mut WordApp, layout: &DocLayout, pages: &[Rect], scale: f3
         copy: false,
         drop_at: None,
         together: false,
+        pivot: None,
     });
     true
 }
@@ -878,6 +892,19 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
         let _ = app.run("picture.size", json!({"width": r.w, "height": r.h, "lockAspect": false}));
         return;
     }
+    // Several selected: all of them resized or turned with this one.
+    if d.together && d.drag.grab != Grab::Move {
+        match together_change(d) {
+            Some(Together::Turn { by }) => {
+                let _ = app.run("arrange.rotation", json!({"by": by, "about": "selection"}));
+            }
+            Some(Together::Scale { sx, sy, keep }) => {
+                let _ = app.run("arrange.scale", json!({"x": sx, "y": sy, "keep": [keep.0, keep.1]}));
+            }
+            _ => {}
+        }
+        return;
+    }
     let params = match d.drag.grab {
         Grab::Rotate => {
             let _ = app.run("arrange.rotation", json!({"degrees": d.drag.deg}));
@@ -915,6 +942,38 @@ fn drop(app: &mut WordApp, d: &ObjectDrag) {
     let _ = app.run("arrange.bounds", params);
 }
 
+/// What a drag of one of several drawings selected together does to all of them: a resize by
+/// the factors the dragged one's frame changed by, each keeping the point the dragged handle's
+/// opposite is at; a turn by as much as the dragged one turned. None for a move.
+fn together_change(d: &ObjectDrag) -> Option<Together> {
+    let (r, start) = (d.drag.rect, d.drag.start);
+    match d.drag.grab {
+        Grab::Rotate => {
+            let by = wordcraft_geom::normalize_degrees(d.drag.deg - d.object.spin.deg);
+            Some(Together::Turn { by: if by > 180.0 { by - 360.0 } else { by } })
+        }
+        Grab::Resize(h) if start.w > 0.0 && start.h > 0.0 => {
+            let keep = |side: i8| (1.0 - f32::from(side)) / 2.0;
+            Some(Together::Scale { sx: r.w / start.w, sy: r.h / start.h, keep: (keep(h.x), keep(h.y)) })
+        }
+        _ => None,
+    }
+}
+
+/// Several drawings being resized or turned together: where each one's frame will be, and,
+/// while turning, the angle beside the dragged one.
+fn paint_together(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, layout: &DocLayout, pages: &[Rect], scale: f32) {
+    let Some(how) = together_change(d) else { return };
+    for (pos, frame, spin) in wordcraft_engine::cmd::objects::together_frames(&app.session, layout, how) {
+        let Some(f) = screen(pages, scale, d.drag.page, frame) else { continue };
+        if pos == d.object.pos() && d.drag.grab == Grab::Rotate {
+            frame::paint_turning(painter, t, f, spin.deg);
+        } else {
+            frame::paint_outline(painter, t, f, spin.deg);
+        }
+    }
+}
+
 /// Draw the frame of the active object, or the drag preview.
 pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, pages: &[Rect], scale: f32) {
     if crate::crop::paint(app, painter, t, layout, pages, scale) {
@@ -945,6 +1004,10 @@ pub fn paint(app: &WordApp, painter: &Painter, t: &Tokens, layout: &DocLayout, p
                 painter.circle(c, 4.5, if on { t.accent } else { Color32::WHITE }, egui::Stroke::new(1.2, t.accent));
             }
         }
+        return;
+    }
+    if let Some(d) = app.canvas.obj_drag.as_ref().filter(|d| d.drag.moved && d.together && d.drag.grab != Grab::Move) {
+        paint_together(app, d, painter, t, layout, pages, scale);
         return;
     }
     if let Some(d) = app.canvas.obj_drag.as_ref().filter(|d| d.drag.moved) {

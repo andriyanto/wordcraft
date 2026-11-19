@@ -7920,6 +7920,97 @@ fn drawings_align_to_the_page_or_its_margins() {
     assert!(frames(&mut s).iter().any(|f| f[0] + f[2] == pw), "{:?}", frames(&mut s));
 }
 
+/// Several drawings resized together (each by the same factors, the handle opposite the
+/// dragged one staying put on each) and turned or mirrored as one block about the middle of the
+/// box around them all. Only the one whose handle was dragged changed before.
+#[test]
+fn several_drawings_resize_and_turn_together() {
+    let mut s = s();
+    for (x, y, w, h) in [(100, 100, 80, 40), (300, 100, 60, 60), (100, 300, 100, 20)] {
+        run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": x, "y": y, "page": 0, "width": w, "height": h}));
+    }
+    // Each one's frame (rounded), its turn and flip, sorted by where it is.
+    let frames = |s: &mut Session| -> Vec<([i32; 4], i32, bool)> {
+        let layout = s.layout();
+        let mut out: Vec<([i32; 4], i32, bool)> = drawings(s)
+            .iter()
+            .filter_map(|(pos, _)| layout.object(pos, 0))
+            .map(|h| ([h.rect.x, h.rect.y, h.rect.w, h.rect.h].map(|v| v.round() as i32), h.spin.deg.round() as i32, h.spin.flip_h))
+            .collect();
+        out.sort();
+        out
+    };
+    let pick_all = |s: &mut Session| run(s, "select.objects", json!({"x": 50, "y": 50, "width": 400, "height": 320, "page": 0}));
+    pick_all(&mut s);
+    // Twice as wide, half again as tall, each keeping its top left.
+    run(&mut s, "arrange.scale", json!({"x": 2, "y": 1.5}));
+    assert_eq!(frames(&mut s), vec![([100, 100, 160, 60], 0, false), ([100, 300, 200, 30], 0, false), ([300, 100, 120, 90], 0, false)]);
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3, "still selected together");
+    // Back to their size, each keeping its bottom right.
+    run(&mut s, "arrange.scale", json!({"x": 0.5, "y": 1, "keep": [1, 1]}));
+    assert_eq!(frames(&mut s), vec![([180, 100, 80, 60], 0, false), ([200, 300, 100, 30], 0, false), ([360, 100, 60, 90], 0, false)]);
+    // One undo step for the lot.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(frames(&mut s), vec![([100, 100, 160, 60], 0, false), ([100, 300, 200, 30], 0, false), ([300, 100, 120, 90], 0, false)]);
+    s.run("edit.undo", &json!({})).unwrap();
+    pick_all(&mut s);
+    // Turned a quarter as one block: the box around them is 100..360 × 100..320, its middle
+    // (230, 210). The first box's middle (140, 120) goes to (320, 120), and each is turned too.
+    run(&mut s, "arrange.rotate", json!({"direction": "right", "about": "selection"}));
+    let turned = frames(&mut s);
+    assert!(turned.iter().all(|f| f.1 == 90), "{turned:?}");
+    let middles: Vec<(i32, i32)> = turned.iter().map(|(r, ..)| (r[0] + r[2] / 2, r[1] + r[3] / 2)).collect();
+    // (330, 130) goes to (310, 310), and (150, 310) to (130, 130).
+    let mut middles = middles;
+    middles.sort();
+    assert_eq!(middles, vec![(130, 130), (310, 310), (320, 120)]);
+    // A quarter back by the exact angle: where they began.
+    run(&mut s, "arrange.rotation", json!({"by": -90, "about": "selection"}));
+    assert_eq!(frames(&mut s), vec![([100, 100, 80, 40], 0, false), ([100, 300, 100, 20], 0, false), ([300, 100, 60, 60], 0, false)]);
+    // Mirrored as one block: left to right across x = 230, each flipped.
+    run(&mut s, "arrange.rotate", json!({"direction": "flipHorizontal", "about": "selection"}));
+    assert_eq!(frames(&mut s), vec![([100, 100, 60, 60], 0, true), ([260, 300, 100, 20], 0, true), ([280, 100, 80, 40], 0, true)]);
+    run(&mut s, "arrange.rotate", json!({"direction": "flipHorizontal", "about": "selection"}));
+    // A turned drawing resized keeps the kept corner where it is on the page.
+    run(&mut s, "arrange.rotation", json!({"by": 30, "about": "selection"}));
+    let corner = |s: &mut Session| -> Vec<(i32, i32)> {
+        let layout = s.layout();
+        let mut out: Vec<(i32, i32)> = drawings(s)
+            .iter()
+            .filter_map(|(pos, _)| layout.object(pos, 0))
+            .map(|h| {
+                let r = h.rect;
+                let (x, y) = h.spin.apply(r.x + r.w / 2.0, r.y + r.h / 2.0, r.x, r.y);
+                (x.round() as i32, y.round() as i32)
+            })
+            .collect();
+        out.sort();
+        out
+    };
+    let before = corner(&mut s);
+    run(&mut s, "arrange.scale", json!({"x": 1.5, "y": 2, "keep": [0, 0]}));
+    assert_eq!(corner(&mut s), before, "each one's top left corner stays where it is on the page");
+    assert!(frames(&mut s).iter().all(|f| f.1 == 30));
+    // Factors and points that are none are refused; a tiny factor stops at the least size.
+    for junk in [
+        json!({"x": 0}),
+        json!({"x": 1000}),
+        json!({"y": -1}),
+        json!({"x": 1e9}),
+        json!({"keep": [2, 0]}),
+        json!({"keep": "corner"}),
+        json!({"keep": [0.5]}),
+    ] {
+        assert!(s.run("arrange.scale", &junk).is_err(), "{junk}");
+    }
+    assert!(s.run("arrange.rotation", &json!({"about": "selection"})).is_err(), "no `by`");
+    run(&mut s, "arrange.scale", json!({"x": 0.01, "y": 0.01}));
+    assert!(frames(&mut s).iter().all(|(r, ..)| r[2] >= 1 && r[3] >= 1), "{:?}", frames(&mut s));
+    // With nothing selected there is nothing to resize.
+    run(&mut s, "select.range", json!({"anchor": {"story": "body", "path": [0], "off": 0}, "focus": {"story": "body", "path": [0], "off": 0}}));
+    assert!(s.run("arrange.scale", &json!({"x": 2})).is_err());
+}
+
 /// While a shape is dragged, the label of a connector glued to it is shown where it will be: on
 /// the middle of the connector's new path. It stayed where it was until the drop.
 #[test]
