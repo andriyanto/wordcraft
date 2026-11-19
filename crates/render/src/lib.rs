@@ -357,8 +357,7 @@ pub fn background_at(doc: &Document, page: &Page, opts: &RenderOptions, x: f32, 
 // Sample the same inset silhouettes and paints used by the raster and PDF.
 fn soft_fill_alpha(
     rect: wordcraft_geom::Rect,
-    kind: ShapeKind,
-    corner: Option<u32>,
+    (kind, corner, preset): (ShapeKind, Option<u32>, Option<&wordcraft_doc::connector::PresetGeom>),
     radius: f32,
     fill: &wordcraft_layout::display::Paint,
     p: wordcraft_geom::Point,
@@ -369,7 +368,7 @@ fn soft_fill_alpha(
     let mut opacity = 0.0;
     for (grow, paint) in fill.soft_bands(radius) {
         let inset = frame.inflate(grow as f64, grow as f64);
-        if inset.width() > 0.0 && inset.height() > 0.0 && kurbo::Shape::contains(&shape_path(kind, inset, corner), point) {
+        if inset.width() > 0.0 && inset.height() > 0.0 && kurbo::Shape::contains(&shape_path_with(kind, preset, inset, corner), point) {
             opacity += (1.0 - opacity) * paint.at(p.x, p.y).1;
         }
     }
@@ -385,14 +384,17 @@ fn blend_backgrounds(items: &[Draw], p: wordcraft_geom::Point, opts: &RenderOpti
             Draw::Fill { rect, color, alpha, .. } if rect.contains(p) => (*color, *alpha),
             // The shape's own outline (an ellipse's corners are not inside it), in its fill's
             // colour and opacity there (#1500: gradients and transparency).
-            Draw::Shape { rect, kind, fill: Some(fill), corner, effects, .. }
+            Draw::Shape { rect, kind, fill: Some(fill), corner, preset, effects, .. }
                 if *kind != ShapeKind::Line && rect.contains(p) && {
                     let r = kurbo::Rect::new(rect.x as f64, rect.y as f64, rect.right() as f64, rect.bottom() as f64);
-                    kurbo::Shape::contains(&shape_path(*kind, r, *corner), kurbo::Point::new(p.x as f64, p.y as f64))
+                    kurbo::Shape::contains(&shape_path_with(*kind, preset.as_deref(), r, *corner), kurbo::Point::new(p.x as f64, p.y as f64))
                 } =>
             {
                 let (color, alpha) = fill.at(p.x, p.y);
-                let alpha = effects.sanitized().soft_edge.map_or(alpha, |radius| soft_fill_alpha(*rect, *kind, *corner, radius, fill, p));
+                let alpha = effects
+                    .sanitized()
+                    .soft_edge
+                    .map_or(alpha, |radius| soft_fill_alpha(*rect, (*kind, *corner, preset.as_deref()), radius, fill, p));
                 (color, alpha)
             }
             Draw::Clip { rect, items } if rect.contains(p) => {
@@ -951,10 +953,11 @@ fn draw_ink(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
 }
 
 /// A shape's outline and how it is painted, for its shadow, glow and soft edges.
-struct ShapeGeom {
+struct ShapeGeom<'a> {
     r: kurbo::Rect,
     kind: ShapeKind,
     corner: Option<u32>,
+    preset: Option<&'a wordcraft_doc::connector::PresetGeom>,
     can_fill: bool,
     stroked: bool,
 }
@@ -969,11 +972,11 @@ fn shape_shadow_and_glow(ctx: &mut RenderContext, fr: &Frame, (geom, sw): (&Shap
             let grow = g + if geom.stroked { sw / 2.0 } else { 0.0 };
             let rr = r.inflate(grow, grow) + d;
             if rr.width() > 0.0 && rr.height() > 0.0 {
-                ctx.fill_path(&shape_path(geom.kind, rr, geom.corner));
+                ctx.fill_path(&shape_path_with(geom.kind, geom.preset, rr, geom.corner));
             }
         } else if sw + 2.0 * g > 0.05 {
             ctx.set_stroke(kurbo::Stroke::new(sw + 2.0 * g));
-            ctx.stroke_path(&shape_path(geom.kind, r + d, geom.corner));
+            ctx.stroke_path(&shape_path_with(geom.kind, geom.preset, r + d, geom.corner));
         }
     };
     if let Some(sh) = fx.shadow {
@@ -997,18 +1000,25 @@ fn shape_soft_edges(ctx: &mut RenderContext, fr: &Frame, geom: &ShapeGeom, (rad,
         let rr = geom.r.inflate(g as f64, g as f64);
         if rr.width() > 0.0 && rr.height() > 0.0 {
             set_paint(ctx, &paint, fr.opts);
-            ctx.fill_path(&shape_path(geom.kind, rr, geom.corner));
+            ctx.fill_path(&shape_path_with(geom.kind, geom.preset, rr, geom.corner));
         }
     }
 }
 
 fn draw_shape(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
-    let Draw::Shape { rect, kind, fill, stroke, stroke_width, effects, corner, dash, cap } = it else { return };
+    let Draw::Shape { rect, kind, fill, stroke, stroke_width, effects, corner, preset, dash, cap } = it else { return };
     let r = kurbo_rect(rect);
-    let path = shape_path(*kind, r, *corner);
+    let path = shape_path_with(*kind, preset.as_deref(), r, *corner);
     ctx.set_transform(fr.view);
     let fx = effects.sanitized();
-    let geom = ShapeGeom { r, kind: *kind, corner: *corner, can_fill: *kind != ShapeKind::Line && fill.is_some(), stroked: stroke.is_some() };
+    let geom = ShapeGeom {
+        r,
+        kind: *kind,
+        corner: *corner,
+        preset: preset.as_deref(),
+        can_fill: *kind != ShapeKind::Line && fill.is_some(),
+        stroked: stroke.is_some(),
+    };
     if !fx.is_empty() && (geom.can_fill || geom.stroked) {
         let sw = if stroke_width.is_finite() { stroke_width.clamp(0.25, 200.0) as f64 } else { 0.75 };
         shape_shadow_and_glow(ctx, fr, (&geom, sw), &fx);
@@ -1061,6 +1071,26 @@ fn screen_cap(cap: wordcraft_doc::connector::LineCap) -> kurbo::Cap {
         wordcraft_doc::connector::LineCap::Square => kurbo::Cap::Square,
         wordcraft_doc::connector::LineCap::Round => kurbo::Cap::Round,
     }
+}
+
+/// Outline of a shape in a rectangle: that of the preset geometry it keeps, where
+/// [`wordcraft_doc::preset::outline`] draws that preset; else its kind's ([`shape_path`]).
+pub fn shape_path_with(kind: ShapeKind, preset: Option<&wordcraft_doc::connector::PresetGeom>, r: kurbo::Rect, corner: Option<u32>) -> BezPath {
+    use wordcraft_doc::graphic::PathSeg;
+    let Some(segs) = preset.and_then(|p| wordcraft_doc::preset::outline(p, r.width() as f32, r.height() as f32)) else {
+        return shape_path(kind, r, corner);
+    };
+    let at = |x: f32, y: f32| (r.x0 + f64::from(x), r.y0 + f64::from(y));
+    let mut path = BezPath::new();
+    for seg in segs {
+        match seg {
+            PathSeg::Move(x, y) => path.move_to(at(x, y)),
+            PathSeg::Line(x, y) => path.line_to(at(x, y)),
+            PathSeg::Cubic(a, b, c, d, e, f) => path.curve_to(at(a, b), at(c, d), at(e, f)),
+            PathSeg::Close => path.close_path(),
+        }
+    }
+    path
 }
 
 /// Outline of a basic shape in a rectangle; `corner` is a rounded rectangle's

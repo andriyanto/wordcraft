@@ -305,6 +305,21 @@ impl Body<'_> {
             wordcraft_doc::connector::site_point(pl.0, pl.1, pl.2.spin(), site)
         };
         let (Some((x1, y1)), Some((x2, y2))) = (point(sp, s.site), point(ep, e.site)) else { return };
+        // A bent or curved connector leaves its shapes away from the sides it is glued to, as
+        // ODF's own do: between a bottom and a top it runs down, across, down (a quarter-turned
+        // frame). A route that needs more than the plain three runs is left to the first
+        // re-route, which keeps the preset this model has no place for.
+        use wordcraft_doc::connector::{RouteEnd, Was, route_connector, site_way_out};
+        let way =
+            |pl: &(wordcraft_doc::para::ShapeKind, [f32; 4], wordcraft_doc::para::Float, usize), site| site_way_out(pl.0, pl.1, pl.2.spin(), site);
+        let routed =
+            route_connector(*kind, RouteEnd { at: (x1, y1), out: way(sp, s.site) }, RouteEnd { at: (x2, y2), out: way(ep, e.site) }, Was::default());
+        if routed.preset.is_none() && routed.rot != 0.0 && routed.frame.w <= MAX_LEN && routed.frame.h <= MAX_LEN {
+            let to = routed.frame;
+            (f.x, f.y, f.flip_h, f.flip_v, f.rot) = (to.x, to.y, to.flip_h, to.flip_v, routed.rot);
+            (*w, *h) = (to.w, to.h);
+            return;
+        }
         (f.x, f.y, f.flip_h, f.flip_v) = (x1.min(x2), y1.min(y2), x2 < x1, y2 < y1);
         (*w, *h) = ((x2 - x1).abs().min(MAX_LEN), (y2 - y1).abs().min(MAX_LEN));
     }

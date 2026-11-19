@@ -382,6 +382,7 @@ fn emphasis_mark(mark: wordcraft_doc::props::EmphasisMark, cx: f32, base: f32, s
         cap: Default::default(),
         effects: Default::default(),
         corner: None,
+        preset: None,
     };
     match mark {
         E::Circle => disc(r * 1.3, false),
@@ -780,6 +781,7 @@ fn enclosures(ctx: &LineContext<'_, '_, '_>, out: &mut Vec<Draw>) {
             stroke_width: enclosure.stroke,
             effects: Default::default(),
             corner: None,
+            preset: None,
             dash: Vec::new(),
             cap: Default::default(),
         });

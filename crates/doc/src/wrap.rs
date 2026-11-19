@@ -122,6 +122,24 @@ pub fn shape_outline(kind: ShapeKind, w: f32, h: f32, corner: Option<u32>) -> Op
     Some(pts)
 }
 
+/// A shape's outline for text to wrap around: that of the preset geometry it keeps, where
+/// [`crate::preset`] draws that preset; else its kind's ([`shape_outline`]).
+pub fn outline_of(kind: ShapeKind, preset: Option<&crate::connector::PresetGeom>, w: f32, h: f32, corner: Option<u32>) -> Option<Vec<(f32, f32)>> {
+    if kind.is_open() || kind == ShapeKind::Freeform {
+        return shape_outline(kind, w, h, corner);
+    }
+    preset.and_then(|p| crate::preset::unit_outline(p, w, h)).or_else(|| shape_outline(kind, w, h, corner))
+}
+
+/// The room a shape gives its text: that of the preset geometry it keeps, where
+/// [`crate::preset`] draws that preset; else its kind's ([`text_insets`]).
+pub fn text_insets_of(kind: ShapeKind, preset: Option<&crate::connector::PresetGeom>, w: f32, h: f32, corner: Option<u32>) -> [f32; 4] {
+    if kind.is_open() || kind == ShapeKind::Freeform {
+        return text_insets(kind, w, h, corner);
+    }
+    preset.and_then(|p| crate::preset::text_insets(p, w, h)).unwrap_or_else(|| text_insets(kind, w, h, corner))
+}
+
 /// The room a `kind` shape gives its text: how far inside its `w` × `h` frame the text rectangle
 /// lies, as (left, top, right, bottom) in the frame's units, before the text's own internal
 /// margins. Zero on every side where the text fills the frame (rectangles, text boxes). The

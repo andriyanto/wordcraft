@@ -7687,6 +7687,89 @@ fn a_moved_connector_run_stays_where_it_was_put() {
     assert!(s.run("shape.bend", &json!({"value": 10})).is_err());
 }
 
+/// Every shape of the gallery can be inserted by name, is drawn from its own outline, and is
+/// saved to DOCX and read back as itself. The gallery had nine shapes; a preset beyond a kind's
+/// own (a hexagon, a flowchart document) could come from a file only, and was shown as a
+/// rectangle.
+#[test]
+fn the_gallery_shapes_are_inserted_drawn_and_saved_as_themselves() {
+    use wordcraft_doc::InlineObject;
+    use wordcraft_layout::display::Draw;
+    let look = |d: &wordcraft_doc::Document| {
+        let para = d.body.first().and_then(|b| b.as_para()).expect("a paragraph");
+        match para.objects.first() {
+            Some(InlineObject::Shape { kind, extra, .. }) => (*kind, extra.preset.as_deref().map(|p| p.name.clone())),
+            o => panic!("{o:?}"),
+        }
+    };
+    for shape in wordcraft_doc::preset::LIBRARY {
+        if shape.name == "line" {
+            continue;
+        }
+        let mut s = s();
+        run(&mut s, "insert.shape", json!({"kind": shape.name, "x": 100, "y": 100, "page": 0, "width": 120, "height": 80}));
+        let (kind, preset) = look(&s.doc);
+        let named = cmd::objects::named_shape(shape.name).unwrap();
+        assert_eq!((kind, preset.clone()), (named.0, named.1.as_deref().map(|p| p.name.clone())), "{}", shape.name);
+        // Drawn from the preset's outline where the library has one, else as its kind.
+        let layout = s.layout();
+        let draws = wordcraft_layout::display::page_display(&s.doc, &layout.pages[0], &Default::default());
+        fn shapes(items: &[Draw], out: &mut Vec<Option<String>>) {
+            for it in items {
+                match it {
+                    Draw::Shape { preset, .. } => out.push(preset.as_deref().map(|p| p.name.clone())),
+                    Draw::Clip { items, .. } | Draw::Rotated { items, .. } | Draw::Turned { items, .. } => shapes(items, out),
+                    _ => {}
+                }
+            }
+        }
+        let mut drawn = Vec::new();
+        shapes(&draws, &mut drawn);
+        let outlined = named.1.as_deref().is_some_and(wordcraft_doc::preset::has_outline);
+        assert_eq!(drawn, vec![preset.clone().filter(|_| outlined)], "{}", shape.name);
+        // Saved and read back.
+        let bytes = wordcraft_docx::write(&s.doc).unwrap();
+        assert_eq!(look(&wordcraft_docx::read(&bytes).unwrap()), (kind, preset), "{} survives saving", shape.name);
+    }
+    // A name that is no shape is refused, whatever it is.
+    let mut s = s();
+    for junk in [json!("cloudOfSmoke"), json!(""), json!("x".repeat(5000)), json!(7), json!(null), json!({"a": 1}), json!("bentConnector9")] {
+        assert!(s.run("insert.shape", &json!({"kind": junk})).is_err(), "{junk}");
+    }
+    assert!(s.doc.body.first().and_then(|b| b.as_para()).is_some_and(|p| p.objects.is_empty()));
+}
+
+/// Change Shape makes a shape another one, a preset of the gallery too, and the new shape's own
+/// preset replaces the one it kept. Connectors glued to a shape whose sides slant meet its
+/// outline, not its frame.
+#[test]
+fn changing_a_shape_to_a_gallery_preset_keeps_it_and_moves_its_connectors() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 120, "height": 80}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 120, "height": 80}));
+    run(&mut s, "insert.shape", json!({"kind": "straightConnector", "x": 222, "y": 140, "x1": 398, "y1": 140, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(220, 140), (400, 140)]);
+    // The first box made a parallelogram: its right side slants in by 10 pt at mid-height.
+    select_drawing(&mut s, Some((160.0, 140.0)));
+    run(&mut s, "shape.change", json!({"kind": "parallelogram"}));
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    assert!(
+        matches!(&obj, wordcraft_doc::InlineObject::Shape { extra, .. } if extra.preset.as_deref().is_some_and(|p| p.name == "parallelogram")),
+        "{obj:?}"
+    );
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(210, 140), (400, 140)], "the connector follows the slanted side");
+    // Made an oval: a kind's own shape, the kept preset gone.
+    select_drawing(&mut s, Some((160.0, 140.0)));
+    run(&mut s, "shape.change", json!({"kind": "ellipse"}));
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    assert!(
+        matches!(&obj, wordcraft_doc::InlineObject::Shape { kind: wordcraft_doc::para::ShapeKind::Ellipse, extra, .. } if extra.preset.is_none()),
+        "{obj:?}"
+    );
+    assert!(s.run("shape.change", &json!({"kind": "noSuchShape"})).is_err());
+}
+
 /// Typing with a shape selected types in the shape, as in Word: it replaced the shape with the
 /// letters before. The shape gets a text of its own: centred, in the middle of the shape, white
 /// on the dark fill a new shape has. One undo step takes the text and the typing back.

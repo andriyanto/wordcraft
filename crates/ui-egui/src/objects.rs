@@ -1008,8 +1008,10 @@ fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, 
         for it in &pg.items {
             let wordcraft_layout::Placed::Object { rect, spin, story: StoryRef::Body, path, off, .. } = it else { continue };
             let pos = Pos { story: StoryRef::Body, path: path.clone(), off: *off };
-            let Some(InlineObject::Shape { kind, .. }) = app.session.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)) else { continue };
-            if kind.is_connector() || pos == d.object.pos() {
+            let Some(shape) = app.session.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).and_then(wordcraft_doc::connector::Glued::of) else {
+                continue;
+            };
+            if shape.kind.is_connector() || pos == d.object.pos() {
                 continue;
             }
             let r = [rect.x, rect.y, rect.w, rect.h];
@@ -1017,8 +1019,8 @@ fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, 
             if at.0 < rect.x - 4.0 * snap || at.0 > rect.right() + 4.0 * snap || at.1 < rect.y - 4.0 * snap || at.1 > rect.bottom() + 4.0 * snap {
                 continue;
             }
-            for (i, _) in wordcraft_doc::connector::sites(*kind, rect.w, rect.h).iter().enumerate() {
-                let Some(p) = wordcraft_doc::connector::site_point(*kind, r, *spin, i as u32) else { continue };
+            for (i, _) in wordcraft_doc::connector::shape_sites(shape, rect.w, rect.h).iter().enumerate() {
+                let Some(p) = wordcraft_doc::connector::site_point(shape, r, *spin, i as u32) else { continue };
                 let dist = ((p.0 - at.0).powi(2) + (p.1 - at.1).powi(2)).sqrt();
                 if let Some(c) = point_on_screen(pages, scale, d.object.page, p) {
                     painter.circle_stroke(c, 3.5, egui::Stroke::new(1.0, t.accent));

@@ -363,31 +363,65 @@ pub fn sites(kind: ShapeKind, w: f32, h: f32) -> Vec<(f32, f32)> {
     }
 }
 
-/// Site `site` of a `kind` shape with frame `rect` (x, y, w, h) on the page, turned and flipped by
+/// A shape as connectors see it: its kind, and the preset geometry it keeps (its sites are on
+/// that preset's outline where [`crate::preset`] draws it).
+#[derive(Clone, Copy, Debug)]
+pub struct Glued<'a> {
+    pub kind: ShapeKind,
+    pub preset: Option<&'a PresetGeom>,
+}
+
+impl<'a> Glued<'a> {
+    /// The shape `obj` as connectors see it; `None` for anything but a shape.
+    pub fn of(obj: &'a InlineObject) -> Option<Glued<'a>> {
+        match obj {
+            InlineObject::Shape { kind, extra, .. } => Some(Glued { kind: *kind, preset: extra.preset.as_deref() }),
+            _ => None,
+        }
+    }
+}
+
+impl From<ShapeKind> for Glued<'_> {
+    fn from(kind: ShapeKind) -> Self {
+        Glued { kind, preset: None }
+    }
+}
+
+/// The connection sites of `shape` in a `w` × `h` frame, by index: on the outline of the preset
+/// it keeps (above, left of, below and right of its middle, a rectangle's order), else its
+/// kind's ([`sites`]).
+pub fn shape_sites<'a>(shape: impl Into<Glued<'a>>, w: f32, h: f32) -> Vec<(f32, f32)> {
+    let shape = shape.into();
+    let (w, h) = (wordcraft_geom::finite(w), wordcraft_geom::finite(h));
+    shape.preset.filter(|_| !shape.kind.is_open()).and_then(|p| crate::preset::side_sites(p, w, h)).unwrap_or_else(|| sites(shape.kind, w, h))
+}
+
+/// Site `site` of `shape` with frame `rect` (x, y, w, h) on the page, turned and flipped by
 /// `spin` about its centre. `None` for a site the shape doesn't have.
-pub fn site_point(kind: ShapeKind, rect: [f32; 4], spin: wordcraft_geom::Spin, site: u32) -> Option<(f32, f32)> {
+pub fn site_point<'a>(shape: impl Into<Glued<'a>>, rect: [f32; 4], spin: wordcraft_geom::Spin, site: u32) -> Option<(f32, f32)> {
     let [x, y, w, h] = rect;
-    let (sx, sy) = *sites(kind, w, h).get(site as usize)?;
+    let (sx, sy) = *shape_sites(shape, w, h).get(site as usize)?;
     let (cx, cy) = (x + w / 2.0, y + h / 2.0);
     let (px, py) = spin.apply(cx, cy, x + sx, y + sy);
     (px.is_finite() && py.is_finite()).then_some((px, py))
 }
 
-/// The site of a `kind` shape (frame `rect`, `spin`) nearest to page point `at`: its index, point
-/// and distance.
-pub fn nearest_site(kind: ShapeKind, rect: [f32; 4], spin: wordcraft_geom::Spin, at: (f32, f32)) -> Option<(u32, (f32, f32), f32)> {
-    let n = sites(kind, rect[2], rect[3]).len() as u32;
+/// The site of `shape` (frame `rect`, `spin`) nearest to page point `at`: its index, point and
+/// distance.
+pub fn nearest_site<'a>(shape: impl Into<Glued<'a>>, rect: [f32; 4], spin: wordcraft_geom::Spin, at: (f32, f32)) -> Option<(u32, (f32, f32), f32)> {
+    let shape = shape.into();
+    let n = shape_sites(shape, rect[2], rect[3]).len() as u32;
     (0..n)
-        .filter_map(|i| site_point(kind, rect, spin, i).map(|p| (i, p, ((p.0 - at.0).powi(2) + (p.1 - at.1).powi(2)).sqrt())))
+        .filter_map(|i| site_point(shape, rect, spin, i).map(|p| (i, p, ((p.0 - at.0).powi(2) + (p.1 - at.1).powi(2)).sqrt())))
         .min_by(|a, b| a.2.total_cmp(&b.2))
 }
 
-/// The way out of a `kind` shape (frame `rect`, `spin`) at its site `site`: the direction from
+/// The way out of `shape` (frame `rect`, `spin`) at its site `site`: the direction from
 /// the shape's middle to the site, as a unit vector along the page's x or y axis (the nearer
 /// one). A connector glued there leaves the shape that way. `None` for a site the shape doesn't
 /// have, or one in its middle.
-pub fn site_way_out(kind: ShapeKind, rect: [f32; 4], spin: wordcraft_geom::Spin, site: u32) -> Option<(f32, f32)> {
-    let (px, py) = site_point(kind, rect, spin, site)?;
+pub fn site_way_out<'a>(shape: impl Into<Glued<'a>>, rect: [f32; 4], spin: wordcraft_geom::Spin, site: u32) -> Option<(f32, f32)> {
+    let (px, py) = site_point(shape, rect, spin, site)?;
     let [x, y, w, h] = rect;
     axis_direction((px - (x + w / 2.0), py - (y + h / 2.0)))
 }
@@ -451,10 +485,14 @@ pub fn reroute_group(group: &mut InlineObject) -> bool {
     // Match group_rects: invalid child extents use unit scale; invalid display extents become zero.
     let sx = if fin(*ch_w) > 0.0 { fin(*w) / *ch_w } else { 1.0 };
     let sy = if fin(*ch_h) > 0.0 { fin(*h) / *ch_h } else { 1.0 };
-    let shapes: Vec<(u32, ShapeKind, [f32; 4], wordcraft_geom::Spin)> = children
+    // (id, kind, kept preset, frame, spin) of each shape a connector may be glued to.
+    type Target = (u32, ShapeKind, Option<std::sync::Arc<PresetGeom>>, [f32; 4], wordcraft_geom::Spin);
+    let shapes: Vec<Target> = children
         .iter()
         .filter_map(|c| match &c.obj {
-            InlineObject::Shape { kind, w, h, float, extra, .. } if extra.id != 0 => Some((extra.id, *kind, [c.x, c.y, *w, *h], float.spin())),
+            InlineObject::Shape { kind, w, h, float, extra, .. } if extra.id != 0 => {
+                Some((extra.id, *kind, extra.preset.clone(), [c.x, c.y, *w, *h], float.spin()))
+            }
             _ => None,
         })
         .collect();
@@ -463,8 +501,9 @@ pub fn reroute_group(group: &mut InlineObject) -> bool {
     }
     let find = |e: Option<ConnEnd>| {
         let e = e?;
-        let (_, kind, rect, spin) = shapes.iter().find(|s| s.0 == e.id)?;
-        Some(RouteEnd { at: site_point(*kind, *rect, *spin, e.site)?, out: site_way_out(*kind, *rect, *spin, e.site) })
+        let (_, kind, preset, rect, spin) = shapes.iter().find(|s| s.0 == e.id)?;
+        let shape = Glued { kind: *kind, preset: preset.as_deref() };
+        Some(RouteEnd { at: site_point(shape, *rect, *spin, e.site)?, out: site_way_out(shape, *rect, *spin, e.site) })
     };
     let scaled = sx.is_finite() && sy.is_finite() && sx > 0.0 && sy > 0.0;
     let mut moved = false;

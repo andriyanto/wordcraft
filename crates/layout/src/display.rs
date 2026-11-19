@@ -104,6 +104,9 @@ pub enum Draw {
         effects: wordcraft_doc::effects::ShapeEffects,
         /// A rounded rectangle's corner ([`wordcraft_doc::connector::ShapeExtra::corner`]).
         corner: Option<u32>,
+        /// The preset geometry the shape keeps, when its outline is drawn from it
+        /// ([`wordcraft_doc::preset::outline`]) and not from `kind`.
+        preset: Option<std::sync::Arc<wordcraft_doc::connector::PresetGeom>>,
     },
     /// An ink stroke: a line through `pts` (page points) with round ends and joins, `width`
     /// wide, in `color` at opacity `alpha`.

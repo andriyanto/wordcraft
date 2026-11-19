@@ -384,6 +384,18 @@ fn drawing_inline(doc: &Document, o: &InlineObject, opts: FlowOpts, depth: usize
                 }),
             };
             let path = freeform.clone().filter(|_| kind == ShapeKind::Freeform);
+            // A preset shape drawn from its own outline (a hexagon, a flowchart document) has no
+            // name where shapes are saved by kind: there it is saved as the outline it has, a
+            // freeform, instead of the rectangle or other shape its kind is.
+            let outlined = extra
+                .preset
+                .as_deref()
+                .filter(|_| opts.boxes && path.is_none() && !kind.is_open() && look.geometry.is_none())
+                .and_then(|p| wordcraft_doc::preset::freeform(p, *w, *h));
+            let (kind, path) = match outlined {
+                Some(f) => (ShapeKind::Freeform, Some(std::sync::Arc::new(f))),
+                None => (kind, path),
+            };
             Some(Inline::Shape { kind, w: w * sx, h: h * sy, float: kept_float(float), blocks, look, path })
         }
         InlineObject::Image { media, w, h, alt, float, ole, crop, .. } => {

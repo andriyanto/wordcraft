@@ -54,6 +54,7 @@ pub fn check_box(frame: Rect, checked: bool, color: Rgb, alpha: f32, out: &mut V
         stroke_width: 0.72,
         effects: Default::default(),
         corner: None,
+        preset: None,
         dash: Vec::new(),
         cap: Default::default(),
     });

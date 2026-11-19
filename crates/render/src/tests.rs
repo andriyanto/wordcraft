@@ -99,6 +99,7 @@ fn background_follows_a_shapes_outline_not_its_box() {
         stroke_width: 0.0,
         effects: Default::default(),
         corner: None,
+        preset: None,
         dash: Vec::new(),
         cap: Default::default(),
     };
@@ -1524,4 +1525,27 @@ fn undecodable_pictures_keep_their_grey_box_pixels() {
     // FNV-1a of the pixels, recorded before the shared decode check existed.
     let h = img.pixels.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3));
     assert_eq!(h, 0x79f9f1d3602a9925, "{h:#x}");
+}
+
+/// A shape that keeps a preset geometry is drawn as that preset, where the library has its
+/// outline: a hexagon was drawn as the rectangle its kind is. Its shadow, glow and soft edges
+/// take the same outline, and the paper showing through its corners is not its fill.
+#[test]
+fn a_kept_preset_is_drawn_as_itself() {
+    use wordcraft_doc::connector::PresetGeom;
+    let r = kurbo::Rect::new(100.0, 50.0, 220.0, 130.0);
+    let hexagon = PresetGeom::new("hexagon", []).unwrap();
+    let path = shape_path_with(ShapeKind::Rectangle, Some(&hexagon), r, None);
+    let inside = |p: (f64, f64)| kurbo::Shape::contains(&path, kurbo::Point::new(p.0, p.1));
+    assert!(inside((160.0, 90.0)), "its middle");
+    assert!(!inside((103.0, 53.0)) && !inside((217.0, 127.0)), "its frame's corners are outside it");
+    assert!(inside((103.0, 90.0)), "its side points reach the frame");
+    // A preset with no outline in the library is drawn as its kind, as before.
+    let cloud = PresetGeom::new("cloud", []).unwrap();
+    assert_eq!(shape_path_with(ShapeKind::Ellipse, Some(&cloud), r, None).elements(), shape_path(ShapeKind::Ellipse, r, None).elements());
+    assert_eq!(shape_path_with(ShapeKind::Diamond, None, r, None).elements(), shape_path(ShapeKind::Diamond, r, None).elements());
+    // A frame's opening is not filled.
+    let frame = PresetGeom::new("frame", []).unwrap();
+    let path = shape_path_with(ShapeKind::Rectangle, Some(&frame), r, None);
+    assert!(kurbo::Shape::contains(&path, kurbo::Point::new(103.0, 90.0)) && !kurbo::Shape::contains(&path, kurbo::Point::new(160.0, 90.0)));
 }

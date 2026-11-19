@@ -51,6 +51,22 @@ pub(super) fn shape_format(app: &mut WordApp, ui: &mut Ui) {
         _ => (None, None, None),
     };
     let theme = app.session.doc.settings.theme_colors.clone();
+    group(ui, "Insert Shapes", None, app, |ui, app| {
+        stack(ui, |ui| {
+            menu_button(ui, app, crate::widgets::MenuButtonOptions::new("shapes", Some("Shapes"), "Shapes", false, "insert.shape"), |ui, app| {
+                super::insert::shape_gallery_for(ui, app, super::insert::GalleryUse::Draw);
+            });
+            // The selected shape made another one: it keeps its size, colours, text and connectors.
+            menu_button(
+                ui,
+                app,
+                crate::widgets::MenuButtonOptions::new("shapes", Some("Change Shape"), "Change Shape", false, "shape.change"),
+                |ui, app| {
+                    super::insert::shape_gallery_for(ui, app, super::insert::GalleryUse::Change);
+                },
+            );
+        });
+    });
     group(ui, "Shape Styles", None, app, |ui, app| {
         stack(ui, |ui| {
             menu_button(
