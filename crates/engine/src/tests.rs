@@ -7853,6 +7853,167 @@ fn a_connector_follows_a_shape_that_was_grouped() {
     assert!(!cmd::connectors::reroute(&mut s), "nothing left to settle");
 }
 
+/// Align with `to`: each selected floating drawing goes to that side of the page, or of the area
+/// inside its margins, and keeps its place the other way. Several selected align with each
+/// other without it, as before.
+#[test]
+fn drawings_align_to_the_page_or_its_margins() {
+    let mut s = s();
+    for (x, y, w, h) in [(100, 100, 80, 40), (220, 160, 60, 60), (400, 120, 100, 30)] {
+        run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": x, "y": y, "page": 0, "width": w, "height": h}));
+    }
+    let frames = |s: &mut Session| -> Vec<[i32; 4]> {
+        let layout = s.layout();
+        let mut out: Vec<[i32; 4]> = drawings(s)
+            .iter()
+            .filter_map(|(pos, _)| layout.object(pos, 0))
+            .map(|h| [h.rect.x, h.rect.y, h.rect.w, h.rect.h].map(|v| v.round() as i32))
+            .collect();
+        out.sort_by_key(|f| f[2]);
+        out
+    };
+    let sect = cmd::page::sect(&s);
+    let (pw, ph) = (sect.page_w.round() as i32, sect.page_h.round() as i32);
+    let (ml, mt, mr, mb) =
+        (sect.margin_left.round() as i32, sect.margin_top.round() as i32, sect.margin_right.round() as i32, sect.margin_bottom.round() as i32);
+    run(&mut s, "select.objects", json!({"x": 50, "y": 50, "width": 500, "height": 300, "page": 0}));
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3);
+    // Each to the page's right edge; none moves up or down.
+    run(&mut s, "arrange.align", json!({"value": "right", "to": "page"}));
+    assert_eq!(frames(&mut s), vec![[pw - 60, 160, 60, 60], [pw - 80, 100, 80, 40], [pw - 100, 120, 100, 30]]);
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3, "still selected together");
+    // To the page's middle, down the page.
+    run(&mut s, "arrange.align", json!({"value": "middle", "to": "page"}));
+    assert_eq!(frames(&mut s), vec![[pw - 60, ph / 2 - 30, 60, 60], [pw - 80, ph / 2 - 20, 80, 40], [pw - 100, ph / 2 - 15, 100, 30]]);
+    // To the margins: left and bottom.
+    run(&mut s, "arrange.align", json!({"value": "left", "to": "margin"}));
+    run(&mut s, "arrange.align", json!({"value": "bottom", "to": "margin"}));
+    assert_eq!(frames(&mut s), vec![[ml, ph - mb - 60, 60, 60], [ml, ph - mb - 40, 80, 40], [ml, ph - mb - 30, 100, 30]]);
+    run(&mut s, "arrange.align", json!({"value": "top", "to": "margin"}));
+    run(&mut s, "arrange.align", json!({"value": "center", "to": "margin"}));
+    let mid = ml + (pw - ml - mr) / 2;
+    assert_eq!(frames(&mut s), vec![[mid - 30, mt, 60, 60], [mid - 40, mt, 80, 40], [mid - 50, mt, 100, 30]]);
+    // One undo step for one alignment.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(frames(&mut s), vec![[ml, mt, 60, 60], [ml, mt, 80, 40], [ml, mt, 100, 30]]);
+    // `selection` is the same as leaving it out; anything else is refused.
+    run(&mut s, "arrange.align", json!({"value": "left", "to": "selection"}));
+    assert!(s.run("arrange.align", &json!({"value": "left", "to": "moon"})).is_err());
+    assert!(s.run("arrange.align", &json!({"value": "left", "to": 7})).is_ok(), "not a word: as if left out");
+    // Turned together: each about its own middle, so each keeps its middle and swaps its sides.
+    run(&mut s, "select.objects", json!({"x": 0, "y": 0, "width": 600, "height": 780, "page": 0}));
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3);
+    let turns = |s: &Session| -> Vec<(f32, bool)> { drawings(s).iter().filter_map(|(_, o)| o.frame().map(|(_, _, f)| (f.rot, f.flip_h))).collect() };
+    run(&mut s, "arrange.rotate", json!({"direction": "right"}));
+    assert_eq!(turns(&s), vec![(90.0, false); 3]);
+    run(&mut s, "arrange.rotate", json!({"direction": "flipHorizontal"}));
+    assert!(turns(&s).iter().all(|t| t.1), "{:?}", turns(&s));
+    run(&mut s, "arrange.rotation", json!({"degrees": 30, "flipH": false}));
+    assert_eq!(turns(&s), vec![(30.0, false); 3]);
+    assert_eq!(cmd::objects::picked_objects(&s).len(), 3, "still selected together");
+    s.run("edit.undo", &json!({})).unwrap();
+    assert!(turns(&s).iter().all(|t| t.1), "one step back for all three: {:?}", turns(&s));
+    run(&mut s, "arrange.rotation", json!({"degrees": 0, "flipH": false}));
+    // One drawing alone goes to the page too.
+    select_drawing(&mut s, Some((ml as f32 + 5.0, mt as f32 + 5.0)));
+    run(&mut s, "arrange.align", json!({"value": "right", "to": "page"}));
+    assert!(frames(&mut s).iter().any(|f| f[0] + f[2] == pw), "{:?}", frames(&mut s));
+}
+
+/// While a shape is dragged, the label of a connector glued to it is shown where it will be: on
+/// the middle of the connector's new path. It stayed where it was until the drop.
+#[test]
+fn a_connectors_label_follows_in_the_drag_preview() {
+    use wordcraft_geom::{Rect, Spin};
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    let second = select_drawing(&mut s, Some((450.0, 130.0)));
+    let layout = s.layout();
+    let to = (0, Rect::new(400.0, 300.0, 100.0, 60.0), Spin::default());
+    assert!(cmd::connectors::follow_labels(&s, &layout, &second, to).is_empty(), "no connector yet");
+    run(&mut s, "insert.shape", json!({"kind": "straightConnector", "x": 202, "y": 130, "x1": 398, "y1": 130, "page": 0}));
+    let second = select_drawing(&mut s, Some((450.0, 130.0)));
+    let layout = s.layout();
+    assert!(cmd::connectors::follow_labels(&s, &layout, &second, to).is_empty(), "a connector with no label");
+    select_drawing(&mut s, None);
+    run(&mut s, "shape.addText", json!({}));
+    run(&mut s, "text.insert", json!({"text": "yes"}));
+    let second = select_drawing(&mut s, Some((450.0, 130.0)));
+    let layout = s.layout();
+    // The second box 200 pt lower: the connector runs from (200, 130) to (400, 330), and the
+    // label's frame is about its middle, (300, 230).
+    let labels = cmd::connectors::follow_labels(&s, &layout, &second, to);
+    assert_eq!(labels.len(), 1, "{labels:?}");
+    let l = labels[0];
+    assert!((l.x + l.w / 2.0 - 300.0).abs() < 0.5 && (l.y + l.h / 2.0 - 230.0).abs() < 0.5, "{l:?}");
+    assert!(l.w > 10.0 && l.h > 5.0, "the label's own size: {l:?}");
+    // The document is not touched, and a frame that is none gives nothing wild.
+    let before = s.doc.clone();
+    for wild in [Rect::new(f32::NAN, 0.0, 100.0, 60.0), Rect::new(1e30, -1e30, 0.0, 0.0)] {
+        let _ = cmd::connectors::follow_labels(&s, &layout, &second, (0, wild, Spin::new(f32::INFINITY, true, true)));
+    }
+    assert!(s.doc == before);
+}
+
+/// A connector drawn to a shape that is already in a group is glued to that shape: its end
+/// snaps to the shape's connection site, the shape gets a drawing id, and the connector follows
+/// when the group moves. An end dropped on a grouped shape stayed free before: only shapes on
+/// their own were looked at.
+#[test]
+fn a_new_connector_glues_to_a_shape_inside_a_group() {
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "ellipse", "x": 400, "y": 300, "page": 0, "width": 100, "height": 60}));
+    let oval = select_drawing(&mut s, Some((450.0, 330.0)));
+    select_drawing(&mut s, Some((450.0, 130.0)));
+    run(&mut s, "select.addObject", json!({"pos": oval}));
+    run(&mut s, "arrange.group", json!({}));
+    assert!(matches!(cmd::objects::selected(&s), Some((_, wordcraft_doc::InlineObject::Group { .. }))));
+    // The group, wherever it now is in its paragraph, and the drawing ids of its members.
+    let group_of = |s: &Session| -> (Pos, Vec<u32>) {
+        let (pos, obj) = drawings(s).into_iter().find(|(_, o)| matches!(o, wordcraft_doc::InlineObject::Group { .. })).expect("the group");
+        let ids = match obj {
+            wordcraft_doc::InlineObject::Group { children, .. } => children
+                .iter()
+                .map(|c| match &c.obj {
+                    wordcraft_doc::InlineObject::Shape { extra, .. } => extra.id,
+                    _ => 0,
+                })
+                .collect(),
+            _ => Vec::new(),
+        };
+        (pos, ids)
+    };
+    // Drawn from beside the first box to beside the box in the group: both ends snap.
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "x": 203, "y": 132, "x1": 396, "y1": 128, "page": 0}));
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 130), (400, 130)]);
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    let wordcraft_doc::InlineObject::Shape { extra, .. } = &obj else { panic!("{obj:?}") };
+    let end = extra.end.expect("glued to the shape in the group");
+    assert!(extra.start.is_some());
+    // The id is the grouped box's own, not the group's.
+    let (group, ids) = group_of(&s);
+    assert_eq!(ids.iter().filter(|id| **id == end.id).count(), 1, "{ids:?} {end:?}");
+    assert_eq!(ids.iter().filter(|id| **id != 0).count(), 1, "only the shape glued to got an id");
+    // The group moves: the connector goes with the box inside it.
+    let after = Pos { off: group.off + '\u{FFFC}'.len_utf8(), ..group.clone() };
+    run(&mut s, "select.range", json!({"anchor": group, "focus": after}));
+    run(&mut s, "arrange.nudge", json!({"dx": 0, "dy": 80}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (300, 130), (300, 210), (400, 210)]);
+    // Its other end dragged onto the oval in the group: glued there too, at the nearest site.
+    run(&mut s, "shape.connect", json!({"start": {"x": 397, "y": 412, "page": 0}}));
+    let (_, obj) = cmd::objects::selected(&s).unwrap();
+    let wordcraft_doc::InlineObject::Shape { extra, .. } = &obj else { panic!("{obj:?}") };
+    assert!(extra.start.is_some_and(|e| e.id != end.id && e.id != 0), "{extra:?}");
+    assert_eq!(connector_corners(&mut s).first(), Some(&(400, 410)), "the oval's left, where the group now is");
+    // One undo step takes the glue and the id back with it.
+    s.run("edit.undo", &json!({})).unwrap();
+    assert_eq!(group_of(&s).1.iter().filter(|id| **id != 0).count(), 1);
+}
+
 /// While a shape is dragged, the connectors glued to it are shown as they will run where it is
 /// dropped (`follow_routes`), a grouped shape's too; the document is not touched until the drop.
 #[test]

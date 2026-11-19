@@ -75,6 +75,16 @@ pub(super) fn several(s: &Session) -> bool {
     picked_objects(s).len() > 1
 }
 
+/// A change to how each of the selected drawings is placed (its turn, its flips): every one
+/// selected, in one step.
+pub(super) fn each_float(s: &mut Session, f: impl Fn(&mut wordcraft_doc::para::Float)) -> CmdResult {
+    let picks: Vec<Pos> = picked_objects(s).into_iter().take(MAX_PICKED).collect();
+    for pos in &picks {
+        edit_float(s, pos, &f)?;
+    }
+    Ok(json!({"changed": picks.len()}))
+}
+
 /// `arrange.nudge` with several drawings selected: they all move by (`dx`, `dy`).
 pub(super) fn nudge_all(s: &mut Session, dx: f32, dy: f32) -> CmdResult {
     let picks: Vec<Pos> = picked_objects(s)
@@ -90,13 +100,42 @@ pub(super) fn nudge_all(s: &mut Session, dx: f32, dy: f32) -> CmdResult {
 /// `arrange.align` with several drawings selected: they line up with each other, on the side
 /// (or through the middle) of the box around them all. The one farthest that way stays.
 pub(super) fn align_all(s: &mut Session, how: &str) -> CmdResult {
+    align_in(s, how, None)
+}
+
+/// `arrange.align` with `to`: the selected floating drawings (one or more) each line up with
+/// that side (or the middle) of the page, or of the area inside its margins. They keep their
+/// places the other way, and those already there stay.
+pub(super) fn align_to(s: &mut Session, how: &str, to: &str) -> CmdResult {
+    let sect = crate::cmd::page::sect(s);
+    let area = match to {
+        "page" => Rect::new(0.0, 0.0, sect.page_w, sect.page_h),
+        // Where the text is: inside the margins (and the gutter, on the side the text starts).
+        "margin" => Rect::new(sect.page_w - sect.margin_right - sect.text_width(), sect.margin_top, sect.text_width(), sect.text_height()),
+        other => return Err(CmdError::Params(format!("`to`: page or margin, not `{}`", other.chars().take(20).collect::<String>()))),
+    };
+    if !(area.x.is_finite() && area.y.is_finite() && area.w.is_finite() && area.h.is_finite()) {
+        return Err(CmdError::Failed("the page has no size to align to".into()));
+    }
+    align_in(s, how, Some(area))
+}
+
+/// The selected floating drawings lined up on a side (or through the middle) of `area`, or,
+/// without one, of the box around them all.
+fn align_in(s: &mut Session, how: &str, area: Option<Rect>) -> CmdResult {
     let found = picked_bounds(s);
-    if found.len() < 2 {
+    if area.is_none() && found.len() < 2 {
         return Err(CmdError::Disabled("select two or more floating pictures or shapes on one page to align them with each other".into()));
+    }
+    if found.is_empty() {
+        return Err(CmdError::Disabled("select a floating picture or shape to align it to the page".into()));
     }
     let lo = |f: fn(&Rect) -> f32| found.iter().map(|(_, b)| f(b)).fold(f32::MAX, f32::min);
     let hi = |f: fn(&Rect) -> f32| found.iter().map(|(_, b)| f(b)).fold(f32::MIN, f32::max);
-    let (left, right, top, bottom) = (lo(|b| b.x), hi(Rect::right), lo(|b| b.y), hi(Rect::bottom));
+    let (left, right, top, bottom) = match area {
+        Some(a) => (a.x, a.right(), a.y, a.bottom()),
+        None => (lo(|b| b.x), hi(Rect::right), lo(|b| b.y), hi(Rect::bottom)),
+    };
     let moves: Vec<(Pos, f32, f32)> = found
         .iter()
         .map(|(pos, b)| {

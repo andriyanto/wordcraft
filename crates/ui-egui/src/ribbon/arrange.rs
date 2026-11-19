@@ -119,6 +119,22 @@ pub(super) fn align_menu(ui: &mut Ui, app: &mut WordApp, label: Option<&str>) {
         mi(ui, app, "Align Middle", "arrange.align", json!({"value": "middle"}));
         mi(ui, app, "Align Bottom", "arrange.align", json!({"value": "bottom"}));
         ui.separator();
+        // Each one selected, to a side of the page or of the area inside its margins.
+        for (label, to) in [("Align to Page", "page"), ("Align to Margin", "margin")] {
+            ui.menu_button(tl!(label), |ui| {
+                for (item, value) in [
+                    ("Align Left", "left"),
+                    ("Align Center", "center"),
+                    ("Align Right", "right"),
+                    ("Align Top", "top"),
+                    ("Align Middle", "middle"),
+                    ("Align Bottom", "bottom"),
+                ] {
+                    mi(ui, app, item, "arrange.align", json!({"value": value, "to": to}));
+                }
+            });
+        }
+        ui.separator();
         // Three or more selected (Shift+click, or Select Objects): the gaps between them made equal.
         mi(ui, app, "Distribute Horizontally", "arrange.distribute", json!({"value": "horizontal"}));
         mi(ui, app, "Distribute Vertically", "arrange.distribute", json!({"value": "vertical"}));

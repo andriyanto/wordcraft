@@ -1086,9 +1086,16 @@ fn paint_following_connectors(app: &WordApp, d: &ObjectDrag, painter: &Painter, 
         return;
     }
     let spin = wordcraft_geom::Spin::new(d.drag.deg, d.object.spin.flip_h, d.object.spin.flip_v);
-    let routes = wordcraft_engine::cmd::connectors::follow_routes(&app.session, layout, &d.object.pos(), (d.drag.to_page, d.drag.rect, spin));
+    let to = (d.drag.to_page, d.drag.rect, spin);
+    let routes = wordcraft_engine::cmd::connectors::follow_routes(&app.session, layout, &d.object.pos(), to);
     for segs in routes {
         paint_path(painter, &segs, egui::Stroke::new(1.5, t.accent), |x, y| point_on_screen(pages, scale, d.drag.to_page, (x, y)));
+    }
+    // Their labels go with them: each one's frame on the middle of its connector's new path.
+    for label in wordcraft_engine::cmd::connectors::follow_labels(&app.session, layout, &d.object.pos(), to) {
+        if let Some(f) = screen(pages, scale, d.drag.to_page, label) {
+            painter.rect_stroke(f, 0.0, egui::Stroke::new(1.0, t.accent), egui::StrokeKind::Middle);
+        }
     }
 }
 
@@ -1152,19 +1159,14 @@ fn paint_end_drag(app: &WordApp, d: &ObjectDrag, painter: &Painter, t: &Tokens, 
         for it in &pg.items {
             let wordcraft_layout::Placed::Object { rect, spin, story: StoryRef::Body, path, off, .. } = it else { continue };
             let pos = Pos { story: StoryRef::Body, path: path.clone(), off: *off };
-            let Some(shape) = app.session.doc.para_at(&pos).and_then(|p| p.object_at(pos.off)).and_then(wordcraft_doc::connector::Glued::of) else {
-                continue;
-            };
-            if shape.kind.is_connector() || pos == d.object.pos() {
+            if pos == d.object.pos() {
                 continue;
             }
-            let r = [rect.x, rect.y, rect.w, rect.h];
-            // Sites of shapes the pointer is near.
+            // Sites of shapes the pointer is near: a shape on its own, or each shape of a group.
             if at.0 < rect.x - 4.0 * snap || at.0 > rect.right() + 4.0 * snap || at.1 < rect.y - 4.0 * snap || at.1 > rect.bottom() + 4.0 * snap {
                 continue;
             }
-            for (i, _) in wordcraft_doc::connector::shape_sites(shape, rect.w, rect.h).iter().enumerate() {
-                let Some(p) = wordcraft_doc::connector::site_point(shape, r, *spin, i as u32) else { continue };
+            for p in wordcraft_engine::cmd::connectors::sites_on_page(&app.session, &pos, (*rect, *spin)) {
                 let dist = ((p.0 - at.0).powi(2) + (p.1 - at.1).powi(2)).sqrt();
                 if let Some(c) = point_on_screen(pages, scale, d.object.page, p) {
                     painter.circle_stroke(c, 3.5, egui::Stroke::new(1.0, t.accent));

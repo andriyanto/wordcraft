@@ -269,6 +269,28 @@ fn member_frame_at<'a>(
     Some((Glued::of(child)?, [x + nx - cx, y + ny - cy, w, h], float.spin().within(spin)))
 }
 
+/// The connection sites, on its page, of the drawing at `pos` whose frame there is `frame`: a
+/// shape's own, or those of every shape in a group. None for a connector or a picture. Where a
+/// connector's end dragged near them can be glued (`shape.connect`).
+pub fn sites_on_page(s: &Session, pos: &Pos, frame: (wordcraft_geom::Rect, wordcraft_geom::Spin)) -> Vec<(f32, f32)> {
+    let Some(obj) = s.doc.para_at(pos).and_then(|p| p.object_at(pos.off)) else { return Vec::new() };
+    let shapes: Vec<(Glued<'_>, [f32; 4], wordcraft_geom::Spin)> = match obj {
+        InlineObject::Group { children, .. } => {
+            (0..children.len().min(wordcraft_doc::para::MAX_GROUP_CHILDREN)).filter_map(|m| member_frame_at(obj, frame, m)).collect()
+        }
+        _ => Glued::of(obj).map(|shape| (shape, [frame.0.x, frame.0.y, frame.0.w, frame.0.h], frame.1)).into_iter().collect(),
+    };
+    let mut out = Vec::new();
+    for (shape, rect, spin) in shapes {
+        if shape.kind.is_connector() {
+            continue;
+        }
+        let sites = u32::try_from(wordcraft_doc::connector::shape_sites(shape, rect[2], rect[3]).len()).unwrap_or(0);
+        out.extend((0..sites).filter_map(|n| site_point(shape, rect, spin, n)));
+    }
+    out
+}
+
 /// How far (points) a glued end may be from its site and still be where it belongs.
 const AT_SITE: f32 = 0.05;
 
@@ -305,8 +327,51 @@ pub fn follow_routes(
     s: &Session,
     layout: &wordcraft_layout::DocLayout,
     moved: &Pos,
-    (page, to, spin): (usize, wordcraft_geom::Rect, wordcraft_geom::Spin),
+    to: (usize, wordcraft_geom::Rect, wordcraft_geom::Spin),
 ) -> Vec<Vec<wordcraft_doc::graphic::PathSeg>> {
+    followed(s, layout, moved, to).into_iter().map(|f| f.1).collect()
+}
+
+/// The labels of the connectors [`follow_routes`] gives, where each would then be: its frame on
+/// the page, about the middle of its connector's new path. Nothing for a document with no
+/// connector labels.
+pub fn follow_labels(
+    s: &Session,
+    layout: &wordcraft_layout::DocLayout,
+    moved: &Pos,
+    to: (usize, wordcraft_geom::Rect, wordcraft_geom::Spin),
+) -> Vec<wordcraft_geom::Rect> {
+    // Each labelled connector's labels' sizes, by the connector's drawing id.
+    let mut labels: HashMap<u32, Vec<(f32, f32)>> = HashMap::new();
+    for path in s.doc.para_paths(StoryRef::Body) {
+        let Some(para) = s.doc.para(StoryRef::Body, &path) else { continue };
+        for (_, obj) in para.objects_with_offsets() {
+            if let InlineObject::Shape { extra, w, h, .. } = obj
+                && let Some(id) = extra.label_of
+                && labels.len() < 256
+            {
+                labels.entry(id).or_default().push((*w, *h));
+            }
+        }
+    }
+    if labels.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (id, path) in followed(s, layout, moved, to) {
+        let (Some(sizes), Some((mx, my))) = (labels.get(&id), wordcraft_doc::connector::path_midpoint(&path)) else { continue };
+        out.extend(sizes.iter().take(8).map(|(w, h)| wordcraft_geom::Rect::new(mx - w / 2.0, my - h / 2.0, *w, *h)));
+    }
+    out
+}
+
+/// [`follow_routes`], each path with its connector's drawing id (0: none).
+fn followed(
+    s: &Session,
+    layout: &wordcraft_layout::DocLayout,
+    moved: &Pos,
+    (page, to, spin): (usize, wordcraft_geom::Rect, wordcraft_geom::Spin),
+) -> Vec<(u32, Vec<wordcraft_doc::graphic::PathSeg>)> {
     use wordcraft_doc::graphic::PathSeg;
     let (ids, conns, _) = scan(s);
     if conns.is_empty() || !ids.values().any(|t| t.pos == *moved) {
@@ -352,7 +417,8 @@ pub fn follow_routes(
         let Some(segs) = wordcraft_doc::connector::connector_path(*kind, routed.preset.as_ref(), f.w, f.h) else { continue };
         let turn = wordcraft_geom::Spin::new(routed.rot, f.flip_h, f.flip_v);
         let on_page = |x: f32, y: f32| turn.apply(f.x + f.w / 2.0, f.y + f.h / 2.0, f.x + x, f.y + y);
-        out.push(
+        out.push((
+            extra.id,
             segs.into_iter()
                 .map(|seg| match seg {
                     PathSeg::Move(x, y) => {
@@ -370,7 +436,7 @@ pub fn follow_routes(
                     PathSeg::Close => PathSeg::Close,
                 })
                 .collect(),
-        );
+        ));
     }
     out
 }
@@ -530,11 +596,17 @@ fn body_pos(e: &Value) -> Option<Pos> {
     }
 }
 
-/// Give the drawing at `pos` a drawing id if it has none; returns it.
-fn ensure_id(s: &mut Session, pos: &Pos) -> Result<u32, CmdError> {
+/// Give the drawing at `pos` (member `member` of the group there, when given) a drawing id if
+/// it has none; returns it.
+fn ensure_id(s: &mut Session, pos: &Pos, member: Option<usize>) -> Result<u32, CmdError> {
     let next = s.doc.next_shape_id();
     let para = s.doc.para_mut(pos.story, &pos.path)?;
-    let (id, fresh) = match para.object_at_mut(pos.off) {
+    let target = match (para.object_at_mut(pos.off), member) {
+        (Some(InlineObject::Group { children, .. }), Some(i)) => children.get_mut(i).map(|c| &mut c.obj),
+        (o, None) => o,
+        _ => None,
+    };
+    let (id, fresh) = match target {
         Some(InlineObject::Shape { extra, kind, .. }) if !kind.is_connector() => {
             let fresh = extra.id == 0;
             if fresh {
@@ -591,7 +663,7 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                     .ok_or_else(|| CmdError::Params(format!("`{key}`: no such connection site")))?,
                 None => nearest_site(tkind, rect, th.spin, here).map(|(n, ..)| n).unwrap_or(0),
             };
-            (Some(at), site)
+            (Some((at, None)), site)
         } else {
             let (x, y) = (p::f32(e, "x").ok_or_else(|| CmdError::Params(format!("`{key}`: a shape or a point")))?, p::f32(e, "y").unwrap_or(here.1));
             let page = p::u64(e, "page").map_or(hit.page, |n| usize::try_from(n).unwrap_or(usize::MAX));
@@ -599,7 +671,7 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                 return Err(CmdError::Params("a connector's ends stay on its page".into()));
             }
             // The nearest site of a shape (not a connector) within reach.
-            let mut best: Option<(Pos, u32, f32)> = None;
+            let mut best: Option<((Pos, Option<usize>), u32, f32)> = None;
             if let Some(pg) = layout.pages.get(page) {
                 for it in &pg.items {
                     let wordcraft_layout::Placed::Object { rect, spin, story: StoryRef::Body, path, off, .. } = it else { continue };
@@ -607,15 +679,25 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                     if at == pos {
                         continue;
                     }
-                    let Some(shape) = s.doc.para_at(&at).and_then(|p| p.object_at(at.off)).and_then(Glued::of) else { continue };
-                    if shape.kind.is_connector() {
-                        continue;
-                    }
-                    if let Some((n, _, d)) = nearest_site(shape, [rect.x, rect.y, rect.w, rect.h], *spin, (x, y))
-                        && d <= SNAP
-                        && best.as_ref().is_none_or(|b| d < b.2)
-                    {
-                        best = Some((at, n, d));
+                    let Some(obj) = s.doc.para_at(&at).and_then(|p| p.object_at(at.off)) else { continue };
+                    // The shape itself, or each shape of a group: a connector is glued to the
+                    // shape in the group, not to the group.
+                    let members: Vec<(Option<usize>, Glued<'_>, [f32; 4], wordcraft_geom::Spin)> = match obj {
+                        InlineObject::Group { children, .. } => (0..children.len().min(wordcraft_doc::para::MAX_GROUP_CHILDREN))
+                            .filter_map(|m| member_frame_at(obj, (*rect, *spin), m).map(|(shape, r, sp)| (Some(m), shape, r, sp)))
+                            .collect(),
+                        _ => Glued::of(obj).map(|shape| (None, shape, [rect.x, rect.y, rect.w, rect.h], *spin)).into_iter().collect(),
+                    };
+                    for (member, shape, frame, turned) in members {
+                        if shape.kind.is_connector() {
+                            continue;
+                        }
+                        if let Some((n, _, d)) = nearest_site(shape, frame, turned, (x, y))
+                            && d <= SNAP
+                            && best.as_ref().is_none_or(|b| d < b.2)
+                        {
+                            best = Some(((at.clone(), member), n, d));
+                        }
                     }
                 }
             }
@@ -633,8 +715,8 @@ pub(crate) fn connect(s: &mut Session, v: &Value) -> CmdResult {
                 }
             }
         };
-        if let Some(at) = target {
-            let id = ensure_id(s, &at)?;
+        if let Some((at, member)) = target {
+            let id = ensure_id(s, &at, member)?;
             glue[i] = Some(Some(ConnEnd { id, site }));
         }
     }
