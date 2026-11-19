@@ -32,7 +32,8 @@ fn remove_number(s: &mut Session, f: &Pos, n: NumRef) -> CmdResult {
 fn backspace_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
-    // Several pictures or shapes selected: all of them, not only the first.
+    // A connector goes with its label; several pictures or shapes selected go together.
+    crate::cmd::objects::pick_labels(s);
     if crate::cmd::objects::delete_picked(s)? {
         return sel_result(s);
     }
@@ -148,7 +149,8 @@ pub(super) fn delete(s: &mut Session, v: &Value) -> CmdResult {
 fn delete_inner(s: &mut Session, _: &Value) -> CmdResult {
     s.goal_x = None;
     s.pending = None;
-    // Several pictures or shapes selected: all of them, not only the first.
+    // A connector goes with its label; several pictures or shapes selected go together.
+    crate::cmd::objects::pick_labels(s);
     if crate::cmd::objects::delete_picked(s)? {
         return sel_result(s);
     }

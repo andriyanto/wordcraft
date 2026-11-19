@@ -93,6 +93,16 @@ pub(crate) fn kept_preset(
     (geom.name != kind_preset(kind) || !geom.adjust.is_empty()).then(|| Arc::new(geom))
 }
 
+/// What a text box that is a connector's label is named in a file (`wp:docPr/@name`), before the
+/// connector's drawing id: DrawingML has no text on a connector, so the label is a text box of
+/// its own, and its name says whose it is.
+pub(crate) const LABEL_NAME: &str = "Connector Label ";
+
+/// The drawing id of the connector a text box named `name` labels.
+pub(crate) fn label_of(name: &str) -> Option<u32> {
+    name.strip_prefix(LABEL_NAME)?.parse::<u32>().ok().filter(|id| *id != 0)
+}
+
 /// The shape a DrawingML preset named `prst` is in a document: the kind it is drawn as when
 /// nothing draws the preset itself, and the preset to keep with it so it is saved as itself (none
 /// where the kind says it all). `None` for a name that can't stand in a file. What reading a
@@ -540,6 +550,13 @@ mod tests {
     fn presets_map_to_the_nearest_shape() {
         assert_eq!(preset_kind("straightConnector1"), ShapeKind::StraightConnector);
         assert_eq!(preset_kind("bentConnector3"), ShapeKind::ElbowConnector);
+        // A connector label's name gives its connector's drawing id; nothing else does.
+        assert_eq!(label_of("Connector Label 12"), Some(12));
+        for junk in
+            ["Connector Label 0", "Connector Label -3", "Connector Label 99999999999", "Connector Label", "Text Box 12", "connector label 12", ""]
+        {
+            assert_eq!(label_of(junk), None, "{junk}");
+        }
         assert_eq!(preset_kind("wedgeRoundRectCallout"), ShapeKind::RoundedRectangle);
         assert_eq!(preset_kind("wedgeEllipseCallout"), ShapeKind::Ellipse);
         assert_eq!(preset_kind("wedgeRectCallout"), ShapeKind::Rectangle);

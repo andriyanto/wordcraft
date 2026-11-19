@@ -370,7 +370,11 @@ impl Writer<'_> {
         let docpr = self.shape_docpr(extra.id);
         let link = Self::drawing_link(props, rels);
         // Ink is told apart by its name (and its pen), which reading looks for.
-        let name = shape_name(*kind, freeform.as_deref(), &docpr);
+        // A connector's label is told apart by its name too: it names its connector.
+        let name = match extra.label_of {
+            Some(id) => format!("{}{id}", crate::read::shape_style::LABEL_NAME),
+            None => shape_name(*kind, freeform.as_deref(), &docpr),
+        };
         // The effect extent leaves room for the shadow and glow.
         let mut float = float.clone();
         for (e, fx) in float.effect.iter_mut().zip(effects.extent()) {

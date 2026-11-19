@@ -15,6 +15,7 @@ use crate::{CmdError, CmdResult, CommandSpec, Selection, Session, p};
 
 mod arrange;
 mod group;
+mod label;
 mod multi;
 mod picture;
 mod select;
@@ -25,6 +26,7 @@ pub use arrange::moves_with_text;
 pub(crate) use arrange::{anchor_paragraph, insert_floating, nearest_line};
 #[cfg(test)]
 use group::ungroup;
+pub(crate) use label::{in_label, pick_labels, place_labels};
 pub(crate) use multi::delete_picked;
 pub use picture::{OriginalSize, PictureLook, cropped_original_size, fit_size, original_size};
 #[cfg(test)]

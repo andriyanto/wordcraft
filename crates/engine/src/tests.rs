@@ -7687,6 +7687,82 @@ fn a_moved_connector_run_stays_where_it_was_put() {
     assert!(s.run("shape.bend", &json!({"value": 10})).is_err());
 }
 
+/// A connector takes text: typing with it selected (or Add Text) writes its label, a text box
+/// kept on the middle of the connector. The label follows when the connector is routed again,
+/// goes when the connector is deleted, and is saved to DOCX as a text box that names its
+/// connector, so it is its label again when the file is opened. Typing replaced the connector
+/// with the letters before.
+#[test]
+fn a_connector_takes_a_label_that_stays_on_its_middle() {
+    use wordcraft_doc::InlineObject;
+    let mut s = s();
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 100, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60}));
+    run(&mut s, "insert.shape", json!({"kind": "elbowConnector", "arrow": "end", "x": 202, "y": 130, "x1": 398, "y1": 130, "page": 0}));
+    assert!(cmd::objects::takes_typing(&s));
+    run(&mut s, "text.insert", json!({"text": "Yes"}));
+    // The label: a text box with no fill and no outline, naming the connector.
+    let labels = |s: &Session| -> Vec<(Pos, u32, u32)> {
+        drawings(s)
+            .into_iter()
+            .filter_map(|(pos, o)| match o {
+                InlineObject::Shape { story: Some(story), extra, fill: None, stroke: None, .. } => extra.label_of.map(|id| (pos, id, story)),
+                _ => None,
+            })
+            .collect()
+    };
+    let conn_id = |s: &Session| {
+        drawings(s).into_iter().find_map(|(_, o)| match o {
+            InlineObject::Shape { kind, extra, .. } if kind.is_connector() => Some(extra.id),
+            _ => None,
+        })
+    };
+    let found = labels(&s);
+    assert_eq!(found.len(), 1);
+    let (_, id, story) = found[0].clone();
+    assert!(id != 0 && conn_id(&s) == Some(id), "it names the connector's drawing id");
+    assert_eq!(s.doc.plain_text(StoryRef::Part(story)).trim_end(), "Yes");
+    assert_eq!(s.sel.focus.story, StoryRef::Part(story), "the caret is in the label");
+    // On the connector's middle: (300, 130).
+    let centre = |s: &mut Session| {
+        let pos = labels(s)[0].0.clone();
+        let r = s.layout().object(&pos, 0).unwrap().rect;
+        ((r.x + r.w / 2.0).round() as i32, (r.y + r.h / 2.0).round() as i32)
+    };
+    assert_eq!(centre(&mut s), (300, 130));
+    // More typing goes on in the same label; Add Text on the connector finds it again.
+    run(&mut s, "text.insert", json!({"text": " please"}));
+    select_drawing(&mut s, None);
+    assert_eq!(run(&mut s, "shape.addText", json!({}))["story"], story);
+    assert_eq!((labels(&s).len(), s.doc.plain_text(StoryRef::Part(story)).trim_end().to_string()), (1, "Yes please".to_string()));
+    // The far box moves: the connector is routed again, and its label is on its new middle.
+    select_drawing(&mut s, Some((450.0, 130.0)));
+    run(&mut s, "arrange.nudge", json!({"dx": 100, "dy": 80}));
+    select_drawing(&mut s, None);
+    assert_eq!(connector_corners(&mut s), vec![(200, 130), (350, 130), (350, 210), (500, 210)]);
+    assert_eq!(centre(&mut s), (350, 170));
+    assert!(!cmd::objects::place_labels(&mut s), "nothing left to settle");
+    // Saved and opened: still its label, with its text.
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    let mut reopened = Session::new(back);
+    let again = labels(&reopened);
+    assert_eq!(again.len(), 1, "the label is a label again");
+    assert_eq!(Some(again[0].1), conn_id(&reopened));
+    assert_eq!(reopened.doc.plain_text(StoryRef::Part(again[0].2)).trim_end(), "Yes please");
+    select_drawing(&mut reopened, Some((550.0, 210.0)));
+    run(&mut reopened, "arrange.nudge", json!({"dx": 0, "dy": -80}));
+    let pos = labels(&reopened)[0].0.clone();
+    let r = reopened.layout().object(&pos, 0).unwrap().rect;
+    assert_eq!(((r.x + r.w / 2.0).round() as i32, (r.y + r.h / 2.0).round() as i32), (350, 130), "and follows its connector there too");
+    // Deleting the connector takes its label along; one undo brings both back.
+    select_drawing(&mut s, None);
+    run(&mut s, "text.delete", json!({}));
+    assert!(labels(&s).is_empty() && conn_id(&s).is_none());
+    assert_eq!(drawings(&s).len(), 2);
+    run(&mut s, "edit.undo", json!({}));
+    assert_eq!((labels(&s).len(), drawings(&s).len()), (1, 4));
+}
+
 /// Several drawings are selected together by a box drawn around them, and then move, line up,
 /// space out and are deleted together. Only the first of them did before: the others were
 /// selected for grouping alone.
@@ -8050,11 +8126,12 @@ fn add_text_enters_the_text_a_shape_has() {
     assert_eq!(s.doc.plain_text(StoryRef::Part(id)).trim_end(), "Start here");
 }
 
-/// What holds no text is typed over as before: a line, a connector, a picture's place in the
-/// text. And a caret beside a shape types beside it, not in it.
+/// What holds no text is typed over as before: a line, a picture's place in the text. And a
+/// caret beside a shape types beside it, not in it. (A connector's text is its label.)
 #[test]
 fn typing_goes_into_closed_shapes_only() {
-    for kind in ["line", "elbowConnector"] {
+    {
+        let kind = "line";
         let mut s = s();
         run(&mut s, "insert.shape", json!({"kind": kind}));
         assert!(!cmd::objects::takes_typing(&s), "{kind}");

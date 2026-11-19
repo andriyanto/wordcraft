@@ -99,6 +99,14 @@ impl Reader<'_> {
                 // its canonical model unchanged when reading the round cap the writer adds.
                 extra.cap = Default::default();
             }
+            // A text box named as a connector's label is one.
+            if let InlineObject::Shape { story: Some(_), extra, .. } = &mut obj
+                && let Some(id) = c.child("wp:docPr").and_then(|p| p.attr("name")).and_then(crate::read::shape_style::label_of)
+            {
+                extra.label_of = Some(id);
+                // Its connector keeps the drawing id the label names.
+                self.glued.insert(id);
+            }
             obj
         };
         if !alt.is_empty() {
