@@ -1245,7 +1245,8 @@ fn arabic_lookups_keep_typing_order() {
     assert!(ar.rtl());
     assert_eq!(tr(ar, "Table of Contents"), "جدول المحتويات");
     assert_eq!(tr(ar, "Paste Special…"), "لصق خاص…");
-    assert_eq!(tr(ar, "About WordCraft"), "حول WordCraft");
+    // The catalogs name the app WordCraft; the interface says WordKu, in Arabic too.
+    assert_eq!(tr(ar, "About WordKu"), "حول WordKu");
     assert_eq!(tr(ar, "Password:"), "كلمة المرور:");
     // A two-line ribbon label keeps its two lines.
     assert_eq!(tr(ar, "Table of\nContents"), "جدول\nالمحتويات");

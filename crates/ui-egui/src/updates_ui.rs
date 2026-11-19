@@ -200,7 +200,7 @@ impl Runtime {
             Ok(None) if requested => self.status = Status::UpToDate,
             Ok(None) => {}
             Err(e) => {
-                log::warn!("WordCraft update check failed: {e}");
+                log::warn!("WordKu update check failed: {e}");
                 if requested {
                     self.status = Status::Failed(e);
                 }
@@ -296,16 +296,18 @@ mod tests {
     use std::sync::Arc;
 
     /// Updates come from this project's own releases, never from the Craft App Suite's
-    /// repository: the app is otherwise the one craft-update knows (the same asset names).
+    /// repository, and are WordKu's own (its own asset names).
     #[test]
     fn updates_come_from_this_projects_own_repository() {
         let (app, suite) = (crate::UPDATE_APP, craft_update::suite::WORDCRAFT);
-        assert_eq!(app.repo, "andriyanto/wordcraft");
-        assert_eq!(app.releases_url(), "https://github.com/andriyanto/wordcraft/releases");
+        assert_eq!(app.repo, "andriyanto/wordku");
+        assert_eq!(app.releases_url(), "https://github.com/andriyanto/wordku/releases");
         assert_ne!(app.repo, suite.repo);
         assert_ne!(app.developer, suite.developer);
-        assert_eq!((app.id, app.name), (suite.id, suite.name));
-        assert_eq!(download_page(), "https://github.com/andriyanto/wordcraft/releases");
+        // WordKu is its own app: its own asset names, not WordCraft's.
+        assert_eq!((app.id, app.name), ("wordku", "WordKu"));
+        assert_ne!(app.id, suite.id);
+        assert_eq!(download_page(), "https://github.com/andriyanto/wordku/releases");
     }
 
     fn release(page: &str) -> Release {
@@ -360,7 +362,7 @@ mod tests {
     /// A newer release is offered for download: the prompt can't install it.
     #[test]
     fn a_newer_release_is_offered_for_download_and_never_installed() {
-        let page = "https://github.com/andriyanto/wordcraft/releases/tag/v99.0.0";
+        let page = "https://github.com/andriyanto/wordku/releases/tag/v99.0.0";
         let mut app = app_with(Ok(Some(release(page))));
         app.set_startup_update_check(true);
         let ctx = egui::Context::default();
@@ -378,7 +380,7 @@ mod tests {
     /// release's page in the browser and closes the prompt.
     #[test]
     fn the_prompt_has_download_and_later_and_download_opens_the_browser() {
-        let page = "https://github.com/andriyanto/wordcraft/releases/tag/v99.0.0";
+        let page = "https://github.com/andriyanto/wordku/releases/tag/v99.0.0";
         let mut app = app_with(Ok(Some(release(page))));
         app.set_startup_update_check(true);
         let ctx = egui::Context::default();
@@ -403,7 +405,7 @@ mod tests {
     fn a_link_that_is_no_plain_web_link_opens_the_releases_page_instead() {
         for odd in ["file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", "", "http://example.com/x"] {
             let page = page_of(&release(odd));
-            assert!(page == odd || page == "https://github.com/andriyanto/wordcraft/releases", "{odd} → {page}");
+            assert!(page == odd || page == "https://github.com/andriyanto/wordku/releases", "{odd} → {page}");
             assert!(craft_update::release::safe_web_link(&page), "{odd} → {page}");
         }
     }
@@ -460,6 +462,6 @@ mod tests {
     fn the_download_command_opens_the_releases_page() {
         let mut app = app_with(Ok(None));
         app.ui_command("ui.downloadUpdate", &serde_json::json!({})).expect("a UI command").expect("it runs");
-        assert_eq!(app.canvas.open_url.as_deref(), Some("https://github.com/andriyanto/wordcraft/releases"));
+        assert_eq!(app.canvas.open_url.as_deref(), Some("https://github.com/andriyanto/wordku/releases"));
     }
 }
