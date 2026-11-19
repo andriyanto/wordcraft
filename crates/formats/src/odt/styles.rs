@@ -1519,6 +1519,12 @@ impl Styles {
         Some(p.map(|v| v.unwrap_or(0.0)))
     }
 
+    /// The colour a graphic style gives the text of its shape (`fo:color` in its
+    /// `style:text-properties`, its own or the nearest parent's that states one).
+    pub(super) fn graphic_text_color(&self, name: &str) -> Option<Rgb> {
+        self.chain(name).iter().find_map(|(_, s)| s.fmt.color)
+    }
+
     /// A graphic style's frame placement (whole chain).
     pub(super) fn graphic(&self, name: &str) -> super::frames::Graphic {
         self.chain(name).iter().filter_map(|(_, s)| s.graphic.as_ref()).fold(super::frames::Graphic::default(), |g, p| g.or(p))

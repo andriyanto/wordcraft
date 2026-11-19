@@ -339,6 +339,11 @@ pub struct BoxLook {
     pub vert: wordcraft_doc::props::TextVert,
     /// A custom shape's geometry as read (ODT; see `ShapeExtra::odf_geometry`).
     pub geometry: Option<std::sync::Arc<String>>,
+    /// Where its text sits between its top and bottom (`TextBody::anchor`).
+    pub anchor: VAlign,
+    /// The colour its text has where the text states none (`TextBody::auto_color`): a shape's
+    /// own text colour, white on a dark shape.
+    pub text_color: Option<Rgb>,
 }
 
 /// A text box's name, and the name of the box its text continues in ([`BoxLook::chain`]).
@@ -354,6 +359,9 @@ pub struct Conn {
     pub id: u32,
     pub start: Option<wordcraft_doc::connector::ConnEnd>,
     pub end: Option<wordcraft_doc::connector::ConnEnd>,
+    /// A text box that is a connector's label: that connector's drawing id (0: not a label; see
+    /// `ShapeExtra::label_of`).
+    pub label_of: u32,
 }
 
 impl Default for BoxLook {
@@ -370,6 +378,8 @@ impl Default for BoxLook {
             chain: None,
             vert: Default::default(),
             geometry: None,
+            anchor: VAlign::Top,
+            text_color: None,
         }
     }
 }

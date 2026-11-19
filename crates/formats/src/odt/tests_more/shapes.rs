@@ -188,3 +188,124 @@ fn a_shape_with_only_an_empty_paragraph_has_no_text() {
     let stories: Vec<bool> = d.body.iter().filter_map(|b| b.as_para()).flat_map(|p| p.objects.iter()).map(|o| o.text_box().is_some()).collect();
     assert_eq!(stories, [false, false, true, false, false, false]);
 }
+
+/// A shape's text keeps where it sits in the shape (top, middle, bottom) and the colour the
+/// shape gives it (white on a dark shape), and a connector's label stays its connector's. None
+/// of the three was written: reopened, the text was at the top in black, and the label was an
+/// ordinary text box the connector left behind.
+#[test]
+fn a_shapes_text_keeps_its_place_and_colour_and_a_label_its_connector() {
+    use wordcraft_doc::connector::ShapeExtra;
+    use wordcraft_doc::para::Float;
+    use wordcraft_doc::props::VAlign;
+    let mut d = Document::new();
+    let story = |d: &mut Document, text: &str, anchor: VAlign, color: Option<Rgb>| -> u32 {
+        let mut p = Paragraph::new();
+        p.text.push_str(text);
+        p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: Default::default() }];
+        let id = d.try_add_part(wordcraft_doc::PartKind::TextBox, vec![para_block(p)]).unwrap();
+        let part = d.parts.get_mut(&id).unwrap();
+        part.body.anchor = anchor;
+        part.body.auto_color = color;
+        id
+    };
+    let shape = |kind: ShapeKind, x: f32, story: Option<u32>, extra: ShapeExtra| InlineObject::Shape {
+        kind,
+        w: 90.0,
+        h: 60.0,
+        fill: (!kind.is_open() && kind != ShapeKind::TextBox).then(|| wordcraft_doc::fill::Fill::solid(Rgb(0x15, 0x60, 0x82))),
+        stroke: (kind != ShapeKind::TextBox).then_some(Rgb(4, 5, 6)),
+        stroke_width: 1.0,
+        float: Float { wrap: Wrap::InFrontOfText, x, y: 20.0, ..Default::default() },
+        story,
+        freeform: None,
+        effects: Default::default(),
+        extra,
+    };
+    let white = Some(Rgb(255, 255, 255));
+    let stories = [
+        story(&mut d, "Middle", VAlign::Center, white),
+        story(&mut d, "Bottom", VAlign::Bottom, None),
+        story(&mut d, "Top", VAlign::Top, Some(Rgb(0xAA, 0x11, 0x22))),
+        story(&mut d, "Label", VAlign::Center, None),
+    ];
+    let mut p = Paragraph::new();
+    let objects = [
+        shape(ShapeKind::Rectangle, 0.0, Some(stories[0]), ShapeExtra { id: 7, ..Default::default() }),
+        shape(ShapeKind::Ellipse, 200.0, Some(stories[1]), ShapeExtra { id: 9, ..Default::default() }),
+        shape(ShapeKind::TextBox, 100.0, Some(stories[2]), Default::default()),
+        shape(
+            ShapeKind::StraightConnector,
+            90.0,
+            None,
+            ShapeExtra {
+                id: 12,
+                start: Some(wordcraft_doc::connector::ConnEnd { id: 7, site: 3 }),
+                end: Some(wordcraft_doc::connector::ConnEnd { id: 9, site: 1 }),
+                ..Default::default()
+            },
+        ),
+        shape(ShapeKind::TextBox, 110.0, Some(stories[3]), ShapeExtra { label_of: Some(12), ..Default::default() }),
+    ];
+    for o in objects {
+        p.text.push(OBJ);
+        p.objects.push(o);
+    }
+    p.runs = vec![wordcraft_doc::para::Run { len: p.text.len(), props: Default::default() }];
+    d.body = vec![para_block(p)];
+
+    /// Each shape with text: its text, where it sits, the colour the shape gives it; then each
+    /// connector's drawing id, and the connector each label names.
+    type Kept = (Vec<(String, VAlign, Option<Rgb>)>, Vec<u32>, Vec<u32>);
+    fn kept(d: &Document) -> Kept {
+        let (mut texts, mut connectors, mut labels) = (Vec::new(), Vec::new(), Vec::new());
+        for o in d.body.iter().filter_map(|b| b.as_para()).flat_map(|p| &p.objects) {
+            let InlineObject::Shape { kind, story, extra, .. } = o else { continue };
+            if let Some(part) = story.and_then(|id| d.parts.get(&id)) {
+                let text = part.blocks.iter().filter_map(|b| b.as_para()).map(|p| p.text.clone()).collect::<Vec<_>>().join("|");
+                texts.push((text, part.body.anchor, part.body.auto_color));
+            }
+            if kind.is_connector() {
+                connectors.push(extra.id);
+            }
+            labels.extend(extra.label_of);
+        }
+        (texts, connectors, labels)
+    }
+    let file = export(&d).unwrap();
+    let out = content_of(&file);
+    // As ODF says them: the text area's alignment, the shape style's text colour, and the
+    // label's name after its connector's id.
+    assert!(out.contains(r#"draw:textarea-vertical-align="middle""#) && out.contains(r#"draw:textarea-vertical-align="bottom""#), "{out}");
+    assert!(out.contains(r##"<style:text-properties fo:color="#ffffff"/></style:style>"##), "{out}");
+    assert!(out.contains(r##"<style:text-properties fo:color="#aa1122"/></style:style>"##), "{out}");
+    assert!(out.contains(r#"draw:name="Connector Label shape12""#) && out.contains(r#"xml:id="shape12""#), "{out}");
+    assert!(!out.contains('\u{1}'), "the marker is not written");
+    let back = import(&file).unwrap();
+    let (texts, connectors, labels) = kept(&back);
+    assert_eq!(
+        texts,
+        [
+            ("Middle".to_string(), VAlign::Center, white),
+            ("Bottom".to_string(), VAlign::Bottom, None),
+            ("Top".to_string(), VAlign::Top, Some(Rgb(0xAA, 0x11, 0x22))),
+            ("Label".to_string(), VAlign::Center, None),
+        ]
+    );
+    assert_eq!(connectors.len(), 1);
+    assert_eq!(labels, connectors, "the label names the connector, whatever its id is now");
+    assert_ne!(connectors, [0]);
+    // And again: nothing drifts on a second save.
+    assert_eq!(kept(&import(&export(&back).unwrap()).unwrap()), kept(&back));
+    // A label naming a connector that isn't there, and names with nothing or junk after the
+    // words, are plain text boxes.
+    for name in ["Connector Label ", "Connector Label", "Connector Label \u{0}\u{1}"] {
+        let content = format!(
+            r#"<office:document-content {NS_T} {NS_D}><office:body><office:text><text:p><draw:frame draw:name="{name}" svg:width="1in" svg:height="1in"><draw:text-box><text:p>x</text:p></draw:text-box></draw:frame></text:p></office:text></office:body></office:document-content>"#,
+            name = name.replace('\u{0}', "&#x9;").replace('\u{1}', "&#xA;")
+        );
+        let d = import(&package(&content, None)).unwrap();
+        let (texts, _, labels) = kept(&d);
+        assert_eq!((texts.len(), labels.len()), (1, 0), "{name:?}");
+    }
+}

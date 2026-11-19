@@ -1362,6 +1362,7 @@ impl Body<'_> {
                 // Without a height, a text box in it grows to its text (`fo:min-height` below).
                 self.frame_look = g.look(h.is_none(), &self.styles.defs);
                 self.frame_name = get(a, "draw:name").map(|n| n.chars().take(256).collect());
+                self.frame_text_look(a);
                 self.frame_clip = g.clip;
             }
             "image" | "object" | "object-ole" | "desc" | "title" | "contour-polygon" => self.frame_part(q, a),

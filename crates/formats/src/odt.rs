@@ -37,6 +37,11 @@ use wordcraft_doc::{Align, Document, RevisionKind, Rgb, SectionProps};
 
 use crate::model::{self, Cell, FBlock, FComment, FTable, Flow, Fmt, Inline, Kind, ListInfo, Meta, Para, RevMark, make_img, mime_of};
 
+/// What a text box that is a connector's label is named (`draw:name`), before its connector's
+/// `xml:id`: ODF has no text on a connector that is a box of its own, so the label's name says
+/// whose it is. (DOCX names it the same way, with the connector's drawing id.)
+pub(crate) const LABEL_NAME: &str = "Connector Label ";
+
 mod body;
 mod cell_formula;
 mod chart;

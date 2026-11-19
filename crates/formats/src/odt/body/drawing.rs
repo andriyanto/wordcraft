@@ -222,17 +222,7 @@ impl Body<'_> {
     /// `draw:start-shape`, §19.229 `draw:start-glue-point`…), their glue points as written until
     /// the paragraph ends (see [`Self::glue_connectors`]). `None` for a shape with neither.
     fn conn_of(&mut self, a: &Attrs) -> Option<model::Conn> {
-        let mut id_of = |name: &str| -> u32 {
-            let next = u32::try_from(self.conn_ids.len()).unwrap_or(u32::MAX).saturating_add(1);
-            match self.conn_ids.get(name) {
-                Some(id) => *id,
-                None if self.conn_ids.len() < MAX_CONN_IDS => {
-                    self.conn_ids.insert(name.to_string(), next);
-                    next
-                }
-                None => 0,
-            }
-        };
+        let mut id_of = |name: &str| self.conn_id(name);
         let id = get(a, "xml:id").or_else(|| get(a, "draw:id")).map(str::trim).filter(|n| !n.is_empty()).map_or(0, &mut id_of);
         let mut end = |shape: &str, glue: &str| {
             let target = get(a, shape).map(str::trim).filter(|n| !n.is_empty()).map(&mut id_of).filter(|id| *id != 0)?;
@@ -240,7 +230,31 @@ impl Body<'_> {
             Some(wordcraft_doc::connector::ConnEnd { id: target, site })
         };
         let (start, finish) = (end("draw:start-shape", "draw:start-glue-point"), end("draw:end-shape", "draw:end-glue-point"));
-        (id != 0 || start.is_some() || finish.is_some()).then_some(model::Conn { id, start, end: finish })
+        (id != 0 || start.is_some() || finish.is_some()).then_some(model::Conn { id, start, end: finish, label_of: 0 })
+    }
+
+    /// What a frame's style and name say of the text box in it: the colour its style gives the
+    /// text, and, for a connector's label (named after its connector), whose label it is.
+    pub(in crate::odt) fn frame_text_look(&mut self, a: &Attrs) {
+        self.frame_look.text_color = get(a, "draw:style-name").and_then(|s| self.styles.graphic_text_color(s));
+        let of = get(a, "draw:name").and_then(|n| n.trim().strip_prefix(crate::odt::LABEL_NAME)).map(str::trim).filter(|n| !n.is_empty());
+        if let Some(label_of) = of.map(|name| self.conn_id(name)).filter(|id| *id != 0) {
+            self.frame_look.conn = Some(Box::new(model::Conn { label_of, ..Default::default() }));
+        }
+    }
+
+    /// The drawing id of the shape a file names `name` (its `xml:id`): the same for every mention
+    /// of the name, 0 once there are too many to keep.
+    pub(in crate::odt) fn conn_id(&mut self, name: &str) -> u32 {
+        let next = u32::try_from(self.conn_ids.len()).unwrap_or(u32::MAX).saturating_add(1);
+        match self.conn_ids.get(name) {
+            Some(id) => *id,
+            None if self.conn_ids.len() < MAX_CONN_IDS => {
+                self.conn_ids.insert(name.to_string(), next);
+                next
+            }
+            None => 0,
+        }
     }
 
     /// Where a shape with a drawing id (`look`) sits, for connectors glued to it.
@@ -400,6 +414,7 @@ impl Body<'_> {
         }
         self.frame_look = g.shape_look(kind, &self.styles.defs);
         self.frame_look.conn = self.conn_of(a).map(Box::new);
+        self.frame_look.text_color = get(a, "draw:style-name").and_then(|s| self.styles.graphic_text_color(s));
         // Word's and LibreOffice's watermark: a shape of this name whose geometry follows its text.
         self.watermark_shape = get(a, "draw:name").filter(|n| n.starts_with(crate::odt::writer::WATERMARK_NAME)).map(|_| {
             let (color, see_through) = g.watermark_look();
