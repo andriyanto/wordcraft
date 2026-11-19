@@ -1203,3 +1203,92 @@ fn dragging_a_connectors_run_handle_moves_the_run() {
     };
     assert!(glued, "and it is still glued to both");
 }
+
+/// A selected shape with something to adjust shows a diamond handle for it; dragging the diamond
+/// changes the shape's proportions: a parallelogram's lean (the same after the shape is turned),
+/// a callout's tip. A rectangle has none, and neither does a shape among several selected.
+#[test]
+fn dragging_a_shapes_diamond_handle_changes_its_proportions() {
+    use egui::{Event, PointerButton};
+    let mut app = WordApp::new(wordcraft_engine::Session::new(Document::new()), crate::Services::default());
+    app.run("view.commentsPane", json!({"value": false})).unwrap();
+    app.run("insert.shape", json!({"kind": "rectangle", "x": 400, "y": 100, "page": 0, "width": 100, "height": 60})).unwrap();
+    app.run("insert.shape", json!({"kind": "wedgeRectCallout", "x": 100, "y": 300, "page": 0, "width": 120, "height": 60})).unwrap();
+    app.run("insert.shape", json!({"kind": "parallelogram", "x": 100, "y": 100, "page": 0, "width": 120, "height": 80})).unwrap();
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1440.0, 1100.0)).with_step_dt(1.0 / 60.0).build_ui_state(
+        |ui, app: &mut WordApp| {
+            let ctx = ui.ctx().clone();
+            app.logic(&ctx);
+            app.ui(ui);
+        },
+        app,
+    );
+    h.run_steps(6);
+    let near = |p: (f32, f32), q: (f32, f32)| (p.0 - q.0).abs() < 0.5 && (p.1 - q.1).abs() < 0.5;
+    let handles = |h: &mut egui_kittest::Harness<'_, WordApp>| {
+        let layout = h.state_mut().session.layout();
+        shape_adjusts(h.state(), &layout).map(|a| a.1).unwrap_or_default()
+    };
+    let adjust = |h: &egui_kittest::Harness<'_, WordApp>| match selected(h.state()) {
+        Some((_, InlineObject::Shape { extra, .. })) => extra.preset.as_deref().map(|p| p.adjust.clone()).unwrap_or_default(),
+        o => panic!("no shape is selected: {o:?}"),
+    };
+    let drag = |h: &mut egui_kittest::Harness<'_, WordApp>, from: (f32, f32), to: (f32, f32)| {
+        let from = crate::canvas::page_to_screen(h.state_mut(), 0, from.0, from.1).unwrap();
+        let to = crate::canvas::page_to_screen(h.state_mut(), 0, to.0, to.1).unwrap();
+        h.event(Event::PointerMoved(from));
+        h.step();
+        h.event(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Default::default() });
+        h.step();
+        for i in 1..=4 {
+            h.event(Event::PointerMoved(from + (to - from) * (i as f32 / 4.0)));
+            h.step();
+        }
+        h.event(Event::PointerButton { pos: to, button: PointerButton::Primary, pressed: false, modifiers: Default::default() });
+        h.run_steps(3);
+    };
+    let click = |h: &mut egui_kittest::Harness<'_, WordApp>, at: (f32, f32)| {
+        let at = crate::canvas::page_to_screen(h.state_mut(), 0, at.0, at.1).unwrap();
+        h.event(Event::PointerMoved(at));
+        h.step();
+        for pressed in [true, false] {
+            h.event(Event::PointerButton { pos: at, button: PointerButton::Primary, pressed, modifiers: Default::default() });
+            h.step();
+        }
+        h.run_steps(2);
+    };
+    // The parallelogram, just drawn, is selected: its lean's handle is on the top edge, 20 pt in.
+    let at = handles(&mut h);
+    assert!(matches!(at.as_slice(), [(1, p)] if near(*p, (120.0, 100.0))), "{at:?}");
+    drag(&mut h, (120.0, 100.0), (160.0, 90.0));
+    assert_eq!(adjust(&h), vec![("adj".to_string(), 75_000)], "60 pt in: three quarters of the shorter side");
+    let at = handles(&mut h);
+    assert!(matches!(at.as_slice(), [(1, p)] if near(*p, (160.0, 100.0))), "the handle is where the side now meets the top: {at:?}");
+    // The shape is neither moved nor resized by it.
+    let layout = h.state_mut().session.layout();
+    let frame = active(h.state(), &layout).map(|(o, _)| o.rect).unwrap();
+    assert!(near((frame.x, frame.y), (100.0, 100.0)) && near((frame.w, frame.h), (120.0, 80.0)), "{frame:?}");
+    // Turned a quarter, the handle is on the turned shape: the top edge is now the right side
+    // (x = 200), and 60 pt along it from the corner at (200, 80) is (200, 140).
+    h.state_mut().run("arrange.rotate", json!({"direction": "right"})).unwrap();
+    h.run_steps(3);
+    let at = handles(&mut h);
+    assert!(matches!(at.as_slice(), [(1, p)] if near(*p, (200.0, 140.0))), "{at:?}");
+    drag(&mut h, (200.0, 140.0), (215.0, 100.0));
+    assert_eq!(adjust(&h), vec![("adj".to_string(), 25_000)], "20 pt along the turned edge");
+    // The callout: its tip is its handle, and goes where it is dropped.
+    click(&mut h, (160.0, 330.0));
+    let at = handles(&mut h);
+    assert!(matches!(at.as_slice(), [(1, p)] if near(*p, (135.0, 367.5))), "{at:?}");
+    drag(&mut h, (135.0, 367.5), (280.0, 315.0));
+    assert_eq!(adjust(&h), vec![("adj1".to_string(), 100_000), ("adj2".to_string(), -25_000)]);
+    // A rectangle has nothing to adjust.
+    click(&mut h, (450.0, 130.0));
+    assert!(selected(h.state()).is_some() && handles(&mut h).is_empty());
+    // Nor is a handle shown while several are selected.
+    click(&mut h, (160.0, 330.0));
+    assert_eq!(handles(&mut h).len(), 1);
+    h.state_mut().run("select.objects", json!({"x": 20, "y": 20, "width": 560, "height": 600, "page": 0})).unwrap();
+    h.run_steps(2);
+    assert!(!h.state().session.also_selected.is_empty() && handles(&mut h).is_empty(), "several are selected");
+}

@@ -25,8 +25,14 @@ pub(crate) fn paint_shape(painter: &egui::Painter, rect: egui::Rect, name: &str,
     let Ok((kind, preset)) = wordcraft_engine::cmd::objects::named_shape(name) else { return };
     // A frame of a shape's usual proportions, in the middle of the tile: upright for the
     // shapes that point up or down.
-    let upright = matches!(name, "arrowUp" | "arrowDown" | "upDownArrow");
-    let (w, h) = if upright { (rect.height() * 0.7, rect.height()) } else { (rect.width(), rect.width() * 0.7) };
+    let (w, h) = if crate::shape_pen::upright(name) {
+        (rect.height() * 0.7, rect.height())
+    } else if matches!(name, "ribbon" | "ribbon2") {
+        // A ribbon is long and low.
+        (rect.width(), rect.width() * 0.45)
+    } else {
+        (rect.width(), rect.width() * 0.7)
+    };
     let (x0, y0) = (rect.center().x - w / 2.0, rect.center().y - h / 2.0);
     let at = |x: f32, y: f32| pos2(x0 + x, y0 + y);
     if kind == ShapeKind::Line {

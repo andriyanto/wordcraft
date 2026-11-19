@@ -221,6 +221,8 @@ pub(super) fn shape(s: &mut Session, v: &Value) -> CmdResult {
     let fill = match p::str(v, "fill") {
         Some(c) => Rgb::parse(c),
         None if kind.is_open() => None,
+        // A bracket or brace is a curve: a fill would be the patch between its ends.
+        None if preset.as_deref().is_some_and(wordcraft_doc::preset::is_open_curve) => None,
         None => Some(Rgb(0x15, 0x60, 0x82)),
     };
     // Arrowheads on lines and connectors.
