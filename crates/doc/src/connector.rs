@@ -15,7 +15,10 @@ use crate::para::{InlineObject, ShapeKind};
 use crate::wordart::TextWarp;
 
 mod bent;
-pub use bent::{BendHandle, RouteEnd, Routed, STUB, Was, axis_direction, bend_handles, bend_to, connector_path, path_direction, route_connector};
+pub use bent::{
+    Around, BendHandle, RouteEnd, Routed, STUB, Was, axis_direction, bend_handles, bend_to, connector_path, path_direction, route_around,
+    route_connector,
+};
 
 /// DrawingML outline ends (ST_LineCap); missing and unknown values use flat ends.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

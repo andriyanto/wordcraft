@@ -76,10 +76,9 @@ pub fn connector_path(kind: ShapeKind, preset: Option<&PresetGeom>, w: f32, h: f
     let (x1, y2, x3) = (fin(w * share(preset, 1)), fin(h * share(preset, 2)), fin(w * share(preset, 3)));
     let mid = |a: f32, b: f32| (a + b) / 2.0;
     Some(match (curved, n) {
-        (false, 2) => vec![Move(0.0, 0.0), Line(w, 0.0), Line(w, h)],
-        (false, 3) => vec![Move(0.0, 0.0), Line(x1, 0.0), Line(x1, h), Line(w, h)],
-        (false, 4) => vec![Move(0.0, 0.0), Line(x1, 0.0), Line(x1, y2), Line(w, y2), Line(w, h)],
-        (false, _) => vec![Move(0.0, 0.0), Line(x1, 0.0), Line(x1, y2), Line(x3, y2), Line(x3, h), Line(w, h)],
+        (false, n) => {
+            corners(n, (x1, y2, x3), w, h).into_iter().enumerate().map(|(i, (x, y))| if i == 0 { Move(x, y) } else { Line(x, y) }).collect()
+        }
         (true, 2) => vec![Move(0.0, 0.0), Cubic(w / 2.0, 0.0, w, h / 2.0, w, h)],
         // The curved presets pass through the middle of each run of the bent one, along it.
         (true, 3) => vec![Move(0.0, 0.0), Cubic(x1 / 2.0, 0.0, x1, h / 4.0, x1, h / 2.0), Cubic(x1, h * 0.75, mid(x1, w), h, w, h)],
@@ -268,6 +267,160 @@ pub fn route_connector(kind: ShapeKind, start: RouteEnd, end: RouteEnd, was: Was
     Routed { frame: Frame { x: cx - w / 2.0, y: cy - h / 2.0, w, h, flip_h, flip_v }, rot: if upright { 90.0 } else { 0.0 }, preset }
 }
 
+/// What a connector goes around: the bounds (x0, y0, x1, y1, page points) of the shapes its
+/// start and end are glued to, and of the other drawings on its page.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Around {
+    pub start: Option<[f32; 4]>,
+    pub end: Option<[f32; 4]>,
+    pub others: Vec<[f32; 4]>,
+}
+
+/// Most drawings a route is checked against, and most places tried for each run.
+const MAX_AROUND: usize = 16;
+const MAX_TRIES: usize = 10;
+/// How far (points) inside a drawing's bounds a run may graze it.
+const GRAZE: f32 = 1.0;
+/// Shortest first and last run (points) of a route found around drawings.
+const LEAST_RUN: f32 = 6.0;
+
+/// The corners of a bent connector of `n` runs in a `w` × `h` frame, its runs in between at
+/// `x1`, `y2` and `x3`.
+fn corners(n: u8, (x1, y2, x3): (f32, f32, f32), w: f32, h: f32) -> Vec<(f32, f32)> {
+    match n {
+        2 => vec![(0.0, 0.0), (w, 0.0), (w, h)],
+        3 => vec![(0.0, 0.0), (x1, 0.0), (x1, h), (w, h)],
+        4 => vec![(0.0, 0.0), (x1, 0.0), (x1, y2), (w, y2), (w, h)],
+        _ => vec![(0.0, 0.0), (x1, 0.0), (x1, y2), (x3, y2), (x3, h), (w, h)],
+    }
+}
+
+/// [`route_connector`], going around the drawings of `around` when the route it gives would
+/// cross one: the shortest way of two to five runs that leaves and arrives the same way and
+/// crosses none. When there is no such way, the route is the one that crosses.
+pub fn route_around(kind: ShapeKind, start: RouteEnd, end: RouteEnd, was: Was, around: &Around) -> Routed {
+    let base = route_connector(kind, start, end, was);
+    let stem = match kind {
+        ShapeKind::ElbowConnector => "bentConnector",
+        ShapeKind::CurvedConnector => "curvedConnector",
+        _ => return base,
+    };
+    if around.start.is_none() && around.end.is_none() && around.others.is_empty() {
+        return base;
+    }
+    let fin = wordcraft_geom::finite;
+    let s = (fin(start.at.0), fin(start.at.1));
+    let (f, upright) = (base.frame, base.rot != 0.0);
+    let (w, h) = (f.w, f.h);
+    // Into the frame's own axes, from its start: where the path runs from (0, 0) to (w, h).
+    let own = |(x, y): (f32, f32)| {
+        let (x, y) = if upright { (y, -x) } else { (x, y) };
+        (if f.flip_h { -x } else { x }, if f.flip_v { -y } else { y })
+    };
+    let boxed = |b: &[f32; 4]| -> Option<[f32; 4]> {
+        let b = b.map(fin);
+        let (p, q) = (own((b[0] - s.0, b[1] - s.1)), own((b[2] - s.0, b[3] - s.1)));
+        let r = [p.0.min(q.0) + GRAZE, p.1.min(q.1) + GRAZE, p.0.max(q.0) - GRAZE, p.1.max(q.1) - GRAZE];
+        (r[2] > r[0] && r[3] > r[1]).then_some(r)
+    };
+    let (box_s, box_e) = (around.start.as_ref().and_then(boxed), around.end.as_ref().and_then(boxed));
+    // The drawings near the way between the ends.
+    let reach = 6.0 * STUB;
+    let near = |r: &[f32; 4]| r[2] > -reach && r[0] < w + reach && r[3] > -reach && r[1] < h + reach;
+    let others: Vec<[f32; 4]> = around.others.iter().filter_map(boxed).filter(near).take(MAX_AROUND).collect();
+    let crosses = |pts: &[(f32, f32)]| {
+        let last = pts.len().saturating_sub(2);
+        pts.windows(2).enumerate().any(|(i, seg)| {
+            let (Some(a), Some(b)) = (seg.first(), seg.get(1)) else { return false };
+            let hit = |r: &[f32; 4]| a.0.min(b.0) < r[2] && a.0.max(b.0) > r[0] && a.1.min(b.1) < r[3] && a.1.max(b.1) > r[1];
+            // The first run leaves the start's shape and the last arrives at the end's: those
+            // two touch their own shape and are not held against it.
+            others.iter().any(hit) || (i != 0 && box_s.as_ref().is_some_and(hit)) || (i != last && box_e.as_ref().is_some_and(hit))
+        })
+    };
+    let (_, n0) = family(kind, base.preset.as_ref()).unwrap_or((false, 3));
+    let p0 = of_family(kind, base.preset.as_ref());
+    if !crosses(&corners(n0, (w * share(p0, 1), h * share(p0, 2), w * share(p0, 3)), w, h)) {
+        return base;
+    }
+    let (own_s, own_e) = (start.out.and_then(axis_direction).map(own), end.out.and_then(axis_direction).map(own));
+    let turns = matches!((own_s, own_e), (Some(_), Some(b)) if b.0 == 0.0);
+    // Places to try for a run: the middle, a stub out of each end, and just clear of each
+    // drawing's sides; the nearest to the middle first.
+    let tries = |mid: f32, ends: [Option<f32>; 2], sides: &dyn Fn(&[f32; 4]) -> (f32, f32)| {
+        let mut at: Vec<f32> = vec![mid];
+        at.extend(ends.into_iter().flatten());
+        for r in box_s.iter().chain(box_e.iter()).chain(others.iter()) {
+            let (lo, hi) = sides(r);
+            at.extend([lo - STUB, hi + STUB]);
+        }
+        at.retain(|v| v.is_finite());
+        at.sort_by(|a, b| (a - mid).abs().total_cmp(&(b - mid).abs()));
+        at.dedup_by(|a, b| (*a - *b).abs() < 0.5);
+        at.truncate(MAX_TRIES);
+        at
+    };
+    let xs =
+        tries(w / 2.0, [own_s.filter(|d| d.0 != 0.0).map(|d| d.0 * STUB), own_e.filter(|d| d.0 != 0.0).map(|d| w + d.0 * STUB)], &|r| (r[0], r[2]));
+    let ys = tries(h / 2.0, [None, own_e.filter(|d| d.1 != 0.0).map(|d| h + d.1 * STUB)], &|r| (r[1], r[3]));
+    // The first run leaves along the start's way out, the last arrives against the end's.
+    let leaves = |x1: f32| own_s.is_none_or(|d| if d.0 > 0.0 { x1 >= LEAST_RUN } else { x1 <= -LEAST_RUN });
+    let arrives = |last: f32, side: f32, out: f32| if out < 0.0 { last <= side - LEAST_RUN } else { last >= side + LEAST_RUN };
+    let mut best: Option<(f32, u8, (f32, f32, f32))> = None;
+    let mut offer = |n: u8, at: (f32, f32, f32)| {
+        let pts = corners(n, at, w, h);
+        if crosses(&pts) {
+            return;
+        }
+        // Its length, and a little for each run: of two ways as long, the one with fewer corners.
+        let run = |p: &[(f32, f32)]| match p {
+            [a, b] => (b.0 - a.0).abs() + (b.1 - a.1).abs(),
+            _ => 0.0,
+        };
+        let len: f32 = pts.windows(2).map(run).sum::<f32>() + 8.0 * f32::from(n);
+        if len.is_finite() && best.is_none_or(|(l, ..)| len < l - 0.01) {
+            best = Some((len, n, at));
+        }
+    };
+    if turns {
+        let out = own_e.map_or(-1.0, |d| d.1);
+        if leaves(w) && arrives(0.0, h, out) {
+            offer(2, (0.0, 0.0, 0.0));
+        }
+        for &x1 in xs.iter().filter(|x| leaves(**x)) {
+            for &y2 in ys.iter().filter(|y| arrives(**y, h, out)) {
+                offer(4, (x1, y2, 0.0));
+            }
+        }
+    } else {
+        let ok_last = |x: f32| own_e.is_none_or(|d| arrives(x, w, d.0));
+        for &x1 in xs.iter().filter(|x| leaves(**x)) {
+            if ok_last(x1) {
+                offer(3, (x1, 0.0, 0.0));
+            }
+            for &y2 in &ys {
+                for &x3 in xs.iter().filter(|x| ok_last(**x)) {
+                    offer(5, (x1, y2, x3));
+                }
+            }
+        }
+    }
+    let Some((_, n, (x1, y2, x3))) = best else { return base };
+    // As adjust values: shares of the frame's sides, a side of no length given one.
+    let (wide, high) = (n >= 3 && w < MIN_SIDE, n >= 4 && h < MIN_SIDE);
+    let (w2, h2) = (if wide { MIN_SIDE } else { w }, if high { MIN_SIDE } else { h });
+    let value = |at: f32, side: f32| (at / side * FULL).clamp(-MAX_ADJUST, MAX_ADJUST).round() as i32;
+    let all = [("adj1", value(x1, w2)), ("adj2", value(y2, h2)), ("adj3", value(x3, w2))];
+    let adjust: Vec<(String, i32)> = all.into_iter().take(usize::from(n.saturating_sub(2))).map(|(name, v)| (name.to_string(), v)).collect();
+    let plain = n == 3 && adjust.first().is_none_or(|(_, v)| *v == 50_000);
+    let preset = if plain { None } else { PresetGeom::new(&format!("{stem}{n}"), adjust) };
+    // The frame keeps its start; a side that was given a length moves the far corner by it.
+    let (dx, dy) = (if f.flip_h { -w2 } else { w2 }, if f.flip_v { -h2 } else { h2 });
+    let (ex, ey) = if upright { (-dy, dx) } else { (dx, dy) };
+    let (cx, cy) = (s.0 + ex / 2.0, s.1 + ey / 2.0);
+    Routed { frame: Frame { x: cx - w2 / 2.0, y: cy - h2 / 2.0, w: w2, h: h2, ..f }, rot: base.rot, preset }
+}
+
 /// A handle on a bent or curved connector that moves one of its runs: which adjust value
 /// (1–3), where it is in the frame (the middle of the run), and whether it moves along the
 /// frame's x axis (else y).
@@ -431,6 +584,53 @@ mod tests {
         // One that no longer fits (the end now faces the start) goes back to the middle.
         let r = route_connector(kind, glued((100.0, 100.0), RIGHT), glued((300.0, 160.0), LEFT), was);
         assert_eq!(r.preset, None);
+    }
+
+    /// A route that would cross a drawing goes around it; one that crosses none is left as it is.
+    #[test]
+    fn a_route_goes_around_what_is_in_its_way() {
+        let kind = ShapeKind::ElbowConnector;
+        // Two boxes side by side, right side to left side, and a third box between them.
+        let (a, b) = ([100.0, 100.0, 200.0, 160.0], [400.0, 100.0, 500.0, 160.0]);
+        let (s, e) = (glued((200.0, 130.0), RIGHT), glued((400.0, 130.0), LEFT));
+        let free = Around { start: Some(a), end: Some(b), others: vec![[260.0, 300.0, 340.0, 360.0]] };
+        assert_eq!(route_around(kind, s, e, Was::default(), &free), route_connector(kind, s, e, Was::default()), "nothing in the way");
+        let blocked = Around { start: Some(a), end: Some(b), others: vec![[260.0, 90.0, 340.0, 170.0]] };
+        let r = route_around(kind, s, e, Was::default(), &blocked);
+        let pts = on_page(kind, &r);
+        assert!(near(pts[0], s.at) && near(*pts.last().unwrap(), e.at), "{pts:?}");
+        assert_eq!((unit(pts[0], pts[1]), unit(e.at, pts[pts.len() - 2])), (RIGHT, LEFT), "it still leaves and arrives straight: {pts:?}");
+        let clear = |p: &[(f32, f32)], r: [f32; 4]| {
+            p.windows(2).all(|w| {
+                !(w[0].0.min(w[1].0) < r[2] - 1.0
+                    && w[0].0.max(w[1].0) > r[0] + 1.0
+                    && w[0].1.min(w[1].1) < r[3] - 1.0
+                    && w[0].1.max(w[1].1) > r[1] + 1.0)
+            })
+        };
+        assert!(clear(&pts, [260.0, 90.0, 340.0, 170.0]), "around the box in between: {pts:?}");
+        assert_eq!(pts.len(), 6, "over or under it: {pts:?}");
+        // From a shape's left side to a shape on its right: around its own shape, not through it.
+        let (s, e) = (glued((100.0, 130.0), LEFT), glued((400.0, 130.0), LEFT));
+        let own = Around { start: Some(a), end: Some(b), others: Vec::new() };
+        let through = on_page(kind, &route_connector(kind, s, e, Was::default()));
+        assert!(!clear(&through[1..], a), "the plain route runs back through its own shape: {through:?}");
+        let pts = on_page(kind, &route_around(kind, s, e, Was::default(), &own));
+        assert!(clear(&pts[1..], a) && near(*pts.last().unwrap(), e.at), "{pts:?}");
+        assert_eq!((unit(pts[0], pts[1]), unit(e.at, pts[pts.len() - 2])), (LEFT, LEFT), "{pts:?}");
+        // Walled in: no way round is found, and the route is the plain one.
+        let walled = Around {
+            start: Some(a),
+            end: Some(b),
+            others: vec![[-1000.0, -1000.0, 1000.0, 99.0], [-1000.0, 161.0, 1000.0, 1000.0], [205.0, -1000.0, 210.0, 1000.0]],
+        };
+        let (s, e) = (glued((200.0, 130.0), RIGHT), glued((400.0, 130.0), LEFT));
+        assert_eq!(route_around(kind, s, e, Was::default(), &walled), route_connector(kind, s, e, Was::default()));
+        // Hostile bounds and a straight connector are no trouble.
+        let wild = Around { start: Some([f32::NAN; 4]), end: Some([f32::INFINITY, 0.0, f32::NEG_INFINITY, 5.0]), others: vec![[f32::MAX; 4]; 100] };
+        let r = route_around(kind, s, e, Was::default(), &wild);
+        assert!([r.frame.x, r.frame.y, r.frame.w, r.frame.h].into_iter().all(f32::is_finite));
+        assert_eq!(route_around(ShapeKind::StraightConnector, s, e, Was::default(), &blocked).rot, 0.0);
     }
 
     #[test]
