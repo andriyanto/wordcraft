@@ -28,6 +28,7 @@ pub(crate) use arrange::{anchor_paragraph, insert_floating, nearest_line};
 use group::ungroup;
 pub(crate) use label::{in_label, pick_labels, place_labels};
 pub(crate) use multi::delete_picked;
+pub use multi::{Together, together_frames, together_pivot};
 pub use picture::{OriginalSize, PictureLook, cropped_original_size, fit_size, original_size};
 #[cfg(test)]
 use picture::{clear_background, grown, picture_style};

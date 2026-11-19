@@ -408,6 +408,7 @@ impl Session {
                 | "arrange.distribute"
                 | "arrange.rotate"
                 | "arrange.rotation"
+                | "arrange.scale"
                 | "shape.fill"
                 | "shape.effects"
         ) && (spec.mutates || self.sel != *sel_before)
