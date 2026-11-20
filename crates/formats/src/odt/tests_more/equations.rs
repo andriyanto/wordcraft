@@ -29,7 +29,7 @@ fn equations_round_trip_as_formula_objects() {
     let bytes = export(&d).unwrap();
     // A formula sub-document per equation, declared in the manifest.
     let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_slice())).unwrap();
-    let names: Vec<String> = z.file_names().map(String::from).collect();
+    let names: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
     assert!(names.iter().any(|n| n == "Object 1/content.xml") && names.iter().any(|n| n == "Object 2/content.xml"), "{names:?}");
     let mut manifest = String::new();
     std::io::Read::read_to_string(&mut z.by_name("META-INF/manifest.xml").unwrap(), &mut manifest).unwrap();

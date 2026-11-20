@@ -253,7 +253,7 @@ fn every_chart_type_is_saved_as_a_chart_object_and_reads_back() {
         assert_eq!((back[0].w, back[0].h, back[0].alt.as_str()), (300.0, 180.0, "Sales chart"), "{kind:?}");
         // The package lists the chart object.
         let z = zip::ZipArchive::new(std::io::Cursor::new(&bytes)).unwrap();
-        assert!(z.file_names().any(|n| n == "Object 1/content.xml"), "{kind:?}");
+        assert!(z.file_names().map(|n| n.unwrap()).any(|n| n == "Object 1/content.xml"), "{kind:?}");
         let manifest = crate::odt::tests::entry(&bytes, "META-INF/manifest.xml");
         assert!(
             manifest
@@ -320,7 +320,8 @@ fn an_unchanged_chart_is_written_back_as_it_was_and_an_edited_one_anew() {
     .unwrap();
     let replacement_of = |bytes: &[u8]| {
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
-        let name = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string())).find(|n| n.starts_with("ObjectReplacements/"))?;
+        let name =
+            (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().unwrap().into_owned())).find(|n| n.starts_with("ObjectReplacements/"))?;
         let mut out = Vec::new();
         std::io::Read::read_to_end(&mut z.by_name(&name).unwrap(), &mut out).unwrap();
         Some(out)
@@ -331,7 +332,7 @@ fn an_unchanged_chart_is_written_back_as_it_was_and_an_edited_one_anew() {
     let chart_of = |bytes: &[u8]| {
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
         let name = (0..z.len())
-            .filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string()))
+            .filter_map(|i| z.by_index(i).ok().map(|f| f.name().unwrap().into_owned()))
             .find(|n| n.ends_with("/content.xml") && n.starts_with("Object"))
             .unwrap();
         let mut out = String::new();

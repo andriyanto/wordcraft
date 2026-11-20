@@ -59,7 +59,8 @@ fn embedded_objects_are_saved_back_whole() {
     let doc = import(&package()).unwrap();
     let saved = crate::odt::tests::export_model(&doc).unwrap();
     let z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
-    let names: Vec<&str> = z.file_names().collect();
+    let names: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     for n in ["Object 1/content.xml", "Object 1/styles.xml", "Object 2", "ObjectReplacements/Object 1", "ObjectReplacements/Object 2"] {
         assert!(names.contains(&n), "{n} in {names:?}");
     }
@@ -127,7 +128,8 @@ fn a_flat_document_holds_its_objects_and_their_pictures_inline() {
     let again = crate::odt::import_flat(&flat).unwrap();
     let saved = export(&again).unwrap();
     let z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
-    let names: Vec<&str> = z.file_names().collect();
+    let names: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     let ole = crate::odt::tests::entry(&saved, "content.xml");
     assert!(ole.contains("<draw:object-ole"), "{ole}");
     // Both objects with their pictures, each link to a file (or folder) the package has.
@@ -157,14 +159,19 @@ fn an_object_in_a_header_is_kept_too() {
     let d = import(&pkg).unwrap();
     let saved = export(&d).unwrap();
     let z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
-    let names: Vec<&str> = z.file_names().collect();
+    let names: Vec<String> = z.file_names().map(|n| n.unwrap().into_owned()).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
     assert!(names.contains(&"Object 1/content.xml") && names.contains(&"ObjectReplacements/Object 1"), "{names:?}");
     assert!(entry(&saved, "styles.xml").contains("<draw:object xlink:href=\"./Object 1\""));
     assert!(entry(&saved, "META-INF/manifest.xml").contains(r#"manifest:full-path="Object 1/""#));
     // Written from the model: WordCraft's own object, named its way.
     let saved = crate::odt::tests::export_model(&d).unwrap();
     let z = zip::ZipArchive::new(std::io::Cursor::new(&saved)).unwrap();
-    assert!(z.file_names().any(|n| n.ends_with("/content.xml") && n.starts_with("Object M")), "{:?}", z.file_names().collect::<Vec<_>>());
+    assert!(
+        z.file_names().map(|n| n.unwrap()).any(|n| n.ends_with("/content.xml") && n.starts_with("Object M")),
+        "{:?}",
+        z.file_names().map(|n| n.unwrap()).collect::<Vec<_>>()
+    );
     assert!(entry(&saved, "styles.xml").contains("<draw:object xlink:href=\"./Object M"));
 }
 

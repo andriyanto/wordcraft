@@ -271,7 +271,7 @@ pub fn decrypt(bytes: &[u8], password: &str) -> Result<Vec<u8>, CryptError> {
     let mut work = 0u64;
     for i in 0..z.len().min(MAX_FILES) {
         let Ok(mut f) = z.by_index(i) else { continue };
-        let name = f.name().to_string();
+        let Ok(name) = f.name().map(|n| n.into_owned()) else { continue };
         if f.is_dir() {
             continue;
         }
@@ -323,7 +323,7 @@ pub fn encrypt(bytes: &[u8], password: &str) -> Result<Vec<u8>, String> {
         if f.is_dir() {
             continue;
         }
-        let name = f.name().to_string();
+        let name = f.name().map_err(err)?.into_owned();
         let mut data = Vec::new();
         f.read_to_end(&mut data).map_err(io)?;
         if name == "META-INF/manifest.xml" {

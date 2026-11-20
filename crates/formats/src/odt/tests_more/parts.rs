@@ -49,7 +49,7 @@ fn files(bytes: &[u8]) -> Vec<(String, Vec<u8>)> {
         let mut f = z.by_index(i).unwrap();
         let mut b = Vec::new();
         f.read_to_end(&mut b).unwrap();
-        out.push((f.name().to_string(), b));
+        out.push((f.name().unwrap().into_owned(), b));
     }
     out
 }

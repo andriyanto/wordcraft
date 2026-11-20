@@ -25,7 +25,7 @@ fn an_encrypted_package_opens_with_its_password_only() {
     assert!(is_encrypted(&enc));
     // Nothing readable is left: the content is encrypted, the manifest says how.
     let z = zip::ZipArchive::new(std::io::Cursor::new(&enc)).unwrap();
-    assert_eq!(z.file_names().next(), Some("mimetype"));
+    assert_eq!(z.file_names().next().map(|n| n.unwrap().into_owned()).as_deref(), Some("mimetype"));
     assert!(!enc.windows(10).any(|w| w == b"Top secret"));
     let manifest = crate::odt::tests::entry(&enc, "META-INF/manifest.xml");
     for want in [
