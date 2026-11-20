@@ -4,8 +4,14 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = false
-default-run = "wordcraft"
-description = "WordCraft desktop app"
+default-run = "wordku"
+description = "WordKu desktop app"
+
+# The program is `wordku` (`wordku.exe`); the package keeps its name, so `cargo run -p wordcraft`
+# still builds and starts it.
+[[bin]]
+name = "wordku"
+path = "src/main.rs"
 
 [lints]
 workspace = true

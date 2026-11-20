@@ -373,7 +373,7 @@ fn own_name(translated: &str) -> &str {
 
 /// The translation of `s` that `look` finds under the catalogs' name for the app, with the
 /// app's own name put back: `s` itself when there is none.
-fn by_catalog_name<'a>(s: &'a str, look: impl Fn(&str) -> Option<String>) -> &'a str {
+fn by_catalog_name(s: &str, look: impl Fn(&str) -> Option<String>) -> &str {
     match catalog_source(s).and_then(|source| look(&source).filter(|found| *found != source)) {
         Some(translated) => kept(translated.replace(CATALOG_NAME, APP_NAME)),
         None => s,

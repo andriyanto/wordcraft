@@ -55,7 +55,7 @@ fn the_password_comes_from_an_option_a_file_or_the_environment() {
 
 #[test]
 fn a_password_file_loses_only_its_trailing_newline() {
-    let path = std::env::temp_dir().join("wordcraft-cli-password-test.txt");
+    let path = std::env::temp_dir().join("wordku-cli-password-test.txt");
     std::fs::write(&path, "s3cret\r\n").unwrap();
     let got = password_from(&args(&["f.docx", "--password-file", &path.to_string_lossy()]));
     std::fs::remove_file(&path).ok();
@@ -105,7 +105,7 @@ fn help_or_h_after_a_subcommand_asks_for_the_usage() {
 fn usage_lists_exactly_the_subcommands() {
     let listed: Vec<&str> = USAGE
         .lines()
-        .filter_map(|line| line.strip_prefix("  wordcraft-cli ")?.split_whitespace().next())
+        .filter_map(|line| line.strip_prefix("  wordku-cli ")?.split_whitespace().next())
         .filter(|word| !word.starts_with(['-', '[']))
         .collect();
     assert_eq!(listed, SUBCOMMANDS);

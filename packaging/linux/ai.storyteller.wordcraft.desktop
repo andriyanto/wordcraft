@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=WordCraft
+Name=WordKu
 GenericName=Word Processor
 Comment=Write and design documents; open and save Word files
-Exec=wordcraft %F
-TryExec=wordcraft
+Exec=wordku %F
+TryExec=wordku
 Icon=ai.storyteller.wordcraft
 Terminal=false
 StartupNotify=true

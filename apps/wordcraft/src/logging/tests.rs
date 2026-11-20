@@ -18,6 +18,8 @@ fn the_default_filter_shows_wordcraft_info_and_other_crates_warnings() {
     let f = Filter::parse(DEFAULT_FILTER);
     assert_eq!(f.level_for("wordcraft"), LevelFilter::Info);
     assert_eq!(f.level_for("wordcraft::control_server"), LevelFilter::Info);
+    // The program's own crate is `wordku` (its binary's name): its logs count too.
+    assert_eq!(f.level_for("wordku::control_server"), LevelFilter::Info);
     assert_eq!(f.level_for("wordcraft_docx::package"), LevelFilter::Info);
     assert_eq!(f.level_for("wordcraft_ui_egui"), LevelFilter::Info);
     assert_eq!(f.level_for("wgpu_core::device"), LevelFilter::Warn);
@@ -131,9 +133,9 @@ fn rotation_keeps_the_previous_logs_and_starts_an_empty_file() {
         std::fs::write(&path, format!("run {run}")).expect("write");
     }
     assert_eq!(read(&dir.join(LOG_FILE)), "run 4");
-    assert_eq!(read(&dir.join("wordcraft.1.log")), "run 3");
-    assert_eq!(read(&dir.join("wordcraft.2.log")), "run 2");
-    assert!(!dir.join("wordcraft.3.log").exists(), "only {KEEP} old logs are kept");
+    assert_eq!(read(&dir.join("wordku.1.log")), "run 3");
+    assert_eq!(read(&dir.join("wordku.2.log")), "run 2");
+    assert!(!dir.join("wordku.3.log").exists(), "only {KEEP} old logs are kept");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -239,7 +241,7 @@ fn the_logger_filters_records_and_writes_them_to_the_attached_file() {
     assert!(!logger.enabled(&log::Metadata::builder().level(log::Level::Info).target("naga").build()));
     // Attaching again rotates: the first log becomes `.1`.
     logger.attach_dir(&dir).expect("attach again");
-    assert_eq!(read(&dir.join("wordcraft.1.log")), text);
+    assert_eq!(read(&dir.join("wordku.1.log")), text);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

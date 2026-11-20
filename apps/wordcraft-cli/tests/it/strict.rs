@@ -18,7 +18,7 @@ fn dir(name: &str) -> PathBuf {
 }
 
 fn convert(input: &Path, output: &Path, strict: bool) -> Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_wordku-cli"));
     cmd.arg("convert").arg(input).arg(output);
     if strict {
         cmd.arg("--strict");
@@ -149,7 +149,7 @@ fn an_uncovered_code_point_fails_strict_with_a_report_and_no_file() {
         let r = convert(&input, &out, true);
         assert_eq!(r.status.code(), Some(3), "{}", stderr(&r));
         let text = stderr(&r);
-        assert!(text.contains(&format!("wordcraft-cli: strict: 1 character cannot be drawn: {cp} (×3)")), "{text}");
+        assert!(text.contains(&format!("wordku-cli: strict: 1 character cannot be drawn: {cp} (×3)")), "{text}");
         let json = report_json(&r);
         assert_eq!(json["schema"], 1);
         assert_eq!(json["strict"], "failed");
@@ -248,7 +248,7 @@ fn bad_input_exits_1_with_the_usual_message_with_and_without_strict() {
         assert_eq!(plain.status.code(), Some(1), "{}", stderr(&plain));
         assert_eq!(strict.status.code(), Some(1), "{}", stderr(&strict));
         assert_eq!(stderr(&plain), stderr(&strict));
-        assert!(stderr(&plain).starts_with("wordcraft-cli: "), "{}", stderr(&plain));
+        assert!(stderr(&plain).starts_with("wordku-cli: "), "{}", stderr(&plain));
         assert!(!d.join("a.pdf").exists() && !d.join("b.pdf").exists());
     }
     std::fs::remove_dir_all(d).unwrap();
@@ -273,7 +273,7 @@ fn strict_with_another_output_type_exits_1_before_the_input_is_read() {
 }
 
 fn render(input: &Path, output: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_wordcraft-cli")).arg("render").arg(input).arg(output).args(args).output().unwrap()
+    Command::new(env!("CARGO_BIN_EXE_wordku-cli")).arg("render").arg(input).arg(output).args(args).output().unwrap()
 }
 
 /// Page 1 has `a{c}b`, page 2 plain text.
@@ -297,7 +297,7 @@ fn render_strict_refuses_an_uncovered_character_on_the_page_with_no_stdout_or_fi
     assert!(r.stdout.is_empty(), "{}", String::from_utf8_lossy(&r.stdout));
     assert!(!out.exists());
     let text = stderr(&r);
-    assert!(text.contains(&format!("wordcraft-cli: strict: 1 character cannot be drawn: {cp} (×1)")), "{text}");
+    assert!(text.contains(&format!("wordku-cli: strict: 1 character cannot be drawn: {cp} (×1)")), "{text}");
     assert_eq!(report_json(&r)["missing_glyphs"][0]["cp"], cp.as_str());
     eprintln!("{text}");
 
@@ -343,7 +343,7 @@ fn a_picture_target_with_a_newline_and_a_bidi_override_cannot_forge_a_report_lin
     let d = dir("escape");
     let input = d.join("in.docx");
     // XML character references put a newline and U+202E in the target.
-    std::fs::write(&input, docx_with_external_picture("http://example.invalid/a&#10;wordcraft-cli: strict: forged&#x202E;gnp.png")).unwrap();
+    std::fs::write(&input, docx_with_external_picture("http://example.invalid/a&#10;wordku-cli: strict: forged&#x202E;gnp.png")).unwrap();
     let out = d.join("out.pdf");
     let r = convert(&input, &out, true);
     assert_eq!(r.status.code(), Some(3), "{}", stderr(&r));
@@ -351,8 +351,8 @@ fn a_picture_target_with_a_newline_and_a_bidi_override_cannot_forge_a_report_lin
     let lines: Vec<&str> = text.lines().collect();
     // One human line for the picture, then the JSON line.
     assert_eq!(lines.len(), 2, "{text}");
-    assert!(lines[0].starts_with("wordcraft-cli: strict: 1 picture(s) left out: "), "{text}");
-    assert!(lines[0].contains("\\nwordcraft-cli: strict: forged\\u{202e}gnp.png"), "{text}");
+    assert!(lines[0].starts_with("wordku-cli: strict: 1 picture(s) left out: "), "{text}");
+    assert!(lines[0].contains("\\nwordku-cli: strict: forged\\u{202e}gnp.png"), "{text}");
     assert!(!text.contains('\u{202e}'), "the raw bidi override reached the terminal");
     // The JSON keeps the raw value, escaped by the JSON encoder.
     let json = report_json(&r);
@@ -365,10 +365,10 @@ fn a_picture_target_with_a_newline_and_a_bidi_override_cannot_forge_a_report_lin
 fn run_with_strict_cannot_forge_an_error_line_either() {
     let d = dir("run-escape");
     let input = d.join("in.docx");
-    std::fs::write(&input, docx_with_external_picture("http://example.invalid/a&#10;wordcraft-cli: strict: forged&#x1B;[2J&#x202E;gnp.png")).unwrap();
+    std::fs::write(&input, docx_with_external_picture("http://example.invalid/a&#10;wordku-cli: strict: forged&#x1B;[2J&#x202E;gnp.png")).unwrap();
     let out = d.join("out.pdf");
     let cmd = format!("file.exportPdf={}", serde_json::json!({"path": out, "strict": true}));
-    let r = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli")).arg("run").arg("--file").arg(&input).arg("--cmd").arg(cmd).output().unwrap();
+    let r = Command::new(env!("CARGO_BIN_EXE_wordku-cli")).arg("run").arg("--file").arg(&input).arg("--cmd").arg(cmd).output().unwrap();
     assert_eq!(r.status.code(), Some(1));
     let text = stderr(&r);
     assert_eq!(text.lines().count(), 1, "{text}");
@@ -382,7 +382,7 @@ fn run_with_strict_cannot_forge_an_error_line_either() {
 fn usage_errors_keep_their_line_breaks() {
     // Errors go to stderr with the usage after a blank line (`missing argument`, `unknown command`).
     for args in [&["frobnicate"][..], &["convert"][..]] {
-        let r = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli")).args(args).output().unwrap();
+        let r = Command::new(env!("CARGO_BIN_EXE_wordku-cli")).args(args).output().unwrap();
         let text = stderr(&r);
         assert_eq!(r.status.code(), Some(1), "{args:?}: {text}");
         assert!(text.lines().count() > 3, "{args:?}: {text}");
@@ -390,7 +390,7 @@ fn usage_errors_keep_their_line_breaks() {
         assert!(!text.contains("\\n"), "{args:?}: {text}");
     }
     // No arguments at all prints the usage as help, on stdout.
-    let r = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli")).output().unwrap();
+    let r = Command::new(env!("CARGO_BIN_EXE_wordku-cli")).output().unwrap();
     let all = format!("{}{}", String::from_utf8_lossy(&r.stdout), stderr(&r));
     assert!(all.lines().count() > 3 && all.lines().any(|l| l == "USAGE:"), "{all}");
 }

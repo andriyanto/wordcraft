@@ -160,7 +160,7 @@ mod tests {
         for t in WORD_MIME_TYPES {
             assert!(declared.contains(t), "{t} missing from MimeType=");
         }
-        assert!(entry.lines().any(|l| l == "Exec=wordcraft %F"), "files are passed on the command line");
+        assert!(entry.lines().any(|l| l == "Exec=wordku %F"), "files are passed on the command line");
     }
 
     /// Declaring `text/plain` makes WordCraft a handler for every config, script and log on systems with no default set.

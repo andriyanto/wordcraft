@@ -44,7 +44,7 @@ pub(crate) fn drop_inherited() -> Option<std::io::Error> {
         return None;
     }
     // The logger isn't up yet, and wouldn't survive `exec`. Unlike `eprintln!`, never panics.
-    let _ = writeln!(std::io::stderr(), "wordcraft: ignoring the AppImage {:?} inherited from another program", Path::new(&appimage));
+    let _ = writeln!(std::io::stderr(), "wordku: ignoring the AppImage {:?} inherited from another program", Path::new(&appimage));
     let mut args = std::env::args_os();
     // This file, whatever has happened to its path since it started.
     let mut again = Command::new("/proc/self/exe");
@@ -88,7 +88,7 @@ mod tests {
         let dir = root.join(name);
         std::fs::create_dir_all(dir.join("usr/bin")).unwrap();
         let dir = dir.canonicalize().unwrap();
-        let exe = dir.join("usr/bin/wordcraft");
+        let exe = dir.join("usr/bin/wordku");
         (dir, exe)
     }
 
@@ -112,7 +112,7 @@ mod tests {
     fn an_installed_executable_is_not_in_another_programs_mount() {
         let tmp = Tmp::new("other");
         let (other, _) = mount(&tmp.0, ".mount_other");
-        assert!(!runs_from_image(Some(Path::new("/usr/bin/wordcraft")), Some(other.as_os_str())));
+        assert!(!runs_from_image(Some(Path::new("/usr/bin/wordku")), Some(other.as_os_str())));
     }
 
     /// Paths compare by component: one mount's name can start with another's.
