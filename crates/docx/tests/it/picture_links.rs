@@ -113,7 +113,7 @@ fn a_linked_picture_is_saved_with_its_link_on_the_drawing_too() {
     let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
     for i in 0..z.len() {
         let mut f = z.by_index(i).unwrap();
-        let name = f.name().to_string();
+        let name = f.name().unwrap().into_owned();
         let mut data = Vec::new();
         f.read_to_end(&mut data).unwrap();
         if name == "word/document.xml" {

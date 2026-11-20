@@ -477,7 +477,7 @@ fn a_picture_kept_as_read_is_written_with_its_paragraph_only() {
     let d = import(&package(&DRAWINGS)).unwrap();
     let files = |bytes: &[u8]| {
         let mut z = zip::ZipArchive::new(std::io::Cursor::new(bytes.to_vec())).unwrap();
-        let names: Vec<String> = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().to_string())).collect();
+        let names: Vec<String> = (0..z.len()).filter_map(|i| z.by_index(i).ok().map(|f| f.name().unwrap().into_owned())).collect();
         let dot = z.by_name("Pictures/dot.png").ok().map(|mut f| {
             let mut v = Vec::new();
             std::io::Read::read_to_end(&mut f, &mut v).unwrap();
@@ -661,7 +661,8 @@ fn a_note_or_formula_edited_is_written_from_the_model() {
     let d = import(&package(&NOTES_AND_FORMULAS)).unwrap();
     let saved = export(&d).unwrap();
     assert!(content_of(&saved).contains(r#"wcx:note="kept""#));
-    let names = |b: &[u8]| zip::ZipArchive::new(std::io::Cursor::new(b.to_vec())).unwrap().file_names().map(String::from).collect::<Vec<_>>();
+    let names =
+        |b: &[u8]| zip::ZipArchive::new(std::io::Cursor::new(b.to_vec())).unwrap().file_names().map(|n| n.unwrap().into_owned()).collect::<Vec<_>>();
     assert!(names(&saved).iter().any(|n| n == "Object 9/content.xml"), "{:?}", names(&saved));
     let manifest = crate::odt::tests::entry(&saved, "META-INF/manifest.xml");
     assert!(

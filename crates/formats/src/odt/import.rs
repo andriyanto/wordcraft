@@ -900,7 +900,7 @@ fn parse_tracked(bytes: &[u8], paper: (f32, f32)) -> Result<Parsed, String> {
             custom.push(f);
         }
     }
-    let entries: Vec<String> = z.file_names().take(100_000).map(str::to_string).collect();
+    let entries: Vec<String> = z.file_names().take(100_000).filter_map(|n| n.ok().map(|n| n.into_owned())).collect();
     let manifest = read_entry(&mut z, "META-INF/manifest.xml").map(|m| super::objects::manifest(&m)).unwrap_or_default();
     let kept = super::parts::read(&mut z, &entries, &manifest);
     let mut pictures = Pictures::new(MAX_ENTRY);
