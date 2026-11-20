@@ -7,19 +7,19 @@
 //! Help ▸ Download Latest…, open the release's page in the browser, where the person
 //! downloads the installer and runs it themselves, with the warning the system shows them.
 //!
-//! The check and the two windows are craft-update's (`check_for_update`, `StartupPrompt`,
+//! The check and the two windows come from the update module, `crates/update` (`check_for_update`, `StartupPrompt`,
 //! `CheckResultDialog`); what is left out is its self-update (`updater::Updater`).
 
 use crate::WordApp;
 
 #[cfg(not(target_arch = "wasm32"))]
-use craft_update::dialog::{CheckResultDialog, CheckResultResponse};
-#[cfg(not(target_arch = "wasm32"))]
-use craft_update::updater::Status;
-#[cfg(not(target_arch = "wasm32"))]
-use craft_update::{Release, StartupPrompt, StartupPromptResponse};
-#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
+#[cfg(not(target_arch = "wasm32"))]
+use wordcraft_update::dialog::{CheckResultDialog, CheckResultResponse};
+#[cfg(not(target_arch = "wasm32"))]
+use wordcraft_update::updater::Status;
+#[cfg(not(target_arch = "wasm32"))]
+use wordcraft_update::{Release, StartupPrompt, StartupPromptResponse};
 
 #[cfg(not(target_arch = "wasm32"))]
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -96,7 +96,7 @@ impl Default for Runtime {
     }
 }
 
-/// The update prompt's and the result window's words in the interface language: craft-update
+/// The update prompt's and the result window's words in the interface language: the update module
 /// passes its English text and the values of its `{name}` placeholders each time it draws.
 #[cfg(not(target_arch = "wasm32"))]
 fn translate(text: &str, args: &[(&str, &str)]) -> String {
@@ -107,7 +107,7 @@ fn translate(text: &str, args: &[(&str, &str)]) -> String {
 /// names for this run (to see the prompt without waiting for a release).
 #[cfg(not(target_arch = "wasm32"))]
 fn running_version() -> String {
-    craft_update::self_update::current_version(&crate::UPDATE_APP, VERSION).map_or_else(|| VERSION.to_string(), |v| v.to_string())
+    wordcraft_update::self_update::current_version(&crate::UPDATE_APP, VERSION).map_or_else(|| VERSION.to_string(), |v| v.to_string())
 }
 
 /// The page Help ▸ Download Latest… opens: this repository's releases, the newest first. (Not
@@ -118,10 +118,10 @@ pub(crate) fn download_page() -> String {
 
 /// The page Download opens for `release`: its own page when the link is a plain web link, else
 /// this repository's releases. (A `Release` can come from a cache or a feed, so its link is
-/// checked here as craft-update checks it.)
+/// checked here as the update module checks it.)
 #[cfg(not(target_arch = "wasm32"))]
 fn page_of(release: &Release) -> String {
-    if craft_update::release::safe_web_link(&release.html_url) { release.html_url.clone() } else { crate::UPDATE_APP.releases_url() }
+    if wordcraft_update::release::safe_web_link(&release.html_url) { release.html_url.clone() } else { crate::UPDATE_APP.releases_url() }
 }
 
 impl WordApp {
@@ -172,8 +172,8 @@ impl Runtime {
         let spawned = std::thread::Builder::new().name("update-check".into()).spawn(move || {
             let ask = || match source {
                 Some(ask) => ask(),
-                None => craft_update::Http::new(&format!("{}/Update", crate::UPDATE_APP.name))
-                    .and_then(|http| craft_update::check_for_update(&crate::UPDATE_APP, &http, &version)),
+                None => wordcraft_update::Http::new(&format!("{}/Update", crate::UPDATE_APP.name))
+                    .and_then(|http| wordcraft_update::check_for_update(&crate::UPDATE_APP, &http, &version)),
             };
             let answer =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(ask)).unwrap_or_else(|_| Err("the update check failed unexpectedly".into()));
@@ -299,7 +299,7 @@ mod tests {
     /// repository, and are WordKu's own (its own asset names).
     #[test]
     fn updates_come_from_this_projects_own_repository() {
-        let (app, suite) = (crate::UPDATE_APP, craft_update::suite::WORDCRAFT);
+        let (app, suite) = (crate::UPDATE_APP, wordcraft_update::suite::WORDCRAFT);
         assert_eq!(app.repo, "andriyanto/wordku");
         assert_eq!(app.releases_url(), "https://github.com/andriyanto/wordku/releases");
         assert_ne!(app.repo, suite.repo);
@@ -406,7 +406,7 @@ mod tests {
         for odd in ["file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", "", "http://example.com/x"] {
             let page = page_of(&release(odd));
             assert!(page == odd || page == "https://github.com/andriyanto/wordku/releases", "{odd} → {page}");
-            assert!(craft_update::release::safe_web_link(&page), "{odd} → {page}");
+            assert!(wordcraft_update::release::safe_web_link(&page), "{odd} → {page}");
         }
     }
 

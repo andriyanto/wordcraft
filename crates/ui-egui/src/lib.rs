@@ -7,18 +7,18 @@
 
 /// The GitHub repository WordKu's releases come from: the only place it looks for a newer
 /// version, and the page Download opens. WordKu is its own project (it started from WordCraft),
-/// so that is its own repository, not the one craft-update lists for the Craft App Suite.
+/// so that is its own repository, not the one the update module lists for the Craft App Suite.
 pub const UPDATE_REPO: &str = "andriyanto/wordku";
 /// WordKu's page: its repository.
 pub const REPO_URL: &str = "https://github.com/andriyanto/wordku";
 /// Where WordKu's releases are downloaded.
 pub const RELEASES_URL: &str = "https://github.com/andriyanto/wordku/releases";
 
-/// WordKu as craft-update knows it, with its 128 px icon and accent colour: the update
+/// WordKu as the update module knows it, with its 128 px icon and accent colour: the update
 /// prompt shows both, and an AppImage's menu entry gets the icon. Its releases, and who the
 /// prompt says they are by, are this repository's ([`UPDATE_REPO`]).
 #[cfg(not(target_arch = "wasm32"))]
-pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
+pub const UPDATE_APP: wordcraft_update::app::App = wordcraft_update::app::App {
     // The programs are `wordku` and `wordku-cli`, and release assets are named `wordku-<version>-…`.
     id: "wordku",
     name: "WordKu",

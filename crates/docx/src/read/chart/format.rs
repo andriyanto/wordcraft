@@ -189,23 +189,27 @@ pub(super) fn excel_stamp(serial: f64, date1904: bool) -> Option<Stamp> {
 /// Calendar date (year, month, day) of day `n` counted from 30 December 1899 (an Excel serial
 /// day number). Serial `n` is `n - 25_569` days from 1970-01-01.
 ///
-/// The caller's serial guard keeps `n` inside chrono's range, but the Gregorian calendar repeats
-/// every 400 years (146_097 days), so this stays exact for any `n` without hand-rolled calendar
-/// math: chrono converts the day within its cycle and whole cycles go back into the year (an
-/// i128 so the extremes can't overflow). 1970-01-01 is `num_days_from_ce` 719_163, so serial `n`
-/// is CE day `n - 25_569 + 719_163`.
+/// The caller's serial guard keeps `n` near today, but the Gregorian calendar repeats every 400
+/// years (146_097 days), so this stays exact for any `n` without hand-rolled calendar math: jiff
+/// converts the day within its cycle and whole cycles go back into the year (an i128 so the
+/// extremes can't overflow).
 pub(super) fn civil(n: i64) -> (i64, u32, u32) {
-    use chrono::Datelike;
-    // CE day of serial `n`, in i128 so no `n` overflows.
-    let from_ce = i128::from(n) - 25_569 + 719_163;
-    let (cycles, rest) = (from_ce.div_euclid(146_097), from_ce.rem_euclid(146_097));
-    match i32::try_from(rest).ok().and_then(chrono::NaiveDate::from_num_days_from_ce_opt) {
-        Some(date) => {
+    // Days from 1970-01-01 of serial `n`, in i128 so no `n` overflows.
+    let from_epoch = i128::from(n) - 25_569;
+    let (cycles, rest) = (from_epoch.div_euclid(146_097), from_epoch.rem_euclid(146_097));
+    // `rest` is 0..146_097: 1970-01-01 up to 2369, always inside jiff's range.
+    let rest = i64::try_from(rest).unwrap_or(0);
+    match jiff::civil::Date::constant(1970, 1, 1).checked_add(jiff::SignedDuration::from_secs(rest * 86_400)) {
+        Ok(date) => {
             let y = i128::from(date.year()) + cycles * 400;
-            (i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }), date.month(), date.day())
+            (
+                i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }),
+                u32::from(date.month().unsigned_abs()),
+                u32::from(date.day().unsigned_abs()),
+            )
         }
-        // Unreachable: every `rest` in 0..146_097 is a valid CE day.
-        None => (1900, 1, 1),
+        // Unreachable: see above.
+        Err(_) => (1900, 1, 1),
     }
 }
 

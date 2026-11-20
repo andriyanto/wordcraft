@@ -5,10 +5,7 @@
 /// Minutes to add to UTC for local time at Unix time `secs` (east of Greenwich is positive).
 fn offset_minutes(secs: i64) -> i32 {
     #[cfg(not(target_arch = "wasm32"))]
-    let minutes = {
-        use chrono::{Local, Offset, TimeZone};
-        Local.timestamp_opt(secs, 0).earliest().map_or(0, |t| t.offset().fix().local_minus_utc() / 60)
-    };
+    let minutes = jiff::Timestamp::from_second(secs).map_or(0, |at| jiff::tz::TimeZone::system().to_offset(at).seconds() / 60);
     // The browser knows the zone: `getTimezoneOffset` is UTC minus local time, in minutes.
     #[cfg(target_arch = "wasm32")]
     let minutes = {
