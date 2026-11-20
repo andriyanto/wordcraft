@@ -326,3 +326,35 @@ Those rules were written for the original project. This repository is developed 
 | #29 | About: this repository, its owner and Claude Fable 5.2 | Open when this was written |
 
 Pull requests #17 to #22 are dependency updates from Dependabot: #17, #20, #21 and #22 were merged; #18 was merged and then reverted; #19 was closed.
+
+## 17. The new name: WordKu (20 November 2026)
+
+At the owner's request the app is called **WordKu**, and the repository is `andriyanto/wordku`
+(GitHub redirects the old `andriyanto/wordcraft` address). WordKu is a separate app from WordCraft:
+it installs beside it and does not share its settings.
+
+| What | Before | Now |
+|---|---|---|
+| Name shown to people (title bar, menus, dialogs, About, written into documents as the application) | WordCraft | WordKu |
+| Programs | `wordcraft`, `wordcraft-cli` (`.exe` on Windows) | `wordku`, `wordku-cli` |
+| Release files | `wordcraft-<version>-…` | `wordku-<version>-…` (the update check looks for these) |
+| Updates come from | `andriyanto/wordcraft` | `andriyanto/wordku` |
+| Settings, recovery copies and logs | `WordCraft` / `wordcraft` folder, `wordcraft.log` | `WordKu` / `wordku` folder, `wordku.log` |
+| Windows install folder | `Programs\ArtCraft\WordCraft` | `Programs\Produktivitas\WordKu` (Program Files for everyone) |
+| Windows installer identity | WordCraft's `UpgradeCode`, publisher Learning Machines LLC | A new `UpgradeCode` and component GUIDs, publisher andriyanto |
+| macOS | `WordCraft.app`, DMG volume `WordCraft` | `WordKu.app`, DMG volume `WordKu` |
+| Linux package | `wordcraft` | `wordku` |
+| App icon | WordCraft's | The owner's WordKu icon; its lettering is outlined DejaVu Sans Condensed Bold (Bitstream Vera licence, notice in `NOTICE`) |
+| ArtCraft brand files (`docs/brand/`) | Present | Removed, as their terms ask of modified versions |
+
+Kept as they were, on purpose: the package and crate names (`wordcraft`, `wordcraft-*`), the
+environment variables (`WORDCRAFT_*`), the app id `ai.storyteller.wordcraft` (macOS bundle id,
+Linux desktop and Flatpak id), and the markers WordCraft writes inside files. Changing those would
+touch every build script for no visible gain, or make older files unrecognised.
+
+The translation catalogs (`storytold/craft-i18n`) still say "WordCraft"; the interface looks a
+sentence up under that name and shows WordKu in the result, so sentences that name the app stay
+translated.
+
+The release workflow the original project uses with signing certificates (`release.yml`) is not
+used here; its FreeBSD step builds a package named after the app and was not adapted.
