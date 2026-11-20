@@ -128,29 +128,25 @@ pub fn parse_date(t: &str) -> Option<(i64, u32, u32)> {
 pub fn days_in_month(y: i64, m: u32) -> u32 {
     // The length of a month is the day before the first of the next month. Month lengths repeat
     // every 400 years, so the year within its Gregorian cycle (`rem_euclid(400)`) is enough and
-    // always fits chrono, for any `y`. An invalid month keeps the old 31-day default.
-    let y = y.rem_euclid(400);
-    let first = |y: i64, m: u32| i32::try_from(y).ok().and_then(|y| chrono::NaiveDate::from_ymd_opt(y, m, 1));
-    match (first(y, m), if m == 12 { first(y + 1, 1) } else { first(y, m + 1) }) {
-        (Some(a), Some(b)) => u32::try_from((b - a).num_days()).unwrap_or(31),
-        _ => 31,
-    }
+    // always fits jiff, for any `y`. An invalid month keeps the old 31-day default.
+    let (Ok(y), Ok(m)) = (i16::try_from(y.rem_euclid(400)), i8::try_from(m)) else { return 31 };
+    jiff::civil::Date::new(y, m, 1).map_or(31, |first| u32::from(first.days_in_month().unsigned_abs()))
 }
 
 /// Days since 1970-01-01 for a date (inverse of [`super::civil_from_days`]), exact for any year.
 ///
-/// The Gregorian calendar repeats every 400 years (146_097 days): chrono converts the year
+/// The Gregorian calendar repeats every 400 years (146_097 days): jiff converts the year
 /// within its cycle and whole cycles are added back as days (an i128 so the extremes can't
-/// overflow). 1970-01-01 is `num_days_from_ce` 719_163; the result matches the proleptic
-/// Gregorian count the old hand-rolled code gave.
+/// overflow). The result matches the proleptic Gregorian count the old hand-rolled code gave.
 pub fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let (cycles, year) = (i128::from(y.div_euclid(400)), y.rem_euclid(400));
-    i32::try_from(year)
+    let (Ok(year), Ok(m), Ok(d)) = (i16::try_from(year), i8::try_from(m), i8::try_from(d)) else { return 0 };
+    jiff::civil::Date::new(year, m, d)
         .ok()
-        .and_then(|year| chrono::NaiveDate::from_ymd_opt(year, m, d))
         .and_then(|date| {
-            let days = i128::from(chrono::Datelike::num_days_from_ce(&date)) - 719_163 + cycles * 146_097;
-            i64::try_from(days).ok()
+            // Whole days: both dates are midnights, so the duration is a multiple of 86 400 s.
+            let since = date.duration_since(jiff::civil::Date::constant(1970, 1, 1)).as_secs() / 86_400;
+            i64::try_from(i128::from(since) + cycles * 146_097).ok()
         })
         .unwrap_or(0)
 }

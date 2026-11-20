@@ -83,8 +83,8 @@ pub(in crate::odt) fn join_deleted_marks(blocks: &[FBlock]) -> Option<JoinedMark
 pub(in crate::odt) fn now_iso() -> String {
     let t = now_unix();
     let (days, secs) = (t.div_euclid(86_400), t.rem_euclid(86_400));
-    // Reuse the crate's 400-year-cycle converter (chrono within a cycle, cycles carried in the
-    // year) so a clock past chrono's range keeps the proleptic Gregorian date the old hand-rolled
+    // Reuse the crate's 400-year-cycle converter (jiff within a cycle, cycles carried in the
+    // year) so a clock past jiff's range keeps the proleptic Gregorian date the old hand-rolled
     // code gave, never the epoch. `{y:04}` rather than `%Y`, which writes a `+` before year 10000.
     let (y, m, d) = crate::sheet::civil(days);
     format!("{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z", secs / 3600, secs / 60 % 60, secs % 60)

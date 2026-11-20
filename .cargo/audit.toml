@@ -12,7 +12,9 @@ ignore = [
     "RUSTSEC-2026-0371",
     "RUSTSEC-2026-0372",
     # Unmaintained, not vulnerable: chrono (all versions, no fix). WordKu's own code and its copy of
-    # the update module are moving to jiff, the advisory's recommended replacement; this entry
-    # goes when `cargo tree -i chrono` is empty.
+    # the update module use jiff, the advisory's recommended replacement. chrono is left only as
+    # a build-time dependency of the Windows printing helper (winprint, through craft-print, via
+    # sigstore): it runs while building, not in WordKu. This entry goes when
+    # `cargo tree -i chrono --target all` is empty.
     "RUSTSEC-2026-0543",
 ]

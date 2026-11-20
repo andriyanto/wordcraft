@@ -112,21 +112,24 @@ fn filetime_iso(value: &[u8]) -> Option<String> {
 
 /// Days since 1970-01-01 → proleptic Gregorian (year, month, day).
 ///
-/// A FILETIME can land past `NaiveDate`'s ±262143-year range, where the old hand-rolled converter
-/// still produced a date; dropping to `None` there would change the output. The Gregorian calendar
-/// repeats every 400 years (146_097 days), so chrono converts the day within one cycle and whole
-/// cycles go back into the year (an `i128` so the extremes can't overflow), keeping chrono as the
-/// only calendar logic and reproducing the old result exactly. 1970-01-01 is `num_days_from_ce` 719_163.
+/// A FILETIME can land past jiff's ±9999-year range, where the old hand-rolled converter still
+/// produced a date; dropping to `None` there would change the output. The Gregorian calendar
+/// repeats every 400 years (146_097 days), so jiff converts the day within one cycle and whole
+/// cycles go back into the year (an `i128` so the extremes can't overflow), keeping jiff as the
+/// only calendar logic and reproducing the old result exactly.
 fn civil(days: i64) -> (i64, u32, u32) {
-    use chrono::Datelike;
     let (cycles, rest) = (days.div_euclid(146_097), days.rem_euclid(146_097));
-    // `rest + 719_163` is 719_163..865_259, always a valid CE day.
-    match i32::try_from(rest + 719_163).ok().and_then(chrono::NaiveDate::from_num_days_from_ce_opt) {
-        Some(d) => {
+    // `rest` is 0..146_097: 1970-01-01 up to 2369, always inside jiff's range.
+    match jiff::civil::Date::constant(1970, 1, 1).checked_add(jiff::SignedDuration::from_secs(rest * 86_400)) {
+        Ok(d) => {
             let y = i128::from(d.year()) + i128::from(cycles) * 400;
-            (i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }), d.month(), d.day())
+            (
+                i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }),
+                u32::from(d.month().unsigned_abs()),
+                u32::from(d.day().unsigned_abs()),
+            )
         }
-        None => (1970, 1, 1), // unreachable
+        Err(_) => (1970, 1, 1), // unreachable
     }
 }
 
@@ -178,12 +181,11 @@ mod tests {
         // 2020-01-01T00:00:00Z and the same day at 13:45:09.
         assert_eq!(filetime_iso(&value(132_223_104_000_000_000)).as_deref(), Some("2020-01-01T00:00:00Z"));
         assert_eq!(filetime_iso(&value(132_223_599_090_000_000)).as_deref(), Some("2020-01-01T13:45:09Z"));
-        // Year 10000 keeps the plain zero-padded year (no leading `+` that chrono's `%Y` would add).
+        // Year 10000 keeps the plain zero-padded year (no leading `+` that a `%Y` format would add).
         assert_eq!(filetime_iso(&value(2_650_467_744_000_000_000)).as_deref(), Some("10000-01-01T00:00:00Z"));
         // The largest FILETIME (u64::MAX) lands in year 60056: past year 9999 (so the plain year
-        // matters) and the old `civil` converted it without ever dropping to the epoch. chrono's
-        // own range (year 262143) isn't reachable here — a u64 FILETIME caps at unix seconds
-        // ~1.83e12 — but the 400-year cycle keeps the result exact regardless.
+        // matters) and the old `civil` converted it without ever dropping to the epoch. It is past
+        // jiff's own range (year 9999); the 400-year cycle keeps the result exact.
         assert_eq!(filetime_iso(&value(u64::MAX)).as_deref(), Some("60056-05-28T05:36:10Z"));
         // Zero, a non-FILETIME kind and times before the 1601 epoch are rejected, not a panic.
         assert_eq!(filetime_iso(&value(0)), None);

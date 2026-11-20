@@ -520,15 +520,10 @@ fn split_para_as(s: &mut Session, at: &Pos, enter: bool) -> Result<Pos, CmdError
 
 /// ISO-8601 timestamp (UTC, seconds) for `secs` since the Unix epoch.
 pub fn iso_from_unix_secs(secs: u64) -> String {
-    use chrono::Datelike;
     let t = secs % 86_400;
     let hms = format!("{:02}:{:02}:{:02}", t / 3600, t / 60 % 60, t % 60);
-    // Within chrono's range, read the date from it; past it, keep the proleptic Gregorian answer
-    // `civil_from_days` gives rather than falling back to the epoch.
-    let (y, m, d) = match i64::try_from(secs).ok().and_then(|s| chrono::DateTime::from_timestamp(s, 0)) {
-        Some(dt) => (i64::from(dt.year()), dt.month(), dt.day()),
-        None => civil_from_days((secs / 86_400) as i64),
-    };
+    // `civil_from_days` gives the proleptic Gregorian date for any day, past jiff's range too.
+    let (y, m, d) = civil_from_days(i64::try_from(secs / 86_400).unwrap_or(i64::MAX));
     // `{y:04}` rather than `%Y`, which writes a `+` before years past 9999.
     format!("{y:04}-{m:02}-{d:02}T{hms}Z")
 }
@@ -561,17 +556,14 @@ pub fn local_offset_secs(unix: u64) -> i64 {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn system_offset_secs(unix: u64) -> i64 {
-    use chrono::Offset;
-    let Some(utc) = i64::try_from(unix).ok().and_then(|secs| chrono::DateTime::from_timestamp(secs, 0)) else {
+    let Some(at) = i64::try_from(unix).ok().and_then(|secs| jiff::Timestamp::from_second(secs).ok()) else {
         return 0;
     };
-    // chrono's `Local` has internal `expect`s (unreadable zone data, an unmapped Windows year), so
-    // fence it: a failure means UTC, never a crash. A caught panic is still reported by the app's
-    // panic hook (logged, no abort); the document is untouched.
-    std::panic::catch_unwind(|| i64::from(utc.with_timezone(&chrono::Local).offset().fix().local_minus_utc())).unwrap_or(0)
+    // The system zone (`TZ`, `/etc/localtime`, Windows' setting); UTC when it can't be read.
+    i64::from(jiff::tz::TimeZone::system().to_offset(at).seconds())
 }
 
-/// On the web the browser's `Date` gives the offset directly (chrono isn't used there).
+/// On the web the browser's `Date` gives the offset directly (jiff's zone isn't used there).
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 fn system_offset_secs(unix: u64) -> i64 {
     let ms = (unix as f64) * 1000.0;
@@ -583,7 +575,7 @@ fn system_offset_secs(unix: u64) -> i64 {
     if west_min.is_finite() && west_min.abs() <= 26.0 * 60.0 { -(west_min as i64) * 60 } else { 0 }
 }
 
-/// Other wasm targets (WASI) have neither chrono's clock nor a browser: UTC.
+/// Other wasm targets (WASI) have neither a system zone nor a browser: UTC.
 #[cfg(all(target_arch = "wasm32", not(target_os = "unknown")))]
 fn system_offset_secs(_unix: u64) -> i64 {
     0
@@ -608,22 +600,25 @@ pub fn local_civil(unix: u64, offset_secs: i64) -> (i64, u32, u32, (u32, u32, u3
 
 /// Days since 1970-01-01 → (year, month, day).
 ///
-/// `NaiveDate` only covers about ±262143 years, but this is reached by the system clock (and by
+/// jiff's dates only cover years -9999..=9999, but this is reached by the system clock (and by
 /// [`iso_from_unix_secs`] for a `u64` seconds count past it), so it must stay exact for every
-/// `z`. The Gregorian calendar repeats every 400 years (146_097 days): chrono converts the day
+/// `z`. The Gregorian calendar repeats every 400 years (146_097 days): jiff converts the day
 /// within its cycle and whole cycles go back into the year (an i128 so i64::MIN/MAX can't
-/// overflow). 1970-01-01 is `num_days_from_ce` 719_163, and 0..146_097 days from CE day 0 always
-/// fit chrono. The result matches the proleptic Gregorian count the old hand-rolled code gave.
+/// overflow). The result matches the proleptic Gregorian count the old hand-rolled code gave.
 pub fn civil_from_days(z: i64) -> (i64, u32, u32) {
-    use chrono::Datelike;
     let (cycles, rest) = (z.div_euclid(146_097), z.rem_euclid(146_097));
-    match i32::try_from(rest + 719_163).ok().and_then(chrono::NaiveDate::from_num_days_from_ce_opt) {
-        Some(d) => {
+    // `rest` is 0..146_097: 1970-01-01 up to 2369, always inside jiff's range.
+    match jiff::civil::Date::constant(1970, 1, 1).checked_add(jiff::SignedDuration::from_secs(rest * 86_400)) {
+        Ok(d) => {
             let y = i128::from(d.year()) + i128::from(cycles) * 400;
-            (i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }), d.month(), d.day())
+            (
+                i64::try_from(y).unwrap_or(if y < 0 { i64::MIN } else { i64::MAX }),
+                u32::from(d.month().unsigned_abs()),
+                u32::from(d.day().unsigned_abs()),
+            )
         }
-        // Unreachable: `rest + 719_163` is 719_163..865_259, always a valid CE day.
-        None => (1970, 1, 1),
+        // Unreachable: see above.
+        Err(_) => (1970, 1, 1),
     }
 }
 
@@ -669,9 +664,9 @@ mod iso_tests {
 
     #[test]
     fn formats_dates_outside_chronos_range() {
-        // Year 10000 is still inside chrono's range: a plain zero-padded year, no leading `+`.
+        // Year 10000 (past jiff's range): a plain zero-padded year, no leading `+`.
         assert_eq!(iso_from_unix_secs(253_402_300_800), "10000-01-01T00:00:00Z");
-        // Past chrono's range, keep the proleptic Gregorian date instead of the Unix epoch.
+        // Past that, keep the proleptic Gregorian date instead of the Unix epoch.
         assert_eq!(iso_from_unix_secs(10_000_000_000_000), "318857-05-20T17:46:40Z");
     }
 

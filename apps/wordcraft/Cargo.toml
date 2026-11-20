@@ -31,7 +31,7 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 tempfile = "3"
 log = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 
 [build-dependencies]
 # Icon + VERSIONINFO for wordcraft.exe; build.rs only uses it when the target is Windows.

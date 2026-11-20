@@ -98,7 +98,7 @@ fn timestamps_are_utc_with_milliseconds() {
     assert_eq!(timestamp(UNIX_EPOCH + Duration::from_secs(4_107_542_400)), "2100-03-01T00:00:00.000Z");
     // Before the epoch (a clock set wrong) clamps to the epoch instead of panicking.
     assert_eq!(timestamp(UNIX_EPOCH - Duration::from_secs(5)), "1970-01-01T00:00:00.000Z");
-    // Past chrono's range (a clock set absurdly far ahead) keeps the proleptic Gregorian date
+    // Past jiff's range (a clock set absurdly far ahead) keeps the proleptic Gregorian date
     // the old formatter gave, rather than falling back to the epoch. FredApps' counterexample:
     // UNIX_EPOCH + 10_000_000_000_000 s was 318857-05-20T17:46:40.000Z and must stay so.
     // Windows' SystemTime holds only up to about year 30828, so this is checked where it fits.

@@ -1139,32 +1139,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "craft-update"
-version = "0.1.0"
-source = "git+https://github.com/storytold/craft-libs?rev=1b34eba41e62138fc2438d2734523b302840b45d#1b34eba41e62138fc2438d2734523b302840b45d"
-dependencies = [
- "chrono",
- "dunce",
- "egui",
- "flate2",
- "getrandom 0.3.4",
- "image",
- "log",
- "plist",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tar",
- "tempfile",
- "ureq",
- "verifysign",
- "winreg",
- "winsafe",
- "zip",
-]
-
-[[package]]
 name = "craft-web-api"
 version = "0.1.0"
 source = "git+https://github.com/storytold/craft-libs?rev=fd5e2feff6ea25bed371a99cc732b3968d621505#fd5e2feff6ea25bed371a99cc732b3968d621505"
@@ -2864,6 +2838,58 @@ name = "itoa"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+
+[[package]]
+name = "jiff"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5d126d72eb017f10b302e73bdeca446bea405ee449af4d9e7866d6b082d83e"
+dependencies = [
+ "jiff-core",
+ "jiff-static",
+ "jiff-tzdb-platform",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
+ "windows-link",
+]
+
+[[package]]
+name = "jiff-core"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6b46a105a9874634dd96231021526bf24ca04955a5998c59a9c7666e634b7b8"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "jiff-static"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0127e9bde3c6130d6169e7d8d68676e4be69c4bf7573c308b6f960a5089c428"
+dependencies = [
+ "jiff-core",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "jiff-tzdb"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12e71a1b68a875a44a33bb7a1dd84392cb77145a3367a552a3cfe6a4f5cf3afc"
+
+[[package]]
+name = "jiff-tzdb-platform"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc65b284afcfa8f6cf189c7274c805505314a7ab975c60e1f548bff56525420e"
+dependencies = [
+ "jiff-tzdb",
+]
 
 [[package]]
 name = "jni"
@@ -6808,7 +6834,6 @@ name = "wordcraft"
 version = "1.0.2"
 dependencies = [
  "arboard",
- "chrono",
  "clipboard-win",
  "craft-print",
  "craft-proof",
@@ -6817,6 +6842,7 @@ dependencies = [
  "egui",
  "fmv-macos-events",
  "getrandom 0.4.3",
+ "jiff",
  "log",
  "objc2 0.6.5",
  "objc2-app-kit 0.3.2",
@@ -6879,8 +6905,8 @@ name = "wordcraft-docbin"
 version = "1.0.2"
 dependencies = [
  "cfb",
- "chrono",
  "image",
+ "jiff",
  "log",
  "miniz_oxide 0.9.1",
  "proptest",
@@ -6898,10 +6924,10 @@ dependencies = [
  "aes",
  "base64 0.23.1",
  "cfb",
- "chrono",
  "getrandom 0.4.3",
  "hmac",
  "image",
+ "jiff",
  "log",
  "proptest",
  "quick-xml 0.41.0",
@@ -6921,13 +6947,13 @@ name = "wordcraft-engine"
 version = "1.0.2"
 dependencies = [
  "cfb",
- "chrono",
  "craft-font-catalog",
  "craft-font-store",
  "craft-proof",
  "encoding_rs",
  "getrandom 0.4.3",
  "image",
+ "jiff",
  "js-sys",
  "libc",
  "log",
@@ -6971,11 +6997,11 @@ dependencies = [
  "base64 0.23.1",
  "cfb",
  "chardetng",
- "chrono",
  "encoding_rs",
  "getrandom 0.4.3",
  "hmac",
  "image",
+ "jiff",
  "js-sys",
  "log",
  "miniz_oxide 0.9.1",
@@ -7042,12 +7068,12 @@ dependencies = [
 name = "wordcraft-pdf"
 version = "1.0.2"
 dependencies = [
- "chrono",
  "craft-pdf",
  "hayro-cmap",
  "hayro-interpret",
  "hayro-syntax",
  "image",
+ "jiff",
  "js-sys",
  "kurbo",
  "log",
@@ -7079,15 +7105,14 @@ version = "1.0.2"
 dependencies = [
  "accesskit_consumer",
  "cfb",
- "chrono",
  "craft-i18n",
  "craft-ui",
- "craft-update",
  "craft-window",
  "egui",
  "egui_extras",
  "egui_kittest",
  "image",
+ "jiff",
  "js-sys",
  "log",
  "serde",
@@ -7101,8 +7126,34 @@ dependencies = [
  "wordcraft-geom",
  "wordcraft-layout",
  "wordcraft-render",
+ "wordcraft-update",
  "wordcraft-zotero",
  "zbus",
+ "zip",
+]
+
+[[package]]
+name = "wordcraft-update"
+version = "1.0.2"
+dependencies = [
+ "dunce",
+ "egui",
+ "flate2",
+ "getrandom 0.3.4",
+ "image",
+ "jiff",
+ "log",
+ "plist",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
+ "tempfile",
+ "ureq",
+ "verifysign",
+ "winreg",
+ "winsafe",
  "zip",
 ]
 

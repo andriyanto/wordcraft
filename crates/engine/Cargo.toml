@@ -29,7 +29,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 log = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 regex = { workspace = true }
 regex-automata = { workspace = true }
 image = { workspace = true }
@@ -45,7 +45,7 @@ getrandom = { workspace = true }
 craft-font-store = { workspace = true }
 craft-font-catalog = { workspace = true }
 # The local time zone's offset for Insert ▸ Date & Time and date fields (#1707); the web asks the browser's Date.
-chrono = { workspace = true, features = ["clock"] }
+jiff = { workspace = true, features = ["tz-system", "tz-fat", "tzdb-bundle-platform", "tzdb-zoneinfo", "tzdb-concatenated"] }
 
 [target.'cfg(unix)'.dependencies]
 # O_NONBLOCK, so a path swapped for a named pipe can't block `open` (#3666).

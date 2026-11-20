@@ -95,7 +95,7 @@ fn matches(name: &str, target: &str) -> bool {
 }
 
 /// `2026-10-08T07:59:17.728Z` (UTC, milliseconds). A clock before 1970 reads as the epoch (the
-/// `duration_since` clamp); past the last date chrono can represent (year 262143) the proleptic
+/// `duration_since` clamp); past the last date jiff can represent (year 9999) the proleptic
 /// Gregorian date is kept via the 400-year cycle rather than falling back to the epoch, so the
 /// output never changes for a value the old formatter accepted and logging never panics.
 pub fn timestamp(t: SystemTime) -> String {
@@ -109,21 +109,20 @@ pub fn timestamp(t: SystemTime) -> String {
 /// Days since 1970-01-01 → proleptic Gregorian (year, month, day).
 ///
 /// `timestamp` clamps a pre-1970 clock to the epoch, so `days` is an unsigned count that can run
-/// past `NaiveDate`'s ±262143-year range. The Gregorian calendar repeats every 400 years
-/// (146_097 days), so chrono converts the day within one cycle and whole cycles go back into the
-/// year (an `i128`, then saturated into `i64`), keeping chrono as the only calendar logic and
-/// reproducing the old `civil_from_days` result exactly without hand-rolled day math. 1970-01-01
-/// is `num_days_from_ce` 719_163.
+/// past jiff's ±9999-year range. The Gregorian calendar repeats every 400 years (146_097 days),
+/// so jiff converts the day within one cycle and whole cycles go back into the year (an `i128`,
+/// then saturated into `i64`), keeping jiff as the only calendar logic and reproducing the old
+/// `civil_from_days` result exactly without hand-rolled day math.
 fn civil_from_days(days: u64) -> (i64, u32, u32) {
-    use chrono::Datelike;
     let (cycles, rest) = (days / 146_097, days % 146_097);
-    // `rest + 719_163` is 719_163..865_259, always a valid CE day.
-    match i32::try_from(rest + 719_163).ok().and_then(chrono::NaiveDate::from_num_days_from_ce_opt) {
-        Some(d) => {
+    // `rest` is 0..146_097: 1970-01-01 up to 2369, always inside jiff's range.
+    let rest = i64::try_from(rest).unwrap_or(0);
+    match jiff::civil::Date::constant(1970, 1, 1).checked_add(jiff::SignedDuration::from_secs(rest * 86_400)) {
+        Ok(d) => {
             let y = i128::from(d.year()) + i128::from(cycles) * 400;
-            (i64::try_from(y).unwrap_or(i64::MAX), d.month(), d.day())
+            (i64::try_from(y).unwrap_or(i64::MAX), u32::from(d.month().unsigned_abs()), u32::from(d.day().unsigned_abs()))
         }
-        None => (1970, 1, 1), // unreachable
+        Err(_) => (1970, 1, 1), // unreachable
     }
 }
 

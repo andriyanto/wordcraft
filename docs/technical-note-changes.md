@@ -358,3 +358,24 @@ translated.
 
 The release workflow the original project uses with signing certificates (`release.yml`) is not
 used here; its FreeBSD step builds a package named after the app and was not adapted.
+
+## 18. jiff instead of chrono; the update module is this repository's own (20 November 2026)
+
+RustSec declared chrono unmaintained (RUSTSEC-2026-0543, every version, no fix) and names jiff
+and time as replacements. At the owner's request WordKu now uses **jiff** for every date and time
+conversion, and the rule in `AGENTS.md` says so.
+
+- The calendar helpers (days since 1970 to a date, a date to days, days in a month) keep their
+  400-year-cycle extension, so dates far outside jiff's years -9999..=9999 come out as before;
+  their tests are unchanged. The local time zone (date fields, comment times) is jiff's system
+  zone; where it can't be read, UTC, as before.
+- The update check and its windows were craft-libs' `craft-update` (pinned to a commit in
+  `storytold/craft-libs`). WordKu now keeps its own copy in `crates/update` (package
+  `wordcraft-update`), taken from that commit (`1b34eba`, MIT OR Apache-2.0, notice in `NOTICE`)
+  and changed here only to use jiff. It no longer follows craft-libs. The test that renders the
+  dialogs to PNG (it needs a GPU renderer) was not copied.
+- chrono is still in the lock file, only as a build-time dependency of the Windows printing
+  helper (`winprint`, through craft-libs' `craft-print`, via `sigstore`): it runs while building,
+  not inside WordKu. `.cargo/audit.toml` keeps RUSTSEC-2026-0543 ignored for that reason.
+- jiff is licensed `Unlicense OR MIT`; WordKu uses it under MIT, which is on the allowlist (other
+  dependencies by the same author, such as `memchr`, were already used that way).

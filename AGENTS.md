@@ -23,7 +23,7 @@ This is `andriyanto/wordku`: **WordKu**, developed on its own by its owner (it w
 2. **Clean room.** Learn from observed behaviour and public specifications. Do not copy another product's code, assets, strings or artwork. Check a dependency's licence before adding it.
 3. **Assets and fonts.** Every asset is original or suitably licensed, and is recorded in `ATTRIBUTION.md` in the same change. Font files are not kept in this repository.
 4. **Rust only.** No handwritten JavaScript or TypeScript, and no Tauri, Electron or webview shell. Preserve the existing web build.
-5. **Time goes through `chrono`.** Do not hand-roll calendar conversion.
+5. **Time goes through `jiff`.** Do not hand-roll calendar conversion. (It was `chrono` until 20 November 2026, when chrono was declared unmaintained, RUSTSEC-2026-0543.)
 6. **The output must not change by accident.** A change meant to save time or memory is compared with the build before it: rendered pages and conversions byte for byte, and for the layout, against the document laid out from scratch (`wordcraft_layout::verify_against_full`).
 
 ## Licence allowlist
