@@ -233,7 +233,7 @@ fn windows_available(s: &Session) -> Option<&'static str> {
 }
 
 fn has_other_window(s: &Session) -> Option<&'static str> {
-    windows_available(s).or(if s.windows.others.is_empty() { Some("no other WordCraft window is open") } else { None })
+    windows_available(s).or(if s.windows.others.is_empty() { Some("no other WordKu window is open") } else { None })
 }
 
 /// The window a command means: `window`, or the only other one.
@@ -244,7 +244,7 @@ fn pick_window(s: &Session, v: &Value) -> Result<u64, CmdError> {
         Some(id) => Err(CmdError::Params(format!("no open window {id}"))),
         None => match others.as_slice() {
             [only] => Ok(only.id),
-            [] => Err(CmdError::Disabled("no other WordCraft window is open".into())),
+            [] => Err(CmdError::Disabled("no other WordKu window is open".into())),
             several => {
                 let list: Vec<String> = several.iter().map(|w| format!("{} ({})", w.id, w.title)).collect();
                 Err(CmdError::Params(format!("pass `window`: one of {}", list.join(", "))))

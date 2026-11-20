@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Build and package WordCraft for FreeBSD:
+# Build and package WordKu for FreeBSD:
 #
-#   $DIST/wordcraft-<version>-freebsd-<arch>.tar.gz   a /usr/local-style tree (<arch> is x86_64, or
+#   $DIST/wordku-<version>-freebsd-<arch>.tar.gz   a /usr/local-style tree (<arch> is x86_64, or
 #       aarch64 when CARGO_BUILD_TARGET=aarch64-unknown-freebsd):
-#       wordcraft-<version>-freebsd-<arch>/{bin, share/applications, share/icons, share/mime,
-#       share/metainfo, share/doc/wordcraft}
+#       wordku-<version>-freebsd-<arch>/{bin, share/applications, share/icons, share/mime,
+#       share/metainfo, share/doc/wordku}
 #
 # Install by copying the tree's contents into /usr/local, e.g.
-#   tar -xzf wordcraft-*-freebsd-x86_64.tar.gz --strip-components 1 -C /usr/local
+#   tar -xzf wordku-*-freebsd-x86_64.tar.gz --strip-components 1 -C /usr/local
 #
 # Usage: packaging/freebsd/package.sh [--skip-build] [--dry-run]
 #   --skip-build  package the binaries already in CARGO_TARGET_DIR
@@ -58,9 +58,9 @@ HOST_ARCH="$(release_arch "$(uname -m)" 2>/dev/null)" || HOST_ARCH="$(uname -m)"
 if [[ -n "${CARGO_BUILD_TARGET:-}" ]] && [[ "$(uname -s)" != FreeBSD ]]; then
   HOST_ARCH="$(uname -s) $HOST_ARCH"
 fi
-BASENAME="wordcraft-$VERSION-freebsd-$ARCH"
+BASENAME="wordku-$VERSION-freebsd-$ARCH"
 
-echo "==> WordCraft $VERSION for FreeBSD $ARCH"
+echo "==> WordKu $VERSION for FreeBSD $ARCH"
 
 if [[ "$DRY_RUN" = 1 ]]; then
   echo "dry run: target=${CARGO_BUILD_TARGET:-native} arch=$ARCH"
@@ -80,16 +80,16 @@ rm -rf "$WORK"
 
 # FreeBSD's install(1) has no -D: create the directories first.
 mkdir -p "$STAGE/bin" "$STAGE/share/applications" "$STAGE/share/mime/packages" "$STAGE/share/metainfo" \
-  "$STAGE/share/icons" "$STAGE/share/doc/wordcraft"
-install -m 755 "$BIN/wordcraft" "$BIN/wordcraft-cli" "$STAGE/bin/"
-strip "$STAGE/bin/wordcraft" "$STAGE/bin/wordcraft-cli" 2>/dev/null || true
+  "$STAGE/share/icons" "$STAGE/share/doc/wordku"
+install -m 755 "$BIN/wordku" "$BIN/wordku-cli" "$STAGE/bin/"
+strip "$STAGE/bin/wordku" "$STAGE/bin/wordku-cli" 2>/dev/null || true
 # The desktop entry, MIME type and metainfo are the freedesktop files the Linux packages use.
 install -m 644 "$LINUX/$APP_ID.desktop" "$STAGE/share/applications/$APP_ID.desktop"
 install -m 644 "$LINUX/$APP_ID.mime.xml" "$STAGE/share/mime/packages/$APP_ID.xml"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@DATE@/$WORDCRAFT_BUILD_DATE/g" \
   "$LINUX/$APP_ID.metainfo.xml.in" >"$STAGE/share/metainfo/$APP_ID.metainfo.xml"
 cp -R "$ROOT/assets/app-icon/hicolor" "$STAGE/share/icons/"
-copy_docs "$STAGE/share/doc/wordcraft"
+copy_docs "$STAGE/share/doc/wordku"
 
 # ---- .tar.gz -------------------------------------------------------------------------------------
 mkdir -p "$DIST"
@@ -97,7 +97,7 @@ tar -C "$WORK" -czf "$DIST/$BASENAME.tar.gz" "$BASENAME"
 echo "wrote $DIST/$BASENAME.tar.gz"
 
 if [[ -z "${CARGO_BUILD_TARGET:-}" ]] && [[ "$ARCH" = "$HOST_ARCH" ]]; then
-  "$STAGE/bin/wordcraft-cli" --version
+  "$STAGE/bin/wordku-cli" --version
 else
   # They cannot run here, so check what they are instead: executables, not libraries or objects.
   # An older file(1) calls a PIE a shared object; its interpreter still marks it as a program.

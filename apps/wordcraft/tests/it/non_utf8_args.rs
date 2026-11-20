@@ -6,7 +6,7 @@ use std::process::{Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 fn app(args: &[OsString]) -> Output {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_wordcraft"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wordku"))
         .args(args)
         // With no display, an app that tries to open a window fails at once instead.
         .env_remove("DISPLAY")
@@ -48,5 +48,5 @@ fn a_control_port_that_isnt_unicode_is_an_error_naming_it() {
     let out = app(&["--sample".into(), "--control".into(), OsString::from_vec(b"79\xe981".to_vec())]);
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(2), "stderr: {stderr}");
-    assert_eq!(stderr, "wordcraft: argument 3 is not valid Unicode: 79\u{FFFD}81\n");
+    assert_eq!(stderr, "wordku: argument 3 is not valid Unicode: 79\u{FFFD}81\n");
 }

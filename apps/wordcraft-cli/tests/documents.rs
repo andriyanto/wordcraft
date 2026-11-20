@@ -1,18 +1,18 @@
-//! `wordcraft-cli run` with documents opened along the way: `file.new` and `file.open` open
+//! `wordku-cli run` with documents opened along the way: `file.new` and `file.open` open
 //! another document and make it active, and `--save` saves the active one.
 
 use std::path::Path;
 use std::process::{Command, Output};
 
 fn run(args: &[&str], out: &Path) -> Output {
-    let mut cli = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"));
+    let mut cli = Command::new(env!("CARGO_BIN_EXE_wordku-cli"));
     cli.arg("run").args(args).arg("--save").arg(out);
     cli.output().unwrap()
 }
 
 #[test]
 fn run_saves_the_document_opened_last() {
-    let dir = std::env::temp_dir().join(format!("wordcraft-cli-documents-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("wordku-cli-documents-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let (src, out) = (dir.join("opened.txt"), dir.join("out.txt"));
     std::fs::write(&src, "Opened\n").unwrap();
@@ -25,7 +25,7 @@ fn run_saves_the_document_opened_last() {
     let opened = run(&["--template", "blank", "--cmd", r#"text.insert={"text":"Typed"}"#, "--cmd", &open, "--cmd", "caret.docEnd"], &out);
     let reopened = std::fs::read_to_string(&out).unwrap_or_default();
     // A run starts with one open document.
-    let mut cli = Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"));
+    let mut cli = Command::new(env!("CARGO_BIN_EXE_wordku-cli"));
     let listed = cli.args(["run", "--template", "sample", "--print", "--cmd", "view.switchWindows"]).output().unwrap();
     let _ = std::fs::remove_dir_all(&dir);
 

@@ -209,7 +209,7 @@ impl Remote {
     ) -> Result<Value, String> {
         let unreachable = |addr: &str, e: std::io::Error, connected: bool| {
             let retry = if connected { String::new() } else { "; will retry on each call".to_string() };
-            format!("WordCraft app at {addr} is not reachable: {e}{retry}")
+            format!("WordKu app at {addr} is not reachable: {e}{retry}")
         };
         let mut first = true;
         let reply = loop {
@@ -236,7 +236,7 @@ impl Remote {
                         && !is_read_only(method, params)
                     {
                         return Err(format!(
-                            "outcome unknown: the connection to the WordCraft app at {} failed while sending `{method}` or waiting for its reply ({e}); it may have been executed, so it is not sent again. Inspect the document to check",
+                            "outcome unknown: the connection to the WordKu app at {} failed while sending `{method}` or waiting for its reply ({e}); it may have been executed, so it is not sent again. Inspect the document to check",
                             self.addr
                         ));
                     }
@@ -308,7 +308,7 @@ impl Backend for Remote {
             Err(self.key_warning().map_or_else(
                 || {
                     format!(
-                        "unauthorized: the WordCraft app at {} refused the control key (from WORDCRAFT_CONTROL_KEY or the app's key file)",
+                        "unauthorized: the WordKu app at {} refused the control key (from WORDCRAFT_CONTROL_KEY or the app's key file)",
                         self.addr
                     )
                 },
@@ -325,9 +325,9 @@ impl Backend for Remote {
 
     fn describe(&self) -> String {
         if self.connected {
-            format!("connected to the WordCraft app at {}", self.addr)
+            format!("connected to the WordKu app at {}", self.addr)
         } else {
-            format!("will connect to the WordCraft app at {} when it opens", self.addr)
+            format!("will connect to the WordKu app at {} when it opens", self.addr)
         }
     }
 }

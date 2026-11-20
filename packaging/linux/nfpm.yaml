@@ -3,7 +3,7 @@
 # exports VERSION and NFPM_ARCH.
 #
 #   nfpm package -f packaging/linux/nfpm.yaml -p deb -t dist/release/
-name: wordcraft
+name: wordku
 arch: ${NFPM_ARCH}
 platform: linux
 version: ${VERSION}
@@ -13,14 +13,14 @@ release: 1
 section: graphics
 priority: optional
 maintainer: ${WORDCRAFT_MAINTAINER}
-vendor: Learning Machines LLC
-homepage: https://getartcraft.com/apps/wordcraft
+vendor: andriyanto
+homepage: https://github.com/andriyanto/wordku
 license: MIT OR Apache-2.0
 description: |-
   Open-source, native word processor that works the way Word users expect.
   The ribbon, styles, tables, track changes, references and mail merge; reads
   and writes .docx, opens .odt, .rtf, .html, .md and .txt, and exports PDF.
-  Includes wordcraft-cli, a headless converter and command runner.
+  Includes wordku-cli, a headless converter and command runner.
 
 # The binaries link only glibc and libgcc_s directly. Windowing (X11/Wayland, xkbcommon) and the
 # GPU (Vulkan, EGL/GL) are loaded at runtime, so they are dependencies/recommendations here
@@ -63,11 +63,11 @@ overrides:
       - espeak-ng
 
 contents:
-  - src: ${STAGE}/usr/bin/wordcraft
-    dst: /usr/bin/wordcraft
+  - src: ${STAGE}/usr/bin/wordku
+    dst: /usr/bin/wordku
     file_info: { mode: 0755 }
-  - src: ${STAGE}/usr/bin/wordcraft-cli
-    dst: /usr/bin/wordcraft-cli
+  - src: ${STAGE}/usr/bin/wordku-cli
+    dst: /usr/bin/wordku-cli
     file_info: { mode: 0755 }
   # Named one by one rather than as a tree of /usr/share: a tree would also own shared directories
   # such as /usr/share/mime, which openSUSE's filesystem package owns with other modes, and RPM
@@ -81,8 +81,8 @@ contents:
   - src: ${STAGE}/usr/share/icons/hicolor/
     dst: /usr/share/icons/hicolor/
     type: tree
-  - src: ${STAGE}/usr/share/doc/wordcraft/
-    dst: /usr/share/doc/wordcraft/
+  - src: ${STAGE}/usr/share/doc/wordku/
+    dst: /usr/share/doc/wordku/
     type: tree
 
 scripts:

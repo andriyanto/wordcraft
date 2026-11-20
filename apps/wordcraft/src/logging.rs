@@ -3,8 +3,8 @@
 //! Without a logger every `log::warn!`/`log::error!` in the workspace (an unreadable part of a
 //! .docx, a picture or font a PDF export had to leave out, a PNG that would not encode) vanished. A
 //! launch from a desktop menu has no terminal, so the file is what a bug report can attach:
-//! `<settings dir>/logs/wordcraft.log`, next to the preferences (`prefs_path` in `main.rs`). Each
-//! start moves the previous log to `wordcraft.1.log` (and that one to `.2`), so the log of a run
+//! `<settings dir>/logs/wordku.log`, next to the preferences (`prefs_path` in `main.rs`). Each
+//! start moves the previous log to `wordku.1.log` (and that one to `.2`), so the log of a run
 //! that crashed survives the next launch. Runs without preferences (`WORDCRAFT_NO_PREFS`) log to
 //! standard error only.
 //!
@@ -30,15 +30,15 @@ use std::time::SystemTime;
 use log::LevelFilter;
 
 /// The current log file's name inside the log directory.
-pub const LOG_FILE: &str = "wordcraft.log";
-/// How many previous logs are kept (`wordcraft.1.log` … `wordcraft.<KEEP>.log`).
+pub const LOG_FILE: &str = "wordku.log";
+/// How many previous logs are kept (`wordku.1.log` … `wordku.<KEEP>.log`).
 pub const KEEP: usize = 2;
 /// The log file stops growing past this size (a runaway warning can't fill the disk).
 pub const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// Records kept in memory until the log file is attached.
 pub const MAX_PENDING: usize = 512;
 /// The built-in filter when `RUST_LOG` is unset or empty.
-pub const DEFAULT_FILTER: &str = "warn,wordcraft*=info";
+pub const DEFAULT_FILTER: &str = "warn,wordcraft*=info,wordku*=info";
 
 /// Per-target level filter parsed from env_logger-style directives.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -128,7 +128,7 @@ fn civil_from_days(days: u64) -> (i64, u32, u32) {
 }
 
 fn numbered(dir: &Path, n: usize) -> PathBuf {
-    if n == 0 { dir.join(LOG_FILE) } else { dir.join(format!("wordcraft.{n}.log")) }
+    if n == 0 { dir.join(LOG_FILE) } else { dir.join(format!("wordku.{n}.log")) }
 }
 
 /// Shift the previous logs up one (`.log` → `.1.log` → … → `.<KEEP>.log`, the oldest dropped)
@@ -340,7 +340,7 @@ pub fn install_panic_hook() {
             log::error!("{report}");
         } else {
             // `eprintln!` panics on a broken stderr pipe, and a panic inside the panic hook aborts.
-            let _ = std::io::Write::write_fmt(&mut std::io::stderr(), format_args!("wordcraft: {report}\n"));
+            let _ = std::io::Write::write_fmt(&mut std::io::stderr(), format_args!("wordku: {report}\n"));
         }
     }));
 }

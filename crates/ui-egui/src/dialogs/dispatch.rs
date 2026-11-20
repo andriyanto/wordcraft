@@ -1171,26 +1171,26 @@ fn about_dialog(ui: &mut Ui, d: &mut Dialog) -> bool {
         2 => crate::credits::models_ui(ui),
         3 => crate::language_packs::about_tab(ui),
         _ => {
-            ui.label(egui::RichText::new(tl!("WordCraft")).font(semibold(22.0)));
+            ui.label(egui::RichText::new(tl!("WordKu")).font(semibold(22.0)));
             let build = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or(tl!("development build"));
             ui.label(crate::i18n::fmt(tl!("Version {version} ({build})"), &[("version", env!("CARGO_PKG_VERSION")), ("build", build)]));
-            ui.label(tl!("A free, open-source word processor written from scratch in Rust.\nPart of the Crafting Apps from the ArtCraft team."));
+            ui.label(tl!("A free, open-source word processor written from scratch in Rust."));
+            ui.label(tl!("WordKu is a modified version of WordCraft, by andriyanto."));
             ui.add_space(6.0);
-            ui.hyperlink_to(tl!("getartcraft.com/apps/wordcraft"), "https://getartcraft.com/apps/wordcraft");
-            ui.hyperlink_to(tl!("Source code: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
-            // This copy is built from its own repository: where to get it and its source.
-            ui.hyperlink_to(tl!("Get this build: github.com/andriyanto/wordcraft/releases"), "https://github.com/andriyanto/wordcraft/releases");
-            ui.hyperlink_to(tl!("Source code of this build: github.com/andriyanto/wordcraft"), "https://github.com/andriyanto/wordcraft");
+            ui.hyperlink_to(tl!("WordKu on GitHub: github.com/andriyanto/wordku"), crate::REPO_URL);
+            ui.hyperlink_to(tl!("Downloads: github.com/andriyanto/wordku/releases"), crate::RELEASES_URL);
+            ui.hyperlink_to(tl!("Original project: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
             ui.add_space(6.0);
-            ui.label(egui::RichText::new(tl!("MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors.")).small().weak());
-            ui.add_space(6.0);
+            // The licences ask that the original copyright notice stay with the program.
             ui.label(
                 egui::RichText::new(tl!(
-                    "Disclaimer: this copy of WordCraft has been modified from the original to use memory more efficiently. It is not an official ArtCraft release."
+                    "MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors; modifications by andriyanto."
                 ))
                 .small()
                 .weak(),
             );
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(tl!("WordKu is not an official ArtCraft release and is not endorsed by the ArtCraft team.")).small().weak());
         }
     }
     // One Close button: About has nothing to cancel.
@@ -1368,7 +1368,7 @@ fn encrypt_password_dialog(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bo
     });
     ui.label(
         egui::RichText::new(tl!(
-            "Keep the password somewhere safe: without it nobody, WordCraft included, can open the document. Leave both boxes empty to remove the password."
+            "Keep the password somewhere safe: without it nobody, WordKu included, can open the document. Leave both boxes empty to remove the password."
         ))
         .small()
         .weak(),

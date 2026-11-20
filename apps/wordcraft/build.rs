@@ -1,4 +1,4 @@
-//! Windows only: embed the app icon and version info (VERSIONINFO) into `wordcraft.exe`, so it
+//! Windows only: embed the app icon and version info (VERSIONINFO) into `wordku.exe`, so it
 //! shows in Explorer, the taskbar, the Start menu and Alt-Tab.
 //!
 //! On every other target this does nothing. A missing resource compiler is a warning, so a
@@ -14,17 +14,17 @@ fn main() {
     }
     let mut res = winresource::WindowsResource::new();
     res.set_icon("../../assets/app-icon/wordcraft.ico")
-        .set("ProductName", "WordCraft")
-        .set("FileDescription", "WordCraft word processor")
-        .set("CompanyName", "Learning Machines LLC")
-        .set("LegalCopyright", "Copyright (c) the WordCraft authors. MIT OR Apache-2.0.")
-        .set("OriginalFilename", "wordcraft.exe")
-        .set("InternalName", "wordcraft");
+        .set("ProductName", "WordKu")
+        .set("FileDescription", "WordKu word processor")
+        .set("CompanyName", "andriyanto")
+        .set("LegalCopyright", "Copyright (c) ArtCraft Team and the WordCraft contributors; WordKu modifications by andriyanto. MIT OR Apache-2.0.")
+        .set("OriginalFilename", "wordku.exe")
+        .set("InternalName", "wordku");
     if let Err(e) = res.compile() {
         if std::env::var_os("WORDCRAFT_REQUIRE_WINRES").is_some() {
             eprintln!("embedding Windows resources failed: {e}");
             std::process::exit(1);
         }
-        println!("cargo:warning=wordcraft.exe built without icon/version resources: {e}");
+        println!("cargo:warning=wordku.exe built without icon/version resources: {e}");
     }
 }

@@ -1,4 +1,4 @@
-//! `wordcraft-cli`: WordCraft from the command line.
+//! `wordku-cli`: WordCraft from the command line.
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod automation_args;
@@ -14,10 +14,10 @@ use serde_json::{Value, json};
 use wordcraft_engine::Session;
 
 const USAGE: &str = "\
-wordcraft-cli — WordCraft from the command line
+wordku-cli — WordCraft from the command line
 
 USAGE:
-  wordcraft-cli convert <in> <out> [--markup] [--update-fields] [--strict] [--format wordml2003|flatopc]
+  wordku-cli convert <in> <out> [--markup] [--update-fields] [--strict] [--format wordml2003|flatopc]
                                               convert between formats (docx, doc [read], pdf, odt, rtf, html, md, tex, txt, json, png,
                                               xml); --update-fields refreshes unlocked fields before saving;
                                               an .xml file is a Word XML Document (Flat OPC), or with
@@ -27,14 +27,14 @@ USAGE:
                                               --strict (pdf or png output only) writes nothing and exits 3
                                               if a character can't be drawn or a picture is missing or
                                               undecodable; the report is on stderr, with one JSON line
-  wordcraft-cli info <file>                   pages, words, paragraphs, properties (JSON)
-  wordcraft-cli text <file>                   plain text
-  wordcraft-cli inspect <file>                document structure (JSON)
-  wordcraft-cli render <file> <out.png> [--page N] [--scale S] [--strict]
+  wordku-cli info <file>                   pages, words, paragraphs, properties (JSON)
+  wordku-cli text <file>                   plain text
+  wordku-cli inspect <file>                document structure (JSON)
+  wordku-cli render <file> <out.png> [--page N] [--scale S] [--strict]
                                               --strict writes nothing and exits 3 if a character on the
                                               page can't be drawn or a picture is missing or undecodable
                                               (report on stderr, as for convert --strict)
-  wordcraft-cli run [--file F | --template T] [--script FILE|-] --cmd 'id={json}' [--cmd …]
+  wordku-cli run [--file F | --template T] [--script FILE|-] --cmd 'id={json}' [--cmd …]
                     [--save OUT] [--print] [--author NAME]
                                               run commands headlessly, then save (--author names
                                               who tracked changes and comments are by).
@@ -47,9 +47,9 @@ USAGE:
                                               make it active; later commands and the saves work on
                                               the active one; view.switchWindows lists the open
                                               documents and with {\"id\": N} makes one active
-  wordcraft-cli commands [--json]             list every command
-  wordcraft-cli parity [--markdown]           feature-catalog parity
-  wordcraft-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
+  wordku-cli commands [--json]             list every command
+  wordku-cli parity [--markdown]           feature-catalog parity
+  wordku-cli mcp [--connect HOST:PORT | --author NAME] [--automation-read-root DIR] [--automation-write-root DIR]
                     [--allow-all-files]
                                               MCP server on stdio (headless, or bridged to the app).
                                               --automation-read-root / --automation-write-root confine
@@ -61,13 +61,13 @@ USAGE:
                                               started in; --allow-all-files lifts that (any file you
                                               can reach). The roots apply to the headless server and
                                               are an error with --connect.
-  wordcraft-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
+  wordku-cli zotero <command> <file> [--cmd 'id={json}' …] [--save OUT] [--trace] [--port P]
                                               run a Zotero command on a document (Zotero must be
                                               running): addEditCitation, addEditBibliography,
                                               addNote, refresh, removeCodes, setDocPrefs
                                               (--cmd runs first, e.g. --cmd caret.docEnd)
-  wordcraft-cli [<command>] -h | --help       this help
-  wordcraft-cli --version
+  wordku-cli [<command>] -h | --help       this help
+  wordku-cli --version
 
 A password-protected Word file is opened with --password PASS, --password-file PATH or the
 WORDCRAFT_PASSWORD environment variable; a password given on the command line is readable by
@@ -388,7 +388,7 @@ const ZOTERO_OPTIONS: &[OptionSpec] = &[
 enum Failure {
     /// A real error, reported on stderr with a failing exit status.
     Error(String),
-    /// Whoever read stdout closed it (`wordcraft-cli commands --json | head`): there is nobody left
+    /// Whoever read stdout closed it (`wordku-cli commands --json | head`): there is nobody left
     /// to write to, so stop quietly and exit 0 like other command-line tools.
     StdoutClosed,
     /// `convert --strict` refused: the text for stderr (the report's lines, then its JSON line).
@@ -448,7 +448,7 @@ fn valid_connect_addr(addr: &str) -> bool {
 }
 
 /// A failed `--strict` export: a strict refusal becomes [`Failure::Strict`] carrying what stderr
-/// shows (each line of the report as `wordcraft-cli: …`, then its JSON on one line, from
+/// shows (each line of the report as `wordku-cli: …`, then its JSON on one line, from
 /// `file.strictReport` for `page` of a page image, else the PDF); any other error is an ordinary
 /// failure.
 fn refusal(s: &mut Session, e: wordcraft_engine::CmdError, markup: bool, page: Option<u64>) -> Failure {
@@ -463,11 +463,11 @@ fn refusal(s: &mut Session, e: wordcraft_engine::CmdError, markup: bool, page: O
         Ok(json) => {
             let mut text = String::new();
             for line in report_lines(&json) {
-                text += &format!("wordcraft-cli: {}\n", escape_peer(&line));
+                text += &format!("wordku-cli: {}\n", escape_peer(&line));
             }
             text + &json_line_safe(&json.to_string())
         }
-        Err(e) => format!("wordcraft-cli: strict: refused, and the report could not be made: {}", escape_text(&e, false)),
+        Err(e) => format!("wordku-cli: strict: refused, and the report could not be made: {}", escape_text(&e, false)),
     })
 }
 
@@ -733,9 +733,9 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                     }
                     match wordcraft_mcp::Remote::connect(&addr) {
                         Ok(remote) => {
-                            eprintln!("wordcraft-cli mcp: connected to WordCraft at {addr}");
+                            eprintln!("wordku-cli mcp: connected to WordKu at {addr}");
                             if let Some(w) = remote.key_warning() {
-                                eprintln!("wordcraft-cli: {w}");
+                                eprintln!("wordku-cli: {w}");
                             }
                             Box::new(remote)
                         }
@@ -743,7 +743,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                         // first call, or the client marks the server failed for its whole session
                         // (#4078).
                         Err(e) => {
-                            eprintln!("wordcraft-cli mcp: WordCraft is not reachable at {addr} yet ({e}); will retry on each call");
+                            eprintln!("wordku-cli mcp: WordKu is not reachable at {addr} yet ({e}); will retry on each call");
                             Box::new(wordcraft_mcp::Remote::lazy(&addr))
                         }
                     }
@@ -752,13 +752,13 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
                     let mut headless = wordcraft_mcp::Headless::default();
                     let roots = headless_roots(roots, allow_all, &std::env::current_dir()?)?;
                     if roots.is_none() {
-                        eprintln!("wordcraft-cli: files not confined (--allow-all-files): the agent's commands can read and write any file you can");
+                        eprintln!("wordku-cli: files not confined (--allow-all-files): the agent's commands can read and write any file you can");
                     }
                     if let Some(roots) = roots {
                         // Every thread of this process, not only the server's: nothing reaches past the roots.
                         wordcraft_engine::file_access::confine_process(roots.clone());
                         let show = |root: Option<&std::path::Path>| root.map_or_else(|| "none".to_string(), |r| r.display().to_string());
-                        eprintln!("wordcraft-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
+                        eprintln!("wordku-cli: files confined: read root {}, write root {}", show(roots.read_root()), show(roots.write_root()));
                         headless = headless.with_automation_roots(Some(roots));
                     }
                     if let Some(name) = author {
@@ -815,7 +815,7 @@ fn run<S: AsRef<OsStr>>(args: &[S]) -> Result<(), Failure> {
             }
             Ok(())
         }
-        "--version" | "-V" => write_stdout(|o| writeln!(o, "wordcraft-cli {}", env!("CARGO_PKG_VERSION"))),
+        "--version" | "-V" => write_stdout(|o| writeln!(o, "wordku-cli {}", env!("CARGO_PKG_VERSION"))),
         "" | "help" | "--help" | "-h" => write_stdout(|o| write!(o, "{USAGE}")),
         other => Err(format!("unknown command `{other}`\n\n{USAGE}").into()),
     }
@@ -922,12 +922,12 @@ fn main() -> ExitCode {
     // only while the person has turned downloading on in the app.
     wordcraft_engine::packs::use_font_store(false);
     if let Some(source) = wordcraft_engine::packs::index_override() {
-        eprintln!("wordcraft-cli: Language packs come from a test source: {source}");
+        eprintln!("wordku-cli: Language packs come from a test source: {source}");
     }
     match run(&args) {
         Ok(()) | Err(Failure::StdoutClosed) => ExitCode::SUCCESS,
         Err(Failure::Error(e)) => {
-            eprintln!("wordcraft-cli: {e}");
+            eprintln!("wordku-cli: {e}");
             ExitCode::FAILURE
         }
         Err(Failure::Strict(report)) => {

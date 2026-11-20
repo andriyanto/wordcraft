@@ -1,9 +1,9 @@
-//! #866: `wordcraft-cli text` omits tracked deletions (it does not go through `document.text`).
+//! #866: `wordku-cli text` omits tracked deletions (it does not go through `document.text`).
 
 use std::process::Command;
 
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_wordcraft-cli"))
+    Command::new(env!("CARGO_BIN_EXE_wordku-cli"))
 }
 
 #[test]

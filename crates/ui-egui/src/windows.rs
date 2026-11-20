@@ -40,7 +40,7 @@ pub(crate) mod arrange;
 
 /// The window title for a document called `name`.
 pub(crate) fn title(name: &str, dirty: bool) -> String {
-    format!("{name}{} - WordCraft", if dirty { " •" } else { "" })
+    format!("{name}{} - WordKu", if dirty { " •" } else { "" })
 }
 
 /// An open window.
@@ -593,7 +593,7 @@ impl WordApp {
     /// The drawn window's title: its document's name as View › Window › Switch Windows gives it.
     pub(crate) fn window_title(&self) -> String {
         if !self.has_document() {
-            return "WordCraft".to_string();
+            return "WordKu".to_string();
         }
         let mut name = self.windows.menu_title(self.windows.shown).map(str::to_string).unwrap_or_else(|| self.title_stem());
         // X11 converts window titles to C strings, which cannot contain NUL (#3634).
@@ -661,7 +661,7 @@ impl WordApp {
             &mut list,
             |_, key| match titles.get(key).filter(|t| !t.is_empty()) {
                 Some(t) => base.clone().with_title(t.clone()),
-                None => base.clone().with_title("WordCraft"),
+                None => base.clone().with_title("WordKu"),
             },
             |ui, _, key| self.draw_window(ui, *key),
         );

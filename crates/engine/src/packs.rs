@@ -266,7 +266,7 @@ fn no_store() -> String {
 }
 
 fn network_off() -> String {
-    "downloading is turned off: turn it on in WordCraft (File › Options › Language, or an Install button there)".into()
+    "downloading is turned off: turn it on in WordKu (File › Options › Language, or an Install button there)".into()
 }
 
 /// The pack for `locale` in the index.

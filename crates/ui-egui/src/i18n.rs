@@ -351,7 +351,47 @@ pub fn current() -> Lang {
 
 /// Does `lang` have a translation for this string? (English never does: it is the source.)
 pub fn has(lang: Lang, s: &str) -> bool {
-    lang.i18n().get(lang.lang, "", s).is_some()
+    lang.i18n().get(lang.lang, "", s).is_some() || catalog_source(s).is_some_and(|source| lang.i18n().get(lang.lang, "", &source).is_some())
+}
+
+/// The app's name as the interface says it.
+pub const APP_NAME: &str = "WordKu";
+/// The app's name in the craft-i18n catalogs, which are shared with WordCraft, the project WordKu
+/// started from: their sources and translations say this name wherever the interface says
+/// [`APP_NAME`].
+const CATALOG_NAME: &str = "WordCraft";
+
+/// `s` as the catalogs spell it, when it names the app: the source to look up for it.
+fn catalog_source(s: &str) -> Option<String> {
+    s.contains(APP_NAME).then(|| s.replace(APP_NAME, CATALOG_NAME))
+}
+
+/// A catalog's translation with the app's own name in it.
+fn own_name(translated: &str) -> &str {
+    if translated.contains(CATALOG_NAME) { kept(translated.replace(CATALOG_NAME, APP_NAME)) } else { translated }
+}
+
+/// The translation of `s` that `look` finds under the catalogs' name for the app, with the
+/// app's own name put back: `s` itself when there is none.
+fn by_catalog_name(s: &str, look: impl Fn(&str) -> Option<String>) -> &str {
+    match catalog_source(s).and_then(|source| look(&source).filter(|found| *found != source)) {
+        Some(translated) => kept(translated.replace(CATALOG_NAME, APP_NAME)),
+        None => s,
+    }
+}
+
+/// `text` for the life of the process, one copy per distinct text: a translation that names the
+/// app is rewritten once (there is one per sentence that names it, per language), so callers keep
+/// getting a `&str`.
+fn kept(text: String) -> &'static str {
+    static KEPT: LazyLock<std::sync::Mutex<std::collections::HashSet<&'static str>>> = LazyLock::new(Default::default);
+    let mut kept = KEPT.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some(known) = kept.get(text.as_str()) {
+        return known;
+    }
+    let leaked: &'static str = Box::leak(text.into_boxed_str());
+    kept.insert(leaked);
+    leaked
 }
 
 /// `s` in the current language ([`tr`] with [`current`]).
@@ -368,7 +408,13 @@ pub fn tn(n: u64, one: &str, other: &str) -> String {
         return I18N.trn(craft_i18n::Lang::PSEUDO, n, one, other);
     }
     let lang = current();
-    lang.i18n().trn(lang.lang, n, one, other)
+    let said = lang.i18n().trn(lang.lang, n, one, other);
+    if !one.contains(APP_NAME) && !other.contains(APP_NAME) {
+        return said.replace(CATALOG_NAME, APP_NAME);
+    }
+    // Forms that name the app are in the catalogs under their name for it.
+    let (one_c, other_c) = (one.replace(APP_NAME, CATALOG_NAME), other.replace(APP_NAME, CATALOG_NAME));
+    lang.i18n().trn(lang.lang, n, &one_c, &other_c).replace(CATALOG_NAME, APP_NAME)
 }
 
 /// `s` in the current language as worded for `context` (`preview`, `template`), falling back to
@@ -383,7 +429,11 @@ pub fn trc<'a>(lang: Lang, context: &str, s: &'a str) -> &'a str {
     if pseudo::on() {
         return I18N.tc(craft_i18n::Lang::PSEUDO, context, s);
     }
-    lang.i18n().tc(lang.lang, context, s)
+    let found = lang.i18n().tc(lang.lang, context, s);
+    if found != s {
+        return own_name(found);
+    }
+    by_catalog_name(s, |source| Some(lang.i18n().tc(lang.lang, context, source).to_owned()))
 }
 
 /// `s`'s translation for `context` in the current language, with no fallback to the plain row
@@ -395,7 +445,12 @@ pub fn get<'a>(context: &str, s: &'a str) -> Option<&'a str> {
         return I18N.get(craft_i18n::Lang::PSEUDO, context, s);
     }
     let lang = current();
-    lang.i18n().get(lang.lang, context, s)
+    match lang.i18n().get(lang.lang, context, s) {
+        Some(found) => Some(own_name(found)),
+        None => {
+            catalog_source(s).and_then(|source| lang.i18n().get(lang.lang, context, &source).map(|found| kept(found.replace(CATALOG_NAME, APP_NAME))))
+        }
+    }
 }
 
 /// Lowercase translated interface labels and UI search queries in the current language.
@@ -423,7 +478,12 @@ pub fn tr(lang: Lang, s: &str) -> &str {
     if pseudo::on() {
         return I18N.t(craft_i18n::Lang::PSEUDO, s);
     }
-    lang.i18n().t(lang.lang, s)
+    let found = lang.i18n().t(lang.lang, s);
+    if found != s {
+        return own_name(found);
+    }
+    // A sentence that names the app is in the catalogs under their name for it.
+    by_catalog_name(s, |source| Some(lang.i18n().t(lang.lang, source).to_owned()))
 }
 
 /// Left-to-right mark: it keeps what it touches from joining a right-to-left run next to it.

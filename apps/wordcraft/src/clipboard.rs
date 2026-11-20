@@ -146,7 +146,7 @@ fn decoded_picture(clipboard: &mut arboard::Clipboard) -> Option<ClipboardPictur
         Err(arboard::Error::ConversionFailure) => Some(
             platform::encoded_picture()
                 .map(ClipboardPicture::Encoded)
-                .unwrap_or_else(|| ClipboardPicture::Unreadable("WordCraft can't decode its format".into())),
+                .unwrap_or_else(|| ClipboardPicture::Unreadable("WordKu can't decode its format".into())),
         ),
         Err(e) => {
             log::warn!("clipboard picture: {e}");

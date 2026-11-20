@@ -187,9 +187,9 @@ impl Server {
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {}, "resources": {}},
-                    "serverInfo": {"name": "wordcraft", "title": "WordCraft", "version": env!("CARGO_PKG_VERSION"), "websiteUrl": "https://getartcraft.com/apps/wordcraft"},
+                    "serverInfo": {"name": "wordku", "title": "WordKu", "version": env!("CARGO_PKG_VERSION"), "websiteUrl": "https://github.com/andriyanto/wordku"},
                     "instructions": format!(
-                        "{INSTRUCTIONS} Backend: {}. Project: https://getartcraft.com/apps/wordcraft · https://github.com/storytold/wordcraft",
+                        "{INSTRUCTIONS} Backend: {}. Project: https://github.com/andriyanto/wordku",
                         self.backend.describe()
                     ),
                 }))

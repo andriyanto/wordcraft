@@ -207,7 +207,7 @@ pub(super) fn outlining(app: &mut WordApp, ui: &mut Ui) {
 /// The other WordCraft windows by title; picking one runs `id` with it.
 fn window_list(ui: &mut Ui, app: &mut WordApp, others: &[wordcraft_engine::cmd::view::OtherWindow], id: &str) {
     if others.is_empty() {
-        ui.add_enabled(false, egui::Label::new(tl!("No other WordCraft windows are open.")));
+        ui.add_enabled(false, egui::Label::new(tl!("No other WordKu windows are open.")));
     }
     for o in others {
         if ui.add(egui::Button::new(o.title.as_str()).min_size(vec2(200.0, 0.0))).clicked() {
