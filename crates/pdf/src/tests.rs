@@ -2953,9 +2953,10 @@ fn undecodable_pictures_keep_their_grey_box_bytes() {
     assert_eq!(a, export(&d, &opts).unwrap(), "the export must be deterministic for the golden hash to mean anything");
     let text = String::from_utf8_lossy(&a);
     assert!(text.contains("0.8157 0.8157 0.8157") || text.contains(".81"), "the grey box is drawn: {}", text.len());
-    // FNV-1a of the file, recorded from the export before the shared decode check existed.
+    // FNV-1a of the file, recorded from the export before the shared decode check existed, then
+    // re-recorded when the Creator and Producer became "WordKu" (the only bytes that changed).
     let h = a.iter().fold(0xcbf29ce484222325u64, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x100000001b3));
-    assert_eq!(h, 0x1edbbffab353d744, "{h:#x}");
+    assert_eq!(h, 0xfecaa40d725577ca, "{h:#x}");
 }
 
 /// A page with a chart label and an equation, exported without compression. Chart and equation
