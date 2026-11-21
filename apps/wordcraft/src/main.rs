@@ -535,6 +535,12 @@ fn main() -> eframe::Result {
     #[cfg(target_os = "macos")]
     graphics::configure_indirect_validation(&mut options, graphics::skips_indirect_validation(true, cfg!(target_arch = "x86_64")));
     load_user_fonts();
+    // The interface may use the system font (Segoe UI, SF Pro…) when the person chooses it, the
+    // default. Runs without preferences (agents' test runs) keep the bundled Inter, so their
+    // screenshots look the same on every machine.
+    if prefs_enabled() {
+        wordcraft_ui_egui::theme::allow_system_ui_font();
+    }
     // Windows opened for further documents start like the first one, before its saved place.
     let window_builder = options.viewport.clone();
     let saved = saved_ui();

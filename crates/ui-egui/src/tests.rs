@@ -6162,6 +6162,26 @@ fn interface_size_survives_a_restart_and_clamps_junk() {
     assert!(saved.contains(r#""uiScale":"auto""#), "{saved}");
 }
 
+/// The interface font (System, the default, or Inter) is kept between runs; a junk saved value
+/// reads as System, a junk command value is refused, and tests never draw the system font, so
+/// screenshots and layout tests look the same on every machine.
+#[test]
+fn interface_font_survives_a_restart_and_tests_keep_inter() {
+    let mut a = app();
+    assert_eq!(a.run("ui.interfaceFont", json!({})).unwrap(), json!({"font": "system", "system": false}));
+    assert!(a.run("ui.interfaceFont", json!({"value": "comic"})).is_err());
+    assert_eq!(a.run("ui.interfaceFont", json!({"value": "Inter"})).unwrap(), json!({"font": "inter", "system": false}));
+    let saved = serde_json::to_string(&a.prefs()).unwrap();
+    assert!(saved.contains(r#""interfaceFont":"inter""#), "{saved}");
+    let mut b = app();
+    b.apply_prefs(serde_json::from_str(&saved).unwrap());
+    assert_eq!(b.ui.interface_font, theme::InterfaceFont::Inter);
+    let mut c = app();
+    c.apply_prefs(serde_json::from_str(r#"{"interfaceFont": "papyrus"}"#).unwrap());
+    assert_eq!(c.ui.interface_font, theme::InterfaceFont::System);
+    assert!(!theme::set_system_ui_font(theme::InterfaceFont::System));
+}
+
 /// #822: a `ui.json` from before saved `interfaceSize` on top of the display scale. Its
 /// default, 100, becomes Auto (the same size as before); a size picked on purpose becomes the
 /// absolute size it drew at, once the first frame says the display's scale: 125 % on a 2×

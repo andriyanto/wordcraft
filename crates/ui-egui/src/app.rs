@@ -121,6 +121,7 @@ impl WordApp {
             fonts_hant: false,
             fonts_system_cjk: false,
             fonts_system_arabic: false,
+            fonts_system_ui: false,
             want_system_cjk: false,
             want_system_arabic: false,
             recover_fonts_for: None,

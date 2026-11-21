@@ -225,6 +225,7 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     section(ui, "Interface");
     theme_picker(app, ui);
     interface_size_picker(app, ui);
+    interface_font_picker(app, ui);
     ui.horizontal(|ui| {
         use wordcraft_engine::cmd::view::PaperColor;
         let label = ui.label(tl!("Screen paper color:"));
@@ -787,6 +788,30 @@ fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
     ui.label(
         RichText::new(tl!(
             "Makes the ribbon, menus and dialogs larger or smaller. Auto follows your system's display scaling; 100% is one screen pixel per point. Document zoom is separate."
+        ))
+        .small()
+        .weak(),
+    );
+}
+
+/// The interface font: the system's or the bundled Inter (`ui.interfaceFont`).
+fn interface_font_picker(app: &mut WordApp, ui: &mut Ui) {
+    use crate::theme::InterfaceFont;
+    ui.horizontal(|ui| {
+        let label = ui.label(tl!("Interface font:"));
+        let combo =
+            craft_ui::ComboBox::from_id_salt("interface_font").selected_text(tl!(app.ui.interface_font.label())).width(220.0).show_ui(ui, |ui| {
+                for f in InterfaceFont::ALL {
+                    if ui.selectable_label(app.ui.interface_font == f, tl!(f.label())).clicked() {
+                        let _ = app.run("ui.interfaceFont", json!({"value": f.code()}));
+                    }
+                }
+            });
+        combo.response.labelled_by(label.id);
+    });
+    ui.label(
+        RichText::new(tl!(
+            "The font of the ribbon, menus and dialogs. The system font is the one Windows, macOS or Linux uses for other apps (Segoe UI on Windows, as in Word). Documents keep their own fonts."
         ))
         .small()
         .weak(),
