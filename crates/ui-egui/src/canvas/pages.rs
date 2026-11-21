@@ -277,11 +277,14 @@ pub(super) fn page_render_options(app: &WordApp, dim_body: bool) -> wordcraft_re
 /// platform's other apps (exports never change): on macOS, text is darkened the way the system
 /// draws it; on Linux and the BSDs it is hinted lightly, as FreeType's `hintslight` draws it
 /// there (not darkened: hinted text already has FreeType's weight, and darkening made it
-/// look semi-bold).
+/// look semi-bold). Windows takes the same light hinting: its own text (DirectWrite, as Word
+/// draws it) also puts baselines, x-heights and cap heights on whole pixels and moves nothing
+/// sideways, and unhinted page text looked soft next to it at 100 %. ClearType's sub-pixel
+/// colour edges are not drawn.
 pub(crate) fn screen_render_options() -> wordcraft_render::RenderOptions {
     wordcraft_render::RenderOptions {
         text_darkening: cfg!(target_os = "macos"),
-        hinting: cfg!(all(unix, not(target_os = "macos"))),
+        hinting: cfg!(any(windows, all(unix, not(target_os = "macos")))),
         ..Default::default()
     }
 }

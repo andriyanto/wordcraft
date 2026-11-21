@@ -672,6 +672,18 @@ impl WordApp {
                 let size = self.ui.interface_size;
                 json!({"auto": size.is_auto(), "percent": size.drawn_percent(self.native_scale)})
             }
+            "ui.interfaceFont" => {
+                // `system` (the platform's interface font, the default) or `inter` (the bundled
+                // font); no value reads it. `system` in the result is whether the system font is
+                // drawn now: not on the web, in tests, or where it isn't installed.
+                if let Some(v) = s("value") {
+                    match theme::InterfaceFont::from_code(v) {
+                        Some(f) => self.ui.interface_font = f,
+                        None => return Some(Err(format!("unknown interface font {v:?}; use system or inter"))),
+                    }
+                }
+                json!({"font": self.ui.interface_font.code(), "system": self.fonts_system_ui})
+            }
             "ui.animations" => {
                 // `system` (follow the system's animation setting), `on` or `off`; no value reads
                 // it. `enabled` is what that comes to now, `system` what the system reports.
@@ -1118,6 +1130,7 @@ pub(crate) fn works_without_document(id: &str) -> bool {
             | "ui.dark"
             | "ui.theme"
             | "ui.interfaceSize"
+            | "ui.interfaceFont"
             | "ui.animations"
             | "ui.language"
             | "ui.saveChanges"

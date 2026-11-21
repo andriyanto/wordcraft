@@ -241,6 +241,43 @@ fn arabic_candidates() -> &'static [&'static str] {
     }
 }
 
+/// Letters every interface font must have: English and the accented Latin letters of the
+/// interface languages (French, German, Spanish, Portuguese, Polish, Czech, Romanian, Turkish,
+/// Vietnamese), so a menu never mixes the system font with a fallback mid-word.
+const LATIN_UI_PROBE: &str = "AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789.,;:!?()%&'\"-…éèêëàâäçîïôöùûüÿñáíóúãõąćęłńśźżčďěňřšťůžăâîșțğışơưạảấầẩẫậắằẳẵặẹẻẽếềểễệỉịọỏốồổỗộớờởỡợụủứừửữựỳỵỷỹđ";
+
+/// The installed font file among `names` (tried in order in every system font folder) whose
+/// face draws every letter of [`LATIN_UI_PROBE`]: the platform's interface font, used instead of
+/// the bundled one when the person chooses it. `None` when none is installed or none covers them
+/// all. Reads at most one font file per candidate; never panics on damaged files.
+pub fn system_latin_ui_font(names: &[&str]) -> Option<SystemUiFont> {
+    latin_ui_font_in(&crate::system_font_dirs(), names)
+}
+
+/// [`system_latin_ui_font`] in the font folders `dirs`.
+fn latin_ui_font_in(dirs: &[std::path::PathBuf], names: &[&str]) -> Option<SystemUiFont> {
+    let needed: Vec<char> = LATIN_UI_PROBE.chars().collect();
+    let mut tried = std::collections::HashSet::new();
+    for path in names.iter().flat_map(|n| dirs.iter().map(move |d| d.join(n))) {
+        if !tried.insert(path.clone()) {
+            continue;
+        }
+        let Some(size) = std::fs::metadata(&path).ok().filter(std::fs::Metadata::is_file).map(|m| m.len()) else { continue };
+        if size > MAX_FILE {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(&path) else { continue };
+        let Some((index, family, covered)) = pick_face(&bytes, &needed, Region::Other) else { continue };
+        if covered < needed.len() {
+            log::debug!("interface font {}: {covered} of {} letters, not used", path.display(), needed.len());
+            continue;
+        }
+        log::debug!("interface font: {family} ({})", path.display());
+        return Some(SystemUiFont { family, bytes, index });
+    }
+    None
+}
+
 /// An installed font with Arabic letters, for an Arabic interface in a build whose craft-fonts
 /// input has no Arabic face. Reads at most one font file per candidate; never panics on damaged
 /// files.
@@ -336,6 +373,26 @@ pub(crate) fn pick_face(data: &[u8], needed: &[char], region: Region) -> Option<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The system interface font is used only when a file draws every Latin letter of the
+    /// interface languages; missing and damaged files are skipped for the next candidate, and
+    /// none at all means the bundled Inter.
+    #[test]
+    #[cfg(not(target_arch = "wasm32"))]
+    fn latin_interface_font_needs_every_letter() {
+        use crate::fontdb::tests::sysfonts::renamed_to;
+        let dir = std::env::temp_dir().join(format!("wc-uifallback-latin-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let dirs = std::slice::from_ref(&dir);
+        assert!(latin_ui_font_in(dirs, &["missing.ttf"]).is_none());
+        std::fs::write(dir.join("damaged.ttf"), b"\0\x01\0\0\xff\xff\xff\xff").unwrap();
+        assert!(latin_ui_font_in(dirs, &["damaged.ttf"]).is_none());
+        std::fs::write(dir.join("ui.ttf"), renamed_to("SourceSans3-Regular.ttf", "Probe UI Sans")).unwrap();
+        let found = latin_ui_font_in(dirs, &["missing.ttf", "damaged.ttf", "ui.ttf"]).unwrap();
+        assert_eq!((found.family.as_str(), found.index), ("Probe UI Sans", 0));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn korean_interface_uses_korean_first_system_font_candidates() {

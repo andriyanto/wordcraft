@@ -1,6 +1,7 @@
 //! Design tokens (light and dark), UI fonts and the egui style.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{Align2, Color32, CornerRadius, FontData, FontDefinitions, FontFamily, FontId, Rect, Stroke, Visuals};
 
@@ -214,6 +215,80 @@ impl Animations {
             Animations::Off => false,
         }
     }
+}
+
+/// The interface font (File › Options › General, `ui.interfaceFont`): the platform's own (Segoe
+/// UI on Windows, SF Pro on macOS, Noto Sans or Cantarell on Linux), as Word and the other apps
+/// there use, or the bundled Inter, which looks the same everywhere. The system font is the
+/// default; Inter stays the fallback for characters the system font lacks, the web app, and a
+/// computer without the font.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum InterfaceFont {
+    #[default]
+    System,
+    Inter,
+}
+
+impl InterfaceFont {
+    /// In menu order.
+    pub const ALL: [InterfaceFont; 2] = [InterfaceFont::System, InterfaceFont::Inter];
+
+    /// The value used in `ui.json` and by the `ui.interfaceFont` command.
+    pub fn code(self) -> &'static str {
+        match self {
+            InterfaceFont::System => "system",
+            InterfaceFont::Inter => "inter",
+        }
+    }
+
+    pub fn from_code(code: &str) -> Option<InterfaceFont> {
+        InterfaceFont::ALL.into_iter().find(|f| f.code().eq_ignore_ascii_case(code.trim()))
+    }
+
+    /// The English label (translated with `tl!` where shown).
+    pub fn label(self) -> &'static str {
+        match self {
+            InterfaceFont::System => "System font",
+            InterfaceFont::Inter => "Inter (the same on every computer)",
+        }
+    }
+}
+
+/// An unknown saved value reads as the default rather than discarding the whole `ui.json`.
+impl From<String> for InterfaceFont {
+    fn from(s: String) -> Self {
+        InterfaceFont::from_code(&s).unwrap_or_default()
+    }
+}
+
+impl From<InterfaceFont> for String {
+    fn from(f: InterfaceFont) -> Self {
+        f.code().to_string()
+    }
+}
+
+/// Whether this process may draw the interface in the system font: the desktop app says so at
+/// start ([`allow_system_ui_font`]). Off everywhere else (tests, the offscreen screenshot tools,
+/// the web), so they keep drawing with the bundled Inter and look the same on every machine.
+static SYSTEM_UI_FONT_ALLOWED: AtomicBool = AtomicBool::new(false);
+/// Whether the interface fonts installed next use the system font: the Options choice, where
+/// [`SYSTEM_UI_FONT_ALLOWED`]. Read by [`font_definitions_language_arabic`], which every install
+/// goes through.
+static SYSTEM_UI_FONT: AtomicBool = AtomicBool::new(false);
+
+/// Let this process draw the interface in the system font when the person chooses it. The
+/// desktop app calls this once at start.
+pub fn allow_system_ui_font() {
+    SYSTEM_UI_FONT_ALLOWED.store(true, Ordering::Relaxed);
+}
+
+/// Use the system font for the interface fonts installed from now on, if this process may
+/// ([`allow_system_ui_font`]). Returns whether it does.
+pub fn set_system_ui_font(choice: InterfaceFont) -> bool {
+    let on = SYSTEM_UI_FONT_ALLOWED.load(Ordering::Relaxed) && choice == InterfaceFont::System;
+    SYSTEM_UI_FONT.store(on, Ordering::Relaxed);
+    on
 }
 
 /// An unknown saved value reads as the default rather than discarding the whole `ui.json`.
@@ -586,6 +661,23 @@ pub fn font_definitions_language_arabic(
     }
     fonts.families.insert(FontFamily::Name("medium".into()), vec!["InterMedium".into(), "Inter".into(), "SourceSans".into()]);
     fonts.families.insert(FontFamily::Name("semibold".into()), vec!["InterSemiBold".into(), "Inter".into(), "SourceSans".into()]);
+    // The person's choice of the system font (Options › General): its faces go first, and Inter
+    // stays behind them for whatever they don't draw.
+    #[cfg(not(target_arch = "wasm32"))]
+    if SYSTEM_UI_FONT.load(Ordering::Relaxed)
+        && let Some(sys) = system_ui_faces()
+    {
+        for (family, name, data) in [
+            (FontFamily::Proportional, "SystemUI", &sys.regular),
+            (FontFamily::Name("medium".into()), "SystemUIMedium", &sys.medium),
+            (FontFamily::Name("semibold".into()), "SystemUISemiBold", &sys.semibold),
+        ] {
+            fonts.font_data.insert(name.into(), Arc::new(data.clone()));
+            if let Some(v) = fonts.families.get_mut(&family) {
+                v.insert(0, name.into());
+            }
+        }
+    }
     let add_cjk = |fonts: &mut FontDefinitions, name: String, data: FontData| {
         fonts.font_data.insert(name.clone(), Arc::new(data));
         for fam in [FontFamily::Proportional, FontFamily::Name("medium".into()), FontFamily::Name("semibold".into())] {
@@ -682,6 +774,70 @@ fn system_cjk_font(hans: bool, korean: bool) -> Option<&'static wordcraft_fonts:
         wordcraft_fonts::system_cjk_ui_font_for(hans, korean, &needed)
     })
     .as_ref()
+}
+
+/// The system interface font's three weights, as [`font_definitions_language_arabic`] uses them.
+#[cfg(not(target_arch = "wasm32"))]
+struct SystemUiFaces {
+    regular: FontData,
+    medium: FontData,
+    semibold: FontData,
+}
+
+/// The platform's interface font, read once: Segoe UI on Windows (Regular, and Semibold for the
+/// semibold text; Segoe UI has no Medium, so medium text is Regular, as Word's ribbon labels
+/// are), SF Pro on macOS (its variable font at 400, 500 and 600) and Noto Sans on Linux and the
+/// BSDs (static faces, or its variable font). `None` when it isn't installed or doesn't draw the
+/// interface languages' Latin letters ([`wordcraft_fonts::system_latin_ui_font`]): Inter then.
+#[cfg(not(target_arch = "wasm32"))]
+fn system_ui_faces() -> Option<&'static SystemUiFaces> {
+    static FACES: std::sync::OnceLock<Option<SystemUiFaces>> = std::sync::OnceLock::new();
+    FACES
+        .get_or_init(|| {
+            let (regular, medium, semibold): (&[&str], &[&str], &[&str]) = if cfg!(windows) {
+                (&["segoeui.ttf"], &[], &["seguisb.ttf"])
+            } else if cfg!(target_os = "macos") {
+                (&["SFNS.ttf"], &[], &[])
+            } else {
+                (
+                    &[
+                        "noto/NotoSans-Regular.ttf",
+                        "truetype/noto/NotoSans-Regular.ttf",
+                        "google-noto/NotoSans-Regular.ttf",
+                        "TTF/NotoSans-Regular.ttf",
+                        "google-noto-sans-vf-fonts/NotoSans[wdth,wght].ttf",
+                        "noto/NotoSans[wdth,wght].ttf",
+                    ],
+                    &["noto/NotoSans-Medium.ttf", "truetype/noto/NotoSans-Medium.ttf", "google-noto/NotoSans-Medium.ttf", "TTF/NotoSans-Medium.ttf"],
+                    &[
+                        "noto/NotoSans-SemiBold.ttf",
+                        "truetype/noto/NotoSans-SemiBold.ttf",
+                        "google-noto/NotoSans-SemiBold.ttf",
+                        "TTF/NotoSans-SemiBold.ttf",
+                    ],
+                )
+            };
+            let load = |names: &[&str]| -> Option<FontData> {
+                let f = wordcraft_fonts::system_latin_ui_font(names)?;
+                let blob: egui::epaint::text::Blob = Arc::new(f.bytes);
+                Some(FontData::from_blob(blob, f.index))
+            };
+            let regular = load(regular)?;
+            // A variable font with a weight axis draws every weight from the one file.
+            const WGHT: u32 = u32::from_be_bytes(*b"wght");
+            let variable = regular.variation_axes().iter().any(|a| a.tag.to_be_bytes() == *b"wght");
+            let weight = |w: f32| {
+                let mut tweak = regular.tweak.clone();
+                tweak.coords = egui::epaint::text::VariationCoords::new([(WGHT, w)]);
+                regular.clone().tweak(tweak)
+            };
+            let medium = load(medium).unwrap_or_else(|| if variable { weight(500.0) } else { regular.clone() });
+            let semibold = load(semibold).unwrap_or_else(|| if variable { weight(600.0) } else { regular.clone() });
+            let regular = if variable { weight(400.0) } else { regular };
+            log::info!("interface font: the system font{}", if variable { " (variable weights)" } else { "" });
+            Some(SystemUiFaces { regular, medium, semibold })
+        })
+        .as_ref()
 }
 
 #[cfg(not(target_arch = "wasm32"))]

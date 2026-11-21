@@ -339,6 +339,10 @@ pub struct UiState {
     /// Animation effects (smooth scrolling, fades): on, off, or follow the system's setting, which
     /// is the default. An unknown saved value reads as the default.
     pub animations: theme::Animations,
+    /// The interface font: the system's (the default) or the bundled Inter. An unknown saved
+    /// value reads as the default.
+    #[serde(default)]
+    pub interface_font: theme::InterfaceFont,
     /// The dark-mode switch `ui.json` held before `theme` (#115): read once to migrate, never written.
     #[serde(rename = "dark", skip_serializing)]
     pub(crate) legacy_dark: Option<bool>,
@@ -486,6 +490,7 @@ impl Default for UiState {
             interface_size: theme::InterfaceSize::default(),
             legacy_interface_size: None,
             animations: theme::Animations::default(),
+            interface_font: theme::InterfaceFont::default(),
             legacy_dark: None,
             nav_tab: "headings".into(),
             nav_pane: false,
@@ -708,6 +713,8 @@ pub struct WordApp {
     /// Whether the installed UI fonts were asked to include an installed Arabic font (an Arabic
     /// interface; used when no embedded face has Arabic letters).
     fonts_system_arabic: bool,
+    /// The interface fonts installed last use the system font (`ui.interfaceFont`).
+    fonts_system_ui: bool,
     /// CJK text is (about to be) on screen in a non-CJK interface, e.g. the language names in
     /// File ▸ Options: load the installed CJK fallback font if no embedded face covers it.
     pub(crate) want_system_cjk: bool,

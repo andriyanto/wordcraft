@@ -11,6 +11,9 @@
 //! starts the way the desktop app does with nothing to open (File › Home, #766). A line
 //! `{"width": w}`, `{"height": h}` or `{"ppp": s}` sets the window size in points or its pixels
 //! per point (e.g. 1.45 for a 145 % desktop, to see text as it is drawn there).
+//! `{"systemFont": true}` draws the interface in the system font, as the desktop app does when
+//! File › Options › General › Interface font is System (otherwise the bundled Inter, so shots look
+//! the same on every machine).
 //! `{"demoPacks": true}` lists a few sample Language packs (installs only record themselves), and
 //! (with `{"network": true}` on a line, downloading is already on) `{"demoPacks": "store"}` uses a real font store, as the desktop app does, in a new temporary
 //! folder rather than the person's, or in `"storeDir"` given on the same line (with
@@ -51,6 +54,9 @@ fn main() {
             wordcraft_engine::packs::set_backend(Some(std::sync::Arc::new(backend)));
         }
         None => {}
+    }
+    if lines.iter().any(|l| l.get("systemFont") == Some(&serde_json::Value::Bool(true))) {
+        wordcraft_ui_egui::theme::allow_system_ui_font();
     }
     let mut app = WordApp::new(Session::new(doc), Services::default()).with_control(rx);
     app.integrated_titlebar = true;
