@@ -399,5 +399,14 @@ changes bring it closer, at the owner's request:
   zoom on a 100 % display), 7 and 30 ms at 2 px per point, on a two-core cloud machine; only at
   rest, as mid-zoom pages keep grey edges. The mask and the page without text are kept between
   renders on the thread (up to 48 MB), because a fresh buffer's memory being faulted in cost
-  more than drawing into it. The interface (egui) keeps grey edges. Tests, the
-  web app and exports never use it, and a render without it is unchanged byte for byte.
+  more than drawing into it.
+- **ClearType for the interface**: the ribbon, menus and dialogs are drawn by egui, whose glyph
+  atlas held one coverage per pixel and whose renderer blended with it alone. WordKu now keeps
+  its own copies of egui's `epaint` and `egui-wgpu` in `vendor/egui` (the same commit as the
+  rest of egui, `[patch]`ed in), with the changes listed in `vendor/egui/README.md`: glyphs with
+  a coverage per colour stripe, and a renderer that blends each colour on its own through
+  dual-source blending. It needs a graphics device with dual-source blending (DirectX 12 has
+  it; OpenGL where the driver has `ARB_blend_func_extended`); without one the interface keeps
+  grey edges. With it off, the interface is drawn exactly as before.
+- Tests, the web app and exports never use either, and a page render or interface frame without
+  them is unchanged pixel for pixel.
