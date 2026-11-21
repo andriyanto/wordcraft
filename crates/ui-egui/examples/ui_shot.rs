@@ -13,7 +13,8 @@
 //! per point (e.g. 1.45 for a 145 % desktop, to see text as it is drawn there).
 //! `{"systemFont": true}` draws the interface in the system font, as the desktop app does when
 //! File › Options › General › Interface font is System (otherwise the bundled Inter, so shots look
-//! the same on every machine).
+//! the same on every machine). `{"subpixel": "rgb"}` (or `"bgr"`) draws page text with
+//! ClearType's subpixel edges, as the desktop app does on Windows when ClearType is on.
 //! `{"demoPacks": true}` lists a few sample Language packs (installs only record themselves), and
 //! (with `{"network": true}` on a line, downloading is already on) `{"demoPacks": "store"}` uses a real font store, as the desktop app does, in a new temporary
 //! folder rather than the person's, or in `"storeDir"` given on the same line (with
@@ -57,6 +58,11 @@ fn main() {
     }
     if lines.iter().any(|l| l.get("systemFont") == Some(&serde_json::Value::Bool(true))) {
         wordcraft_ui_egui::theme::allow_system_ui_font();
+    }
+    match lines.iter().find_map(|l| l.get("subpixel").and_then(|v| v.as_str())) {
+        Some("rgb") => wordcraft_ui_egui::canvas::set_subpixel_text(Some(wordcraft_ui_egui::canvas::SubpixelOrder::Rgb)),
+        Some("bgr") => wordcraft_ui_egui::canvas::set_subpixel_text(Some(wordcraft_ui_egui::canvas::SubpixelOrder::Bgr)),
+        _ => {}
     }
     let mut app = WordApp::new(Session::new(doc), Services::default()).with_control(rx);
     app.integrated_titlebar = true;

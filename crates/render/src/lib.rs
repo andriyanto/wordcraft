@@ -39,6 +39,8 @@ pub fn default_threads() -> u16 {
 }
 
 mod context_pool;
+mod subpixel;
+pub use subpixel::SubpixelOrder;
 
 /// Largest raster side vello_cpu handles comfortably.
 pub const MAX_SIDE: u32 = 16_000;
@@ -168,6 +170,11 @@ pub struct RenderOptions {
     /// onto the pixel grid, so text looks as crisp as in other apps there. Nothing moves
     /// sideways, so lines break as without it. For on-screen rasters only: exports stay exact.
     pub hinting: bool,
+    /// Draw upright text with subpixel (LCD) edges, as Windows' ClearType does: each of a
+    /// pixel's red, green and blue stripes is covered on its own, in the screen's stripe order,
+    /// so small text is sharper sideways. For on-screen rasters shown pixel for pixel only; a
+    /// raster that is scaled shows coloured fringes. `None` (the default): grey edges.
+    pub subpixel: Option<SubpixelOrder>,
     /// Dark page (View › Switch Modes): every colour but pictures has its lightness inverted, so
     /// white paper turns black and black text white while hues stay the same. Screen only.
     pub dark: bool,
@@ -271,6 +278,7 @@ impl Default for RenderOptions {
             mark_color: Rgb(0x2B, 0x57, 0x9A),
             text_darkening: false,
             hinting: false,
+            subpixel: None,
             dark: false,
             dark_paper: DARK_PAPER,
             read_paper: None,
@@ -298,20 +306,54 @@ fn render_region_capped(doc: &Document, page: &Page, w: u32, h: u32, view: Affin
     // Over the cap the whole picture is drawn smaller, not cropped.
     let view = if (cw, ch) == (w, h) { view } else { Affine::scale_non_uniform(cw as f64 / w as f64, ch as f64 / h as f64) * view };
     let (w16, h16) = (cw as u16, ch as u16);
+    let pixels = paint_page(doc, page, (w16, h16), view, opts, subpixel::Pass::All);
+    let pixels = match opts.subpixel {
+        Some(order) if subpixel::fits(cw, ch) => subpixel::compose(doc, page, (w16, h16), view, opts, order, pixels),
+        _ => pixels,
+    };
+    Rendered { width: w16 as u32, height: h16 as u32, pixels }
+}
+
+/// Draw a page into a `w16`×`h16` premultiplied RGBA raster with `view` (page points → pixels):
+/// the paper, the page picture and watermark, then the page's layers. `pass` picks what is drawn
+/// ([`subpixel::Pass`]): everything, everything but the text drawn with subpixel edges, or that
+/// text alone as white coverage.
+fn paint_page(doc: &Document, page: &Page, size: (u16, u16), view: Affine, opts: &RenderOptions, pass: subpixel::Pass) -> Vec<u8> {
+    let mut pixels = Vec::new();
+    paint_page_into(&mut pixels, doc, page, size, view, opts, pass);
+    pixels
+}
+
+/// [`paint_page`] into `pixels`, reusing its memory: a fresh raster's pages are faulted in one
+/// by one as they are first written, which took longer than drawing the subpixel passes.
+fn paint_page_into(
+    pixels: &mut Vec<u8>,
+    doc: &Document,
+    page: &Page,
+    (w16, h16): (u16, u16),
+    view: Affine,
+    opts: &RenderOptions,
+    pass: subpixel::Pass,
+) {
+    let _pass = subpixel::Pass::set(pass);
     let mut ctx = context_pool::CONTEXTS.take(w16, h16);
-    ctx.set_transform(Affine::IDENTITY);
-    ctx.set_paint(color(opts.paper_of(doc), 1.0));
-    ctx.fill_rect(&kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64));
-    if opts.read_paper.is_none() {
+    let mask = pass == subpixel::Pass::Mask;
+    // The text mask is coverage alone: no paper, page picture or watermark under it.
+    if !mask {
+        ctx.set_transform(Affine::IDENTITY);
+        ctx.set_paint(color(opts.paper_of(doc), 1.0));
+        ctx.fill_rect(&kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64));
+    }
+    if opts.read_paper.is_none() && !mask {
         draw_page_picture(&mut ctx, doc, page, view);
     }
     let visible = view.inverse().transform_rect_bbox(kurbo::Rect::new(0.0, 0.0, w16 as f64, h16 as f64)).inflate(40.0, 40.0);
-    if let Some(wm) = &doc.settings.watermark {
+    if let Some(wm) = doc.settings.watermark.as_ref().filter(|_| !mask) {
         draw_watermark(&mut ctx, view, page, wm, opts);
     }
     // A dimmed layer is drawn whole, then faded once, so its overlaps don't darken.
     for (alpha, items) in page_layers(doc, page, &opts.display) {
-        let faded = alpha < 1.0 && !items.is_empty();
+        let faded = alpha < 1.0 && !items.is_empty() && !mask;
         if faded {
             ctx.push_opacity_layer(alpha);
         }
@@ -323,13 +365,13 @@ fn render_region_capped(doc: &Document, page: &Page, w: u32, h: u32, view: Affin
         }
     }
     ctx.flush();
-    let mut pixels = vec![0u8; w16 as usize * h16 as usize * 4];
+    pixels.clear();
+    pixels.resize(w16 as usize * h16 as usize * 4, 0);
     let mut res = Resources::new();
-    if let Some(pm) = vello_cpu::PixmapMut::new(w16, h16, &mut pixels) {
+    if let Some(pm) = vello_cpu::PixmapMut::new(w16, h16, pixels) {
         ctx.render(pm, &mut res);
     }
     context_pool::CONTEXTS.give_back(ctx);
-    Rendered { width: w16 as u32, height: h16 as u32, pixels }
 }
 
 /// The on-screen colour behind page point (`x`, `y`): the paper (page colour), then any
@@ -613,6 +655,12 @@ fn kurbo_rect(rect: &wordcraft_geom::Rect) -> kurbo::Rect {
 /// while ink uses its tool's round ends and joins.
 fn draw(ctx: &mut RenderContext, doc: &Document, it: &Draw, view: Affine, visible: &kurbo::Rect, opts: &RenderOptions) {
     let fr = Frame { doc, opts, view, visible };
+    // The text mask holds text alone: everything else is left out ([`subpixel::Pass::Mask`]).
+    if subpixel::Pass::current() == subpixel::Pass::Mask
+        && !matches!(it, Draw::Glyphs { .. } | Draw::Figure { .. } | Draw::Clip { .. } | Draw::Turned { .. } | Draw::Rotated { .. })
+    {
+        return;
+    }
     match it {
         Draw::Figure { draws, .. } => {
             for d in draws {
@@ -728,9 +776,29 @@ fn draw_glyphs(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
         return;
     }
     let (view, visible, opts) = (fr.view, fr.visible, fr.opts);
+    let pass = subpixel::Pass::current();
+    // The view of the page as shown: the text mask is drawn three times as wide.
+    let shown = if pass == subpixel::Pass::Mask { Affine::scale_non_uniform(1.0 / 3.0, 1.0) * view } else { view };
+    // Emoji and other colour glyphs (#1269) are drawn from the font's colour data.
+    let colour = face.has_color_glyphs();
+    // Drawn with subpixel edges: upright text in one colour, as ClearType draws it. The rest
+    // (turned and rotated text, emoji) keeps grey edges.
+    let lcd = opts.subpixel.is_some() && !colour && is_upright(shown);
+    match pass {
+        subpixel::Pass::All => {}
+        subpixel::Pass::NoText if lcd => return,
+        subpixel::Pass::NoText => {}
+        subpixel::Pass::Mask if !lcd => return,
+        subpixel::Pass::Mask => {}
+    }
     let db = FontDb::global();
     let k = *size as f64 / face.upem.max(1.0);
-    ctx.set_paint(color(opts.ink_text(*c, *text_bg), *alpha));
+    if pass == subpixel::Pass::Mask {
+        subpixel::note_masked();
+        ctx.set_paint(color(Rgb::WHITE, 1.0));
+    } else {
+        ctx.set_paint(color(opts.ink_text(*c, *text_bg), *alpha));
+    }
     let skew = if *synth_italic { Affine::new([1.0, 0.0, -0.21, 1.0, 0.0, 0.0]) } else { Affine::IDENTITY };
     // Scaled letters (`w:w`): each glyph stretched across from its pen position.
     let sx = if x_scale.is_finite() && *x_scale > 0.0 { f64::from(*x_scale) } else { 1.0 };
@@ -738,7 +806,7 @@ fn draw_glyphs(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
     // Outline strokes, in font units: synthetic bold, then on-screen stem darkening (a
     // stroke grows the outline by half its width on each side). Darkening is skipped for
     // translucent text, where the stroke overlapping the fill would show as a darker rim.
-    let px_per_pt = view.determinant().abs().sqrt();
+    let px_per_pt = shown.determinant().abs().sqrt();
     let darken_px = if opts.text_darkening && *alpha >= 1.0 { stem_darkening(*size as f64 * px_per_pt) } else { 0.0 };
     let darken = if darken_px > 0.0 && k * px_per_pt > 0.0 { 2.0 * darken_px / (k * px_per_pt) } else { 0.0 };
     let outline_stroke = if *synth_bold { face.upem * 0.03 } else { 0.0 } + darken;
@@ -746,12 +814,12 @@ fn draw_glyphs(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
     if outline_stroke > 0.0 {
         ctx.set_stroke(kurbo::Stroke::new(outline_stroke).with_join(join));
     }
-    // Emoji and other colour glyphs (#1269) are drawn from the font's colour data.
-    let colour = face.has_color_glyphs();
     let ppem = *size as f64 * px_per_pt;
     // Hinted outlines are in device pixels: only for an upright, unmirrored, evenly scaled
     // view (not rotated text boxes), where the pixel grid lines up with the glyphs.
-    let hint_ppem = (opts.hinting && !colour && is_upright(view)).then_some(ppem as f32);
+    let hint_ppem = (opts.hinting && !colour && is_upright(shown)).then_some(ppem as f32);
+    // The hinted outlines' pixels are three subpixels wide in the text mask.
+    let widen = if pass == subpixel::Pass::Mask { Affine::scale_non_uniform(3.0, 1.0) } else { Affine::IDENTITY };
     // The outline strokes in device pixels, for the hinted outlines.
     let stroke_px = outline_stroke * k * px_per_pt;
     let mut hinted_stroke = false;
@@ -774,7 +842,7 @@ fn draw_glyphs(ctx: &mut RenderContext, fr: &Frame, it: &Draw) {
             }
             // The baseline on a whole pixel, as the hinting assumes.
             let at = view * kurbo::Point::new(gx, gy);
-            ctx.set_transform(Affine::translate((at.x, at.y.round())) * skew);
+            ctx.set_transform(Affine::translate((at.x, at.y.round())) * widen * skew);
             ctx.fill_path(&o);
             if outline_stroke > 0.0 {
                 if !hinted_stroke {

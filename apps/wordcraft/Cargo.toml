@@ -72,6 +72,10 @@ wl-clipboard-rs = "0.9"
 x11rb = "0.14"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# The system's ClearType setting (HKCU\Control Panel\Desktop), so page text takes subpixel edges
+# as Windows' own text does. A safe API over the registry; already in the build through the
+# update crate, at this version.
+winreg = "0.55"
 # The upstream default-apps button opens Windows Settings; printing uses craft-print instead.
 open = "5"
 # The system's Animation effects setting (Settings › Accessibility › Visual effects), read through

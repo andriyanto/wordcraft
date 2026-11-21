@@ -60,6 +60,7 @@ pub(crate) use margins::{MarginEdge, dragged_margin, margin_drag};
 use navigation::top_page;
 pub use navigation::{nearest_page, page_at, page_to_screen};
 use navigation::{scrollbar_page_tip, viewed_page};
+pub use pages::set_subpixel_text;
 #[cfg(test)]
 use pages::{DRAWING_GRID_MAX_LINES, DRAWING_GRID_MIN_PX};
 pub(crate) use pages::{PageKeys, dark_page, page_doc, page_screen_scale, preview_sel, screen_render_options};
@@ -79,6 +80,7 @@ use rulers::{RULER_LABEL_PX, RULER_MAX_MARKS, RULER_SPARSEST, RulerMark, UNIT_TI
 pub use story::{EquationFrame, editing_header_footer, in_text_box};
 use story::{dims_body, equation_frame};
 pub(crate) use story::{part_kind, text_box_host};
+pub use wordcraft_render::SubpixelOrder;
 
 /// Points on screen per document point at 100% (96 px per inch, like a word processor).
 pub const PX_PER_PT: f32 = 96.0 / 72.0;
@@ -1076,6 +1078,8 @@ fn paint_pages(pass: PagePaint<'_>) -> PagePaintOutput {
         if visible && !tiled && !fresh && !stretched && (forced || rendered < 2 || !app.canvas.textures.contains_key(&i) && rendered < 4) {
             let mut opts = page_render_options(app, dim_body);
             opts.hinting &= hinted;
+            // Mid-zoom the page is drawn unhinted and then stretched: no subpixel edges either.
+            opts.subpixel = opts.subpixel.filter(|_| hinted);
             // Only on the page it is on: the `Pos` can't match an object of another page.
             opts.display.hide_object = hidden.as_ref().filter(|(page, _)| *page == i).map(|(_, p)| p.clone());
             let img = wordcraft_render::render_page(page_doc(app), page, scale_px, &opts);
@@ -1132,6 +1136,8 @@ fn paint_pages(pass: PagePaint<'_>) -> PagePaintOutput {
                 if !fresh && rendered < 4 {
                     let mut opts = page_render_options(app, dim_body);
                     opts.hinting &= hinted;
+                    // Mid-zoom the page is drawn unhinted and then stretched: no subpixel edges either.
+                    opts.subpixel = opts.subpixel.filter(|_| hinted);
                     // Only on the page it is on: the `Pos` can't match an object of another page.
                     opts.display.hide_object = hidden.as_ref().filter(|(page, _)| *page == i).map(|(_, p)| p.clone());
                     // The tiny subtraction avoids a 1px overshoot from round-tripping f32
