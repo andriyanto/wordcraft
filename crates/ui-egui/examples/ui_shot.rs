@@ -14,7 +14,8 @@
 //! `{"systemFont": true}` draws the interface in the system font, as the desktop app does when
 //! File › Options › General › Interface font is System (otherwise the bundled Inter, so shots look
 //! the same on every machine). `{"subpixel": "rgb"}` (or `"bgr"`) draws page text with
-//! ClearType's subpixel edges, as the desktop app does on Windows when ClearType is on.
+//! ClearType's subpixel edges, as the desktop app does on Windows when ClearType is on, on the
+//! pages and, where the graphics device can blend each colour on its own, in the interface.
 //! `{"demoPacks": true}` lists a few sample Language packs (installs only record themselves), and
 //! (with `{"network": true}` on a line, downloading is already on) `{"demoPacks": "store"}` uses a real font store, as the desktop app does, in a new temporary
 //! folder rather than the person's, or in `"storeDir"` given on the same line (with
@@ -59,10 +60,14 @@ fn main() {
     if lines.iter().any(|l| l.get("systemFont") == Some(&serde_json::Value::Bool(true))) {
         wordcraft_ui_egui::theme::allow_system_ui_font();
     }
-    match lines.iter().find_map(|l| l.get("subpixel").and_then(|v| v.as_str())) {
-        Some("rgb") => wordcraft_ui_egui::canvas::set_subpixel_text(Some(wordcraft_ui_egui::canvas::SubpixelOrder::Rgb)),
-        Some("bgr") => wordcraft_ui_egui::canvas::set_subpixel_text(Some(wordcraft_ui_egui::canvas::SubpixelOrder::Bgr)),
-        _ => {}
+    let subpixel = match lines.iter().find_map(|l| l.get("subpixel").and_then(|v| v.as_str())) {
+        Some("rgb") => Some((wordcraft_ui_egui::canvas::SubpixelOrder::Rgb, egui::epaint::text::LcdOrder::Rgb)),
+        Some("bgr") => Some((wordcraft_ui_egui::canvas::SubpixelOrder::Bgr, egui::epaint::text::LcdOrder::Bgr)),
+        _ => None,
+    };
+    if let Some((page, interface)) = subpixel {
+        wordcraft_ui_egui::canvas::set_subpixel_text(Some(page));
+        egui_wgpu::want_lcd_text(Some(interface));
     }
     let mut app = WordApp::new(Session::new(doc), Services::default()).with_control(rx);
     app.integrated_titlebar = true;
@@ -72,8 +77,12 @@ fn main() {
     let w = lines.iter().find_map(|l| l.get("width").and_then(|v| v.as_f64())).unwrap_or(1440.0) as f32;
     let h = lines.iter().find_map(|l| l.get("height").and_then(|v| v.as_f64())).unwrap_or(900.0) as f32;
     let ppp = lines.iter().find_map(|l| l.get("ppp").and_then(|v| v.as_f64())).map(|p| p.clamp(0.5, 4.0)).unwrap_or(2.0) as f32;
-    let mut harness =
-        egui_kittest::Harness::builder().with_size(egui::vec2(w, h)).with_pixels_per_point(ppp).with_max_steps(1_000_000).wgpu().build_ui_state(
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(w, h))
+        .with_pixels_per_point(ppp)
+        .with_max_steps(1_000_000)
+        .wgpu_setup(wgpu_setup(subpixel.is_some()))
+        .build_ui_state(
             |ui, app: &mut WordApp| {
                 if !READY.load(std::sync::atomic::Ordering::Relaxed) {
                     return;
@@ -136,4 +145,19 @@ fn step_n(harness: &mut egui_kittest::Harness<'_, WordApp>, n: usize) {
     for _ in 0..n {
         step(harness);
     }
+}
+
+/// kittest's graphics device, asking for dual-source blending (where the adapter has it) when the
+/// interface's text is drawn with ClearType's subpixel edges, as the desktop app does on Windows.
+fn wgpu_setup(cleartype: bool) -> egui_wgpu::WgpuSetup {
+    let mut setup = egui_kittest::wgpu::default_wgpu_setup();
+    if cleartype && let egui_wgpu::WgpuSetup::CreateNew(create) = &mut setup {
+        let before = std::sync::Arc::clone(&create.device_descriptor);
+        create.device_descriptor = std::sync::Arc::new(move |adapter| {
+            let mut descriptor = before(adapter);
+            descriptor.required_features |= adapter.features() & egui_wgpu::wgpu::Features::DUAL_SOURCE_BLENDING;
+            descriptor
+        });
+    }
+    setup
 }

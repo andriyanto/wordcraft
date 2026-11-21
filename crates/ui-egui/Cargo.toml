@@ -60,6 +60,8 @@ wordcraft-engine = { workspace = true, features = ["test-support"] }
 # interface tests lay out explicitly: default faces plus monochrome emoji fallbacks.
 egui = { workspace = true, features = ["default_fonts", "monochrome_emoji_fonts"] }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
+# The `ui_shot` example asks its graphics device for dual-source blending, to show ClearType text.
+egui-wgpu = { version = "0.37", default-features = false }
 zip = { workspace = true }
 # #2726's regression test: the consumer the Windows adapter runs, fed with our updates.
 # Pinned to the version egui already brings into the tree, so nothing is built twice.

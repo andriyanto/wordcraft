@@ -171,6 +171,11 @@ impl FontCell {
             Some(())
         })?;
 
+        // WordKu: ClearType text, with subpixel edges.
+        if let Some(order) = super::lcd::lcd_text() {
+            return super::lcd::rasterize(&path, order);
+        }
+
         let bounds = path.control_box().expand();
         let width = bounds.width() as u16;
         let height = bounds.height() as u16;
@@ -774,7 +779,7 @@ pub(crate) struct ShapedCluster<'a> {
 /// `RenderContext::new` uses worker threads when another crate in the build turns on `vello_cpu`'s
 /// `multithreading` feature: that builds a thread pool per glyph and panics in `render` without a
 /// `flush` first.
-fn glyph_render_context(width: u16, height: u16) -> vello_cpu::RenderContext {
+pub(crate) fn glyph_render_context(width: u16, height: u16) -> vello_cpu::RenderContext {
     vello_cpu::RenderContext::new_with(
         width,
         height,

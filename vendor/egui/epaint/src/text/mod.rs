@@ -16,6 +16,8 @@ mod glyph_atlas;
 mod glyph_rasterizer;
 pub mod grapheme;
 mod index;
+// WordKu: ClearType text.
+mod lcd;
 mod line_break;
 mod styled_metrics;
 mod text_layout;
@@ -33,6 +35,8 @@ pub use {
         GlyphBitmap, GlyphRasterizer, GlyphRasterizerRequest, RasterizedGlyph,
         has_emoji_presentation,
     },
+    // WordKu: ClearType text.
+    lcd::{LcdOrder, lcd_text, set_lcd_text},
     index::{ByteIndex, ByteRange, ByteRangeExt, CharIndex, CharRange, CharRangeExt},
     line_break::{LineBreak, LineBreakKind, LineBreaker, SimpleLineBreaker},
     text_layout_types::*,

@@ -233,6 +233,51 @@ impl Default for RendererOptions {
     }
 }
 
+/// WordKu: the subpixel order a renderer should draw text in, if the device allows it
+/// ([`want_lcd_text`]): 0 none, 1 RGB, 2 BGR.
+static WANTED_LCD_TEXT: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(0);
+
+/// WordKu: draw text with ClearType's subpixel edges in `order` (`None`: grey edges, the
+/// default), where the device has dual-source blending. Call it before the first [`Renderer`]
+/// is made: that renderer turns [`epaint::text::set_lcd_text`] on, so glyphs are rasterized
+/// with subpixel edges only once a renderer can blend them.
+pub fn want_lcd_text(order: Option<epaint::text::LcdOrder>) {
+    let v = match order {
+        None => 0,
+        Some(epaint::text::LcdOrder::Rgb) => 1,
+        Some(epaint::text::LcdOrder::Bgr) => 2,
+    };
+    WANTED_LCD_TEXT.store(v, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// WordKu: whether a renderer on `device` draws ClearType text: wanted ([`want_lcd_text`]) and
+/// possible (dual-source blending). Turns the glyphs' subpixel edges on when it does.
+fn lcd_text_on(device: &wgpu::Device) -> bool {
+    let order = match WANTED_LCD_TEXT.load(core::sync::atomic::Ordering::Relaxed) {
+        1 => epaint::text::LcdOrder::Rgb,
+        2 => epaint::text::LcdOrder::Bgr,
+        _ => return false,
+    };
+    if !device.features().contains(wgpu::Features::DUAL_SOURCE_BLENDING) {
+        log::info!("ClearType text: the graphics device can't blend per channel; grey edges");
+        return false;
+    }
+    if epaint::text::lcd_text() != Some(order) {
+        log::info!("ClearType text: {order:?}");
+        epaint::text::set_lcd_text(Some(order));
+    }
+    true
+}
+
+/// WordKu: `egui.wgsl` with the fragment entry points for ClearType text.
+fn lcd_shader_source() -> String {
+    format!(
+        "enable dual_source_blending;\n{}\n{}",
+        include_str!("egui.wgsl"),
+        include_str!("egui_lcd.wgsl")
+    )
+}
+
 /// Renderer for a egui based GUI.
 pub struct Renderer {
     pipeline: wgpu::RenderPipeline,
@@ -277,9 +322,15 @@ impl Renderer {
     ) -> Self {
         profiling::function_scope!();
 
+        // WordKu: ClearType text, where the device can blend each channel on its own.
+        let lcd = lcd_text_on(device);
         let shader = wgpu::ShaderModuleDescriptor {
             label: Some("egui"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("egui.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(if lcd {
+                Cow::Owned(lcd_shader_source())
+            } else {
+                Cow::Borrowed(include_str!("egui.wgsl"))
+            }),
         };
         let module = {
             profiling::scope!("create_shader_module");
@@ -434,7 +485,9 @@ impl Renderer {
                     module: &module,
                     entry_point: Some(if output_color_format.is_srgb() {
                         log::warn!("Detected a linear (sRGBA aware) framebuffer {output_color_format:?}. egui prefers Rgba8Unorm or Bgra8Unorm");
-                        "fs_main_linear_framebuffer"
+                        if lcd { "fs_main_lcd_linear_framebuffer" } else { "fs_main_linear_framebuffer" }
+                    } else if lcd {
+                        "fs_main_lcd_gamma_framebuffer"
                     } else {
                         "fs_main_gamma_framebuffer" // this is what we prefer
                     }),
@@ -443,7 +496,13 @@ impl Renderer {
                         blend: Some(wgpu::BlendState {
                             color: wgpu::BlendComponent {
                                 src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                                // WordKu: with ClearType text, each channel by the shader's
+                                // second output (the alpha for everything but LCD glyphs).
+                                dst_factor: if lcd {
+                                    wgpu::BlendFactor::OneMinusSrc1
+                                } else {
+                                    wgpu::BlendFactor::OneMinusSrcAlpha
+                                },
                                 operation: wgpu::BlendOperation::Add,
                             },
                             alpha: wgpu::BlendComponent {
@@ -1273,3 +1332,23 @@ const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<Renderer>();
 };
+
+/// WordKu: the ClearType shader compiles, for every backend naga writes.
+#[cfg(test)]
+mod lcd_tests {
+    use wgpu::naga;
+
+    #[test]
+    fn the_cleartype_shader_is_valid() {
+        let source = super::lcd_shader_source();
+        let module = naga::front::wgsl::parse_str(&source).expect("parses");
+        let mut validator = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::DUAL_SOURCE_BLENDING,
+        );
+        validator.validate(&module).expect("valid");
+        for entry in ["fs_main_lcd_gamma_framebuffer", "fs_main_lcd_linear_framebuffer"] {
+            assert!(module.entry_points.iter().any(|e| e.name == entry), "{entry}");
+        }
+    }
+}

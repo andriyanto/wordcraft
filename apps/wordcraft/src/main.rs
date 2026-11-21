@@ -541,8 +541,20 @@ fn main() -> eframe::Result {
     // screenshots look the same on every machine.
     if prefs_enabled() {
         wordcraft_ui_egui::theme::allow_system_ui_font();
-        // Page text with ClearType's subpixel edges where Windows draws its own text so.
-        wordcraft_ui_egui::canvas::set_subpixel_text(cleartype::system_order());
+        // Page and interface text with ClearType's subpixel edges where Windows draws its own
+        // text so. The interface needs a graphics device that blends each colour on its own;
+        // without one its text keeps grey edges.
+        let cleartype = cleartype::system_order();
+        wordcraft_ui_egui::canvas::set_subpixel_text(cleartype);
+        #[cfg(target_os = "windows")]
+        if let Some(order) = cleartype {
+            use wordcraft_ui_egui::canvas::SubpixelOrder;
+            eframe::egui_wgpu::want_lcd_text(Some(match order {
+                SubpixelOrder::Rgb => eframe::egui::epaint::text::LcdOrder::Rgb,
+                SubpixelOrder::Bgr => eframe::egui::epaint::text::LcdOrder::Bgr,
+            }));
+            graphics::configure_dual_source_blending(&mut options);
+        }
     }
     // Windows opened for further documents start like the first one, before its saved place.
     let window_builder = options.viewport.clone();

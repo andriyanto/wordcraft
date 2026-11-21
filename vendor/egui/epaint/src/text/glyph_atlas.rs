@@ -478,8 +478,14 @@ impl GlyphAtlas {
         let (glyph_pos, image) = atlas.allocate((width, height));
         for y in 0..height {
             for x in 0..width {
+                let texel = bitmap.image[(x, y)];
+                // WordKu: an LCD glyph's stripes go through the transfer function one by one.
                 image[(glyph_pos.0 + x, glyph_pos.1 + y)] =
-                    transfer.to_atlas_color(bitmap.image[(x, y)]);
+                    if !bitmap.is_color && super::lcd::is_lcd_texel(texel) {
+                        super::lcd::transfer(transfer, texel)
+                    } else {
+                        transfer.to_atlas_color(texel)
+                    };
             }
         }
         Some(UvRect {

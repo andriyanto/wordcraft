@@ -48,6 +48,21 @@ pub fn configure_indirect_validation(options: &mut NativeOptions, skip: bool) {
     }
 }
 
+/// Asks for dual-source blending where the graphics adapter has it: the interface's text is then
+/// drawn with ClearType's subpixel edges, as the renderer blends each colour on its own
+/// (`egui_wgpu::want_lcd_text`). Adapters without it are unchanged: their text keeps grey edges.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn configure_dual_source_blending(options: &mut NativeOptions) {
+    if let WgpuSetup::CreateNew(create) = &mut options.wgpu_options.wgpu_setup {
+        let before = std::sync::Arc::clone(&create.device_descriptor);
+        create.device_descriptor = std::sync::Arc::new(move |adapter| {
+            let mut descriptor = before(adapter);
+            descriptor.required_features |= adapter.features() & eframe::wgpu::Features::DUAL_SOURCE_BLENDING;
+            descriptor
+        });
+    }
+}
+
 /// What the start-up probe learned about one DirectX 12 adapter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dx12Adapter {
