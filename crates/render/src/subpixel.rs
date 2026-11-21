@@ -189,7 +189,7 @@ fn blend_rows(px: &mut [u8], bare: &[u8], mask: &[u8], w: usize, order: Subpixel
     let rows = px.chunks_exact_mut(row).zip(bare.chunks_exact(row)).zip(mask.chunks_exact(sub * 4));
     for ((out, bare), mask) in rows {
         let mut any = 0u8;
-        for (c, m) in cov[2..].iter_mut().zip(mask.chunks_exact(4)) {
+        for (c, m) in cov[2..].iter_mut().zip(mask.as_chunks::<4>().0) {
             any |= m[3];
             *c = u32::from(m[3]);
         }
@@ -200,10 +200,10 @@ fn blend_rows(px: &mut [u8], bare: &[u8], mask: &[u8], w: usize, order: Subpixel
         for (f, k) in filtered.iter_mut().zip(cov.windows(5)) {
             *f = k[0] * FILTER[0] + k[1] * FILTER[1] + k[2] * FILTER[2] + k[3] * FILTER[3] + k[4] * FILTER[4];
         }
-        for (s, three) in sums.iter_mut().zip(cov[2..].chunks_exact(3)) {
+        for (s, three) in sums.iter_mut().zip(cov[2..].as_chunks::<3>().0) {
             *s = three[0] + three[1] + three[2];
         }
-        for (x, f) in filtered.chunks_exact(3).enumerate() {
+        for (x, f) in filtered.as_chunks::<3>().0.iter().enumerate() {
             if f[0] | f[1] | f[2] == 0 {
                 continue;
             }
