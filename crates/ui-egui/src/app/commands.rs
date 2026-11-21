@@ -521,6 +521,14 @@ impl WordApp {
                 crate::updates_ui::download(self);
                 Value::Null
             }
+            "ui.community" | "help.community" => {
+                self.canvas.open_url = Some(crate::COMMUNITY_URL.into());
+                Value::Null
+            }
+            "ui.discussions" | "help.discussions" => {
+                self.canvas.open_url = Some(crate::DISCUSSIONS_URL.into());
+                Value::Null
+            }
             "ui.tab" => {
                 let tab = s("tab").unwrap_or("Home").to_string();
                 if tab == "File" {
@@ -1125,6 +1133,8 @@ pub(crate) fn works_without_document(id: &str) -> bool {
             | "ui.statusCount"
             | "ui.checkForUpdates"
             | "ui.downloadUpdate"
+            | "ui.community"
+            | "ui.discussions"
     ) || id.starts_with("help.")
 }
 

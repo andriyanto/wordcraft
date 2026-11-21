@@ -619,6 +619,45 @@ fn nothing_in_the_interface_leads_to_discord() {
     assert!(app().ui_command("ui.discord", &json!({})).is_none(), "the command is gone");
 }
 
+/// The community replaces Discord: Join the community opens the README's community section
+/// (which holds the WhatsApp invite, so a reset invite needs no new release) and Discussions the
+/// repository's GitHub Discussions, from the backstage menu and About (and the Help tab's
+/// buttons, which run the same commands).
+#[test]
+fn the_community_and_discussions_open_from_help_backstage_and_about() {
+    for (id, url) in [("ui.community", crate::COMMUNITY_URL), ("ui.discussions", crate::DISCUSSIONS_URL)] {
+        let mut a = app();
+        a.run(id, json!({})).unwrap();
+        assert_eq!(a.canvas.open_url.as_deref(), Some(url), "{id}");
+    }
+    assert_eq!(crate::COMMUNITY_URL, "https://github.com/andriyanto/wordku#komunitas");
+    assert_eq!(crate::DISCUSSIONS_URL, "https://github.com/andriyanto/wordku/discussions");
+
+    let mut a = app();
+    a.run("ui.backstage", json!({"value": true})).unwrap();
+    let mut h = harness(a);
+    h.run_steps(2);
+    assert!(h.query_by_label("Join the community").is_some(), "the backstage menu links the community");
+    assert!(h.query_by_label("Discussions").is_some(), "the backstage menu links Discussions");
+
+    let mut a = app();
+    a.run("ui.dialog", json!({"name": "about"})).unwrap();
+    let mut h = harness(a);
+    h.run_steps(3);
+    assert!(h.query_by_label("Join the community (WhatsApp group)").is_some(), "About links the community");
+    assert!(h.query_by_label("Discussions: github.com/andriyanto/wordku/discussions").is_some(), "About links Discussions");
+}
+
+/// The community button lands on the README's community section: GitHub turns the heading into
+/// the `#komunitas` anchor, so renaming it would leave the button opening the top of the README.
+#[test]
+fn the_community_link_lands_on_the_readmes_community_section() {
+    let readme = include_str!("../../../README.md");
+    let anchor = crate::COMMUNITY_URL.rsplit_once('#').map(|(_, a)| a).unwrap_or_default();
+    assert_eq!(anchor, "komunitas");
+    assert!(readme.lines().any(|l| l == "## Komunitas"), "README.md has no “## Komunitas” heading");
+}
+
 /// File › Options › Advanced › Editing: alignment guides are a UI command, on by default and
 /// kept between runs.
 #[test]

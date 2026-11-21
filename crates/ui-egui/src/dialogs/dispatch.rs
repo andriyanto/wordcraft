@@ -1181,6 +1181,9 @@ fn about_dialog(ui: &mut Ui, d: &mut Dialog) -> bool {
             ui.hyperlink_to(tl!("Downloads: github.com/andriyanto/wordku/releases"), crate::RELEASES_URL);
             ui.hyperlink_to(tl!("Original project: github.com/storytold/wordcraft"), "https://github.com/storytold/wordcraft");
             ui.add_space(6.0);
+            ui.hyperlink_to(tl!("Join the community (WhatsApp group)"), crate::COMMUNITY_URL);
+            ui.hyperlink_to(tl!("Discussions: github.com/andriyanto/wordku/discussions"), crate::DISCUSSIONS_URL);
+            ui.add_space(6.0);
             // The licences ask that the original copyright notice stay with the program.
             ui.label(
                 egui::RichText::new(tl!(

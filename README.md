@@ -159,6 +159,19 @@ mulai aplikasinya dengan `wordku --control 7981`, lalu jalankan
 `wordku-cli mcp --connect 127.0.0.1:7981`. Rinciannya ada di [docs/mcp.md](docs/mcp.md) dan
 [docs/control-protocol.md](docs/control-protocol.md).
 
+## Komunitas
+
+Tombol **Join the community** di WordKu membuka bagian ini.
+
+- **Grup WhatsApp:** [Gabung grup komunitas WordKu](https://chat.whatsapp.com/HjMTIq9OVu2BkFetBUpBFh)
+  untuk tanya jawab santai dan kabar terbaru. Nomor HP Anda terlihat oleh anggota lain di grup,
+  jadi bergabunglah hanya jika Anda nyaman dengan itu.
+- **[GitHub Discussions](https://github.com/andriyanto/wordku/discussions):** untuk pertanyaan,
+  ide, dan diskusi yang bisa dicari lagi nanti, tanpa membagikan nomor HP.
+
+Laporan masalah sebaiknya tetap lewat [Issues](https://github.com/andriyanto/wordku/issues), supaya
+tidak tenggelam di obrolan.
+
 ## Bantuan dan laporan masalah
 
 Laporkan masalah atau usulkan perbaikan di
