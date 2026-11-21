@@ -13,10 +13,9 @@
   <img src="docs/images/wordku.png" alt="WordKu dengan tab Home pada ribbon terbuka di atas dokumen contoh dua halaman. Panel Navigation di kiri berisi judul-judul dokumen, dan galeri Styles menampilkan pratinjau Normal, Heading 1, Title dan Subtitle." width="100%">
 </p>
 
-> **Status:** belum ada rilis bernama WordKu. Rilis v1.0.0 sampai v1.0.2 di halaman
-> [Releases](https://github.com/andriyanto/wordku/releases) masih bernama WordCraft. Installer
-> WordKu akan muncul di sana setelah rilis WordKu pertama. Sampai saat itu, WordKu bisa dibangun
-> dari kode sumber (lihat [Membangun dari kode sumber](#membangun-dari-kode-sumber)).
+> **Rilis pertama bernama WordKu adalah v1.1.0.** Rilis v1.0.0 sampai v1.0.2 di halaman
+> [Releases](https://github.com/andriyanto/wordku/releases) masih bernama WordCraft; WordKu
+> terpasang sebagai aplikasi baru di sampingnya.
 
 ## Apa yang bisa dilakukan
 
@@ -78,7 +77,7 @@ aplikasi.
 
 ## Unduhan dan pemasangan
 
-Setelah rilis WordKu pertama terbit, semua berkasnya ada di
+Semua berkasnya ada di
 [rilis terbaru](https://github.com/andriyanto/wordku/releases/latest). `<ver>` adalah nomor versi,
 dan `SHA256SUMS.txt` memuat checksum setiap berkas.
 
