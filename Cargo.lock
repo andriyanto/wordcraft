@@ -6855,6 +6855,7 @@ dependencies = [
  "tempfile",
  "windows",
  "winit",
+ "winreg",
  "winresource",
  "wl-clipboard-rs",
  "wordcraft-control-key",

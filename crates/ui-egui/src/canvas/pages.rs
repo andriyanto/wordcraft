@@ -8,6 +8,7 @@ pub(super) fn view_key(app: &WordApp, dim_body: bool, hidden: Option<&Pos>, hint
     let mut h = std::collections::hash_map::DefaultHasher::new();
     // A page drawn unhinted mid-zoom must not pass for the hinted page (see [`hint_pages`]).
     hinted.hash(&mut h);
+    subpixel_text().hash(&mut h);
     let v = &app.session.view;
     (v.marks, app.session.prefs.marks, v.show_markup, v.dark_mode, wordcraft_render::DARK_PAPER, v.hide_ink, v.draw.replay).hash(&mut h);
     (v.read_mode, v.read_page_color, app.session.prefs.paper_color).hash(&mut h);
@@ -270,7 +271,35 @@ pub(super) fn page_render_options(app: &WordApp, dim_body: bool) -> wordcraft_re
     }
     opts.display.dim_header = !dim_body;
     opts.display.dim_body = dim_body;
+    opts.subpixel = subpixel_text();
     opts
+}
+
+/// The screen's subpixel order for page text: 0 none (grey edges), 1 RGB, 2 BGR. Set by the
+/// desktop app from the system's ClearType setting ([`set_subpixel_text`]); never in tests and
+/// on the web, so pages look the same on every machine there.
+static SUBPIXEL_TEXT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Draw page text with subpixel edges in `order` (`None`: grey edges), as the system draws its
+/// own text: the desktop app calls this at start on Windows, from the ClearType setting.
+pub fn set_subpixel_text(order: Option<wordcraft_render::SubpixelOrder>) {
+    use wordcraft_render::SubpixelOrder;
+    let v = match order {
+        None => 0,
+        Some(SubpixelOrder::Rgb) => 1,
+        Some(SubpixelOrder::Bgr) => 2,
+    };
+    SUBPIXEL_TEXT.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The subpixel order page text is drawn in ([`set_subpixel_text`]).
+pub(crate) fn subpixel_text() -> Option<wordcraft_render::SubpixelOrder> {
+    use wordcraft_render::SubpixelOrder;
+    match SUBPIXEL_TEXT.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => Some(SubpixelOrder::Rgb),
+        2 => Some(SubpixelOrder::Bgr),
+        _ => None,
+    }
 }
 
 /// Render options for page rasters shown on screen, so a page looks as text does in the
@@ -279,8 +308,9 @@ pub(super) fn page_render_options(app: &WordApp, dim_body: bool) -> wordcraft_re
 /// there (not darkened: hinted text already has FreeType's weight, and darkening made it
 /// look semi-bold). Windows takes the same light hinting: its own text (DirectWrite, as Word
 /// draws it) also puts baselines, x-heights and cap heights on whole pixels and moves nothing
-/// sideways, and unhinted page text looked soft next to it at 100 %. ClearType's sub-pixel
-/// colour edges are not drawn.
+/// sideways, and unhinted page text looked soft next to it at 100 %. ClearType's subpixel edges
+/// are for the pages alone ([`page_render_options`], [`subpixel_text`]): other rasters (previews,
+/// thumbnails) are shown scaled, where they would show as coloured fringes.
 pub(crate) fn screen_render_options() -> wordcraft_render::RenderOptions {
     wordcraft_render::RenderOptions {
         text_darkening: cfg!(target_os = "macos"),

@@ -303,6 +303,78 @@ fn ink_columns(img: &Rendered) -> (usize, usize) {
     (inked.iter().copied().min().unwrap_or(0), inked.iter().copied().max().unwrap_or(0))
 }
 
+/// A short paragraph in a bundled face at 12 pt, laid out: the subpixel tests' page.
+fn subpixel_page(text: &str) -> (Document, wordcraft_layout::Page) {
+    let mut d = Document::from_text(text);
+    let styles = std::sync::Arc::make_mut(&mut d.styles);
+    styles.default_chr.font = Some("Source Sans 3".into());
+    styles.default_chr.size = Some(12.0);
+    let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions::default());
+    let page = l.pages[0].clone();
+    (d, page)
+}
+
+/// The ink of one channel (0 red, 1 green, 2 blue) over the raster.
+fn channel_ink(img: &Rendered, ch: usize) -> u64 {
+    img.pixels.as_chunks::<4>().0.iter().map(|p| 255 - p[ch] as u64).sum()
+}
+
+#[test]
+fn subpixel_text_colours_the_edges_and_keeps_the_ink() {
+    let (d, page) = subpixel_page("Every Thursday evening the old print shop fills with people who make things.");
+    let scale = 96.0 / 72.0;
+    let hint = RenderOptions { hinting: true, ..Default::default() };
+    let grey = render_page(&d, &page, scale, &hint);
+    let rgb = render_page(&d, &page, scale, &RenderOptions { subpixel: Some(SubpixelOrder::Rgb), ..hint.clone() });
+    assert!(RenderOptions::default().subpixel.is_none(), "off unless asked for");
+    assert_eq!((rgb.width, rgb.height), (grey.width, grey.height));
+    // Coloured edges: black text on white leaves pixels whose red and blue differ.
+    let coloured = rgb.pixels.as_chunks::<4>().0.iter().filter(|p| p[0].abs_diff(p[2]) > 40).count();
+    assert!(coloured > 100, "{coloured} coloured edge pixels");
+    assert_eq!(grey.pixels.as_chunks::<4>().0.iter().filter(|p| p[0] != p[2]).count(), 0, "grey edges are grey");
+    // The same weight in every channel as with grey edges: the filter moves ink, it adds none.
+    for ch in 0..3 {
+        let (a, b) = (channel_ink(&grey, ch), channel_ink(&rgb, ch));
+        assert!(b as f64 > a as f64 * 0.93 && (b as f64) < a as f64 * 1.07, "channel {ch}: grey {a}, subpixel {b}");
+    }
+    // Away from the text nothing changes: rows without ink are the same pixels.
+    let row = rgb.width as usize * 4;
+    for (g, s) in grey.pixels.chunks_exact(row).zip(rgb.pixels.chunks_exact(row)) {
+        if g.as_chunks::<4>().0.iter().all(|p| p[0] == 255) {
+            assert_eq!(g, s);
+        }
+    }
+    // A BGR screen draws the same text with red and blue swapped (black on white).
+    let bgr = render_page(&d, &page, scale, &RenderOptions { subpixel: Some(SubpixelOrder::Bgr), ..hint.clone() });
+    let swapped: Vec<u8> = rgb.pixels.as_chunks::<4>().0.iter().flat_map(|p| [p[2], p[1], p[0], p[3]]).collect();
+    assert_eq!(bgr.pixels, swapped);
+}
+
+#[test]
+fn subpixel_text_leaves_a_page_without_text_and_rotated_text_alone() {
+    let (d, page) = subpixel_page("");
+    let opts = RenderOptions { subpixel: Some(SubpixelOrder::Rgb), ..Default::default() };
+    assert_eq!(render_page(&d, &page, 1.5, &opts).pixels, render_page(&d, &page, 1.5, &RenderOptions::default()).pixels);
+    // A turned view (rotated text) keeps grey edges: the stripes don't line up with its letters.
+    let (d, page) = subpixel_page("Sideways");
+    let turned = Affine::rotate(std::f64::consts::FRAC_PI_2) * Affine::translate((0.0, -600.0));
+    let a = render_region(&d, &page, 900, 700, turned, &opts);
+    let b = render_region(&d, &page, 900, 700, turned, &RenderOptions::default());
+    assert!(ink(&b) > 1000, "the turned text is in view");
+    assert_eq!(a.pixels, b.pixels);
+}
+
+#[test]
+fn subpixel_blend_refuses_rasters_that_do_not_match() {
+    let px = vec![255u8; 4 * 4];
+    let mut shown = px.clone();
+    assert!(!subpixel::blend(&mut shown, &px, &[0u8; 3], 2, SubpixelOrder::Rgb));
+    assert!(!subpixel::blend(&mut shown, &px[..8], &[0u8; 48], 2, SubpixelOrder::Rgb));
+    assert!(!subpixel::blend(&mut [], &[], &[], 0, SubpixelOrder::Rgb));
+    assert!(subpixel::blend(&mut shown, &px, &[0u8; 48], 2, SubpixelOrder::Rgb));
+    assert_eq!(shown, px);
+}
+
 #[test]
 fn hinting_sharpens_screen_text_without_making_it_bolder_or_moving_it() {
     let mut d =

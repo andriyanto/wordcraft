@@ -14,6 +14,7 @@ mod animations;
 mod appimage_env;
 #[cfg(target_os = "macos")]
 mod apple_events;
+mod cleartype;
 mod clipboard;
 mod control_server;
 mod default_apps;
@@ -540,6 +541,8 @@ fn main() -> eframe::Result {
     // screenshots look the same on every machine.
     if prefs_enabled() {
         wordcraft_ui_egui::theme::allow_system_ui_font();
+        // Page text with ClearType's subpixel edges where Windows draws its own text so.
+        wordcraft_ui_egui::canvas::set_subpixel_text(cleartype::system_order());
     }
     // Windows opened for further documents start like the first one, before its saved place.
     let window_builder = options.viewport.clone();

@@ -379,3 +379,25 @@ conversion, and the rule in `AGENTS.md` says so.
   not inside WordKu. `.cargo/audit.toml` keeps RUSTSEC-2026-0543 ignored for that reason.
 - jiff is licensed `Unlicense OR MIT`; WordKu uses it under MIT, which is on the allowlist (other
   dependencies by the same author, such as `memchr`, were already used that way).
+
+## 19. Text on screen closer to Windows' own (22 November 2026)
+
+Word draws its text through Windows (DirectWrite and ClearType); WordKu draws its own. Two
+changes bring it closer, at the owner's request:
+
+- **Interface font** (#65): the ribbon, menus and dialogs use the platform's interface font
+  (Segoe UI on Windows, SF Pro on macOS, Noto Sans on Linux and the BSDs), with Inter behind it
+  and in its place where the system font is missing. File › Options › General › Interface font
+  (`ui.interfaceFont`) switches back to Inter. Page text on Windows is lightly hinted, as on Linux.
+- **ClearType for page text**: with ClearType on in Windows (read from
+  `HKCU\Control Panel\Desktop` at start), upright page text gets subpixel edges in the screen's
+  stripe order. vello_cpu draws one coverage per pixel, so the page is drawn as always, once
+  more without that text, and the text alone three times as wide as a coverage mask; each
+  channel then takes its own stripe's coverage, smoothed with FreeType's default LCD filter
+  (`crates/render/src/subpixel.rs`). That costs time where a page has text: a page full of
+  12 pt text took 6 ms with grey edges and 19 ms with subpixel ones at 1.33 px per point (100 %
+  zoom on a 100 % display), 7 and 30 ms at 2 px per point, on a two-core cloud machine; only at
+  rest, as mid-zoom pages keep grey edges. The mask and the page without text are kept between
+  renders on the thread (up to 48 MB), because a fresh buffer's memory being faulted in cost
+  more than drawing into it. The interface (egui) keeps grey edges. Tests, the
+  web app and exports never use it, and a render without it is unchanged byte for byte.
